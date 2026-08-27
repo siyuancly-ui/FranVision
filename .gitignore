@@ -1,6 +1,7 @@
 .DS_Store
 ~$*
 
-# Generated project folders (address-named, created by New Project.command)
-/*/
 !/pricing/
+
+# Job Generator scratch output from the try-it.js test harness
+/job-generator/test-output/

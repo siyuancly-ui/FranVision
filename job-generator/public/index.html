@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>FranVision Job Generator</title>
+<style>
+  :root {
+    --bg: #f7f5f0;
+    --panel: #ffffff;
+    --ink: #1a1a1a;
+    --muted: #6b6b6b;
+    --border: #e2ddd2;
+    --accent: #b6892f;
+    --accent-dark: #1a1a1a;
+    --ok-bg: #eef7ee;
+    --ok-border: #b9dcb9;
+    --warn-bg: #fff8e6;
+    --warn-border: #e8cf8a;
+    --error-bg: #fdecec;
+    --error-border: #f0b7b7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+  }
+  header {
+    padding: 20px 28px;
+    border-bottom: 1px solid var(--border);
+    background: var(--accent-dark);
+    color: #fff;
+  }
+  header h1 { margin: 0; font-size: 18px; letter-spacing: 0.02em; }
+  header p { margin: 4px 0 0; font-size: 12.5px; color: #cfcfcf; }
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(320px, 460px) 1fr;
+    gap: 20px;
+    padding: 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+  .panel + .panel { margin-top: 16px; }
+  h2 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin: 0 0 12px;
+  }
+  .step-num {
+    display: inline-block;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-size: 11px;
+    line-height: 18px;
+    text-align: center;
+    margin-right: 6px;
+  }
+  fieldset { border: none; padding: 0; margin: 0 0 18px; }
+  fieldset:last-child { margin-bottom: 0; }
+  legend { font-size: 12.5px; font-weight: 600; margin-bottom: 8px; padding: 0; }
+  label.field-label { display: block; font-size: 12.5px; font-weight: 600; margin: 0 0 4px; }
+  input[type="text"], input[type="number"] {
+    width: 100%;
+    padding: 7px 9px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: inherit;
+  }
+  .field-row { margin-bottom: 14px; }
+  .field-row:last-child { margin-bottom: 0; }
+  .field-hint { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .radio-row, .check-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 0;
+    font-size: 14px;
+  }
+  .check-row label, .radio-row label { cursor: pointer; flex: 1; }
+  input[type="radio"], input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; }
+  .qty-input { width: 56px; padding: 3px 6px; border: 1px solid var(--border); border-radius: 5px; font-size: 13px; }
+  .addon-flag { font-size: 11px; color: var(--accent); font-weight: 600; margin-left: 6px; }
+  .line-items { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 4px; }
+  .line-items td { padding: 6px 0; }
+  .line-items td.amt { text-align: right; font-variant-numeric: tabular-nums; }
+  .line-items tr.pkg td:first-child::before, .line-items tr.base td:first-child::before { content: "\25A0  "; color: var(--accent); font-size: 10px; }
+  .line-items tr.addon td:first-child { padding-left: 16px; color: var(--muted); }
+  .totals { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px; font-size: 14px; }
+  .totals .row { display: flex; justify-content: space-between; padding: 3px 0; }
+  .totals .row.total { font-weight: 700; font-size: 17px; border-top: 1px solid var(--border); margin-top: 6px; padding-top: 8px; }
+  .status-banner { border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin-bottom: 14px; }
+  .status-banner.invalid { background: var(--error-bg); border: 1px solid var(--error-border); color: #7a1f1f; }
+  .status-banner.ok { background: var(--ok-bg); border: 1px solid var(--ok-border); color: #2b5c2b; }
+  .empty-hint { color: var(--muted); font-size: 13.5px; }
+  .folder-preview { font-size: 13px; color: var(--muted); margin-top: 10px; }
+  .folder-preview code { background: #f2efe8; padding: 1px 5px; border-radius: 4px; }
+  .folder-preview ul { margin: 6px 0 0; padding-left: 18px; }
+  .stub-row { display: flex; align-items: center; gap: 8px; }
+  .stub-btn {
+    padding: 7px 12px; border-radius: 6px; border: 1px dashed var(--border);
+    background: #f2efe8; color: var(--muted); font-size: 13px; cursor: not-allowed;
+    white-space: nowrap;
+  }
+  .create-btn {
+    width: 100%; padding: 12px; margin-top: 16px;
+    background: var(--accent-dark); color: #fff; border: none; border-radius: 8px;
+    font-size: 15px; font-weight: 600; cursor: pointer;
+  }
+  .create-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .create-btn:hover:not(:disabled) { background: #333; }
+  .result-box { margin-top: 14px; padding: 12px 14px; border-radius: 8px; font-size: 13.5px; }
+  .result-box.success { background: var(--ok-bg); border: 1px solid var(--ok-border); color: #2b5c2b; }
+  .result-box.error { background: var(--error-bg); border: 1px solid var(--error-border); color: #7a1f1f; }
+  .result-box .path { font-family: ui-monospace, monospace; word-break: break-all; margin: 6px 0; }
+  .pending-note { font-size: 12px; color: var(--muted); margin-top: 6px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>FranVision Job Generator</h1>
+  <p>Pricing is computed by the real Pricing Skill (<code>pricing/engine.js</code>) via API -- this page never calculates a price itself.</p>
+</header>
+
+<div class="layout">
+  <!-- LEFT: inputs -->
+  <div>
+    <div class="panel">
+      <h2><span class="step-num">1</span>Client Information</h2>
+      <div class="field-row">
+        <label class="field-label" for="clientName">Client Name</label>
+        <input type="text" id="clientName" placeholder="e.g. Jane Smith">
+      </div>
+      <div class="field-row">
+        <label class="field-label" for="photographerName">Photographer Name</label>
+        <input type="text" id="photographerName" placeholder="e.g. Franky Chen">
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2><span class="step-num">2</span>Property Information</h2>
+      <div class="field-row">
+        <label class="field-label" for="address">Property Address</label>
+        <input type="text" id="address" placeholder="地址，城市 -- e.g. 12 Cozens Dr, Markham">
+      </div>
+      <fieldset>
+        <legend>Property Type</legend>
+        <div class="radio-row"><input type="radio" name="propertyType" id="pt-condo" value="condo" checked><label for="pt-condo">Condo</label></div>
+        <div class="radio-row"><input type="radio" name="propertyType" id="pt-house" value="house"><label for="pt-house">House</label></div>
+      </fieldset>
+    </div>
+
+    <div class="panel">
+      <h2><span class="step-num">3</span>Shoot Date</h2>
+      <div class="field-row">
+        <label class="field-label" for="shootDate">Shoot Date</label>
+        <input type="text" id="shootDate" placeholder="yyyy/mm/dd">
+        <div class="field-hint">Format: yyyy/mm/dd (e.g. 2026/08/27)</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2><span class="step-num">4</span>Service Selection</h2>
+      <fieldset>
+        <legend>Photography Type</legend>
+        <div class="radio-row"><input type="radio" name="photography" id="ph-standard" value="standard" checked><label for="ph-standard">Standard</label></div>
+        <div class="radio-row"><input type="radio" name="photography" id="ph-luxury" value="luxury"><label for="ph-luxury">Luxury</label></div>
+      </fieldset>
+      <fieldset>
+        <legend>Add-ons</legend>
+        <div class="check-row"><input type="checkbox" id="addon-floor_plan"><label for="addon-floor_plan">Floor Plan</label></div>
+        <div class="check-row"><input type="checkbox" id="addon-walkthrough_video"><label for="addon-walkthrough_video">Walkthrough Video</label></div>
+        <div class="check-row"><input type="checkbox" id="addon-vlog_video"><label for="addon-vlog_video">Vlog Video</label></div>
+        <div class="check-row"><input type="checkbox" id="addon-drone_photos"><label for="addon-drone_photos">Drone Photos</label></div>
+        <div class="check-row"><input type="checkbox" id="addon-site_plan"><label for="addon-site_plan">Site Plan</label></div>
+        <div class="check-row">
+          <input type="checkbox" id="addon-virtual_staging">
+          <label for="addon-virtual_staging">Virtual Staging</label>
+          <input type="number" min="0" step="1" value="1" class="qty-input" id="virtual_staging_qty" disabled>
+        </div>
+        <div class="check-row"><input type="checkbox" id="addon-feature_sheets"><label for="addon-feature_sheets">Feature Sheets</label></div>
+        <div class="check-row">
+          <input type="checkbox" id="addon-three_d_tour">
+          <label for="addon-three_d_tour">3D Virtual Tour</label>
+        </div>
+      </fieldset>
+    </div>
+  </div>
+
+  <!-- RIGHT: pricing + create -->
+  <div>
+    <div class="panel">
+      <h2><span class="step-num">5</span>Pricing Breakdown</h2>
+      <div id="pricing-body"></div>
+    </div>
+
+    <div class="panel">
+      <h2><span class="step-num">6</span>Create Job</h2>
+
+      <div class="field-row">
+        <label class="field-label" for="rootFolder">Job Root Folder</label>
+        <div class="stub-row">
+          <input type="text" id="rootFolder" placeholder="/path/to/Job Root Folder">
+          <button class="stub-btn" type="button" title="Native folder picker not built yet -- paste the path for now">Browse&hellip;</button>
+        </div>
+        <div class="field-hint">Not remembered across server restarts yet (module 6 pending) -- resets to the default test folder each time you start the server.</div>
+      </div>
+
+      <div id="folder-preview" class="folder-preview"></div>
+
+      <button class="create-btn" id="create-btn" disabled>Create Job</button>
+      <div id="create-blocked-hint" class="pending-note"></div>
+      <div id="create-result"></div>
+    </div>
+  </div>
+</div>
+
+<script src="/shared/validate.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  const el = (id) => document.getElementById(id);
+  const addonIds = ['floor_plan', 'walkthrough_video', 'vlog_video', 'drone_photos', 'site_plan', 'virtual_staging', 'feature_sheets', 'three_d_tour'];
+
+  let latestPrice = null;
+
+  function centsToDisplay(cents) {
+    const sign = cents < 0 ? '-' : '';
+    return sign + '$' + (Math.abs(cents) / 100).toFixed(2);
+  }
+
+  function readOrder() {
+    const propertyType = document.querySelector('input[name="propertyType"]:checked').value;
+    const photography = document.querySelector('input[name="photography"]:checked').value;
+    const addons = {};
+    addonIds.forEach((id) => { addons[id] = el('addon-' + id).checked; });
+    addons.virtual_staging_qty = el('addon-virtual_staging').checked ? (parseInt(el('virtual_staging_qty').value, 10) || 0) : 0;
+    return { propertyType, photography, addons };
+  }
+
+  function readJobInputs() {
+    return {
+      clientName: el('clientName').value.trim(),
+      photographerName: el('photographerName').value.trim(),
+      address: el('address').value.trim(),
+      propertyType: document.querySelector('input[name="propertyType"]:checked').value,
+      shootDate: el('shootDate').value.trim(),
+      rootFolder: el('rootFolder').value.trim(),
+      order: readOrder(),
+    };
+  }
+
+  function renderLineItems(container, lineItems) {
+    const table = document.createElement('table');
+    table.className = 'line-items';
+    lineItems.forEach((li) => {
+      const tr = document.createElement('tr');
+      tr.className = li.type === 'addon' ? 'addon' : (li.type === 'package' ? 'pkg' : 'base');
+      const tdLabel = document.createElement('td');
+      tdLabel.textContent = li.label;
+      const tdAmt = document.createElement('td');
+      tdAmt.className = 'amt';
+      tdAmt.textContent = centsToDisplay(li.amountCents);
+      tr.appendChild(tdLabel);
+      tr.appendChild(tdAmt);
+      table.appendChild(tr);
+    });
+    container.appendChild(table);
+  }
+
+  function renderTotals(container, result) {
+    const box = document.createElement('div');
+    box.className = 'totals';
+    const rows = [
+      ['Subtotal', result.subtotalCents],
+    ];
+    if (result.manualAdjustmentCents) rows.push(['Manual adjustment', result.manualAdjustmentCents]);
+    rows.push(['HST', result.hstCents]);
+    rows.forEach(([label, cents]) => {
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML = '<span>' + label + '</span><span>' + centsToDisplay(cents) + '</span>';
+      box.appendChild(row);
+    });
+    const totalRow = document.createElement('div');
+    totalRow.className = 'row total';
+    totalRow.innerHTML = '<span>Total</span><span>' + centsToDisplay(result.totalCents) + '</span>';
+    box.appendChild(totalRow);
+    container.appendChild(box);
+  }
+
+  async function refreshPricing() {
+    const order = readOrder();
+    const res = await fetch('/api/price', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(order) });
+    const result = await res.json();
+    latestPrice = result;
+
+    const out = el('pricing-body');
+    out.innerHTML = '';
+
+    if (result.status === 'invalid') {
+      const banner = document.createElement('div');
+      banner.className = 'status-banner invalid';
+      banner.textContent = result.reason;
+      out.appendChild(banner);
+    } else if (result.status === 'ambiguous') {
+      const banner = document.createElement('div');
+      banner.className = 'status-banner invalid';
+      banner.textContent = 'Multiple equally-valid pricing options found -- picking between them in the UI is not built yet. Adjust your selection.';
+      out.appendChild(banner);
+    } else if (result.lineItems.length === 0) {
+      const banner = document.createElement('div');
+      banner.className = 'status-banner ok';
+      banner.textContent = 'No services selected yet.';
+      out.appendChild(banner);
+    } else {
+      renderLineItems(out, result.lineItems);
+      renderTotals(out, result);
+    }
+
+    updateCreateButtonState();
+    refreshFolderPreview();
+  }
+
+  async function refreshFolderPreview() {
+    const inputs = readJobInputs();
+    if (!inputs.rootFolder) { el('folder-preview').innerHTML = ''; return; }
+    const res = await fetch('/api/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(inputs) });
+    const plan = await res.json();
+    el('folder-preview').innerHTML =
+      '<div>Job ID (preview): <code>' + plan.jobIdPreview + '</code></div>' +
+      '<div>Folder: <code>' + plan.folderName + '</code></div>' +
+      '<ul>' + plan.componentFolders.map((f) => '<li>' + f + '</li>').join('') + '</ul>';
+  }
+
+  function getBlockingReasons() {
+    const inputs = readJobInputs();
+    const reasons = [];
+    if (!inputs.clientName) reasons.push('Client Name');
+    if (!inputs.address) reasons.push('Property Address');
+    if (!inputs.shootDate) {
+      reasons.push('Shoot Date');
+    } else if (!window.JobValidate || !window.JobValidate.isValidShootDate(inputs.shootDate)) {
+      reasons.push('Shoot Date (must be valid yyyy/mm/dd)');
+    }
+    if (!inputs.rootFolder) reasons.push('Job Root Folder');
+    if (!latestPrice || latestPrice.status !== 'ok' || latestPrice.lineItems.length === 0) {
+      reasons.push('a valid, non-empty service selection');
+    }
+    // Photographer Name is intentionally NOT required here -- it's fine to
+    // create the job without it and fill it in later (see pendingConfirmation).
+    return reasons;
+  }
+
+  function updateCreateButtonState() {
+    const reasons = getBlockingReasons();
+    el('create-btn').disabled = reasons.length > 0;
+    el('create-blocked-hint').textContent = reasons.length ? 'Still needed: ' + reasons.join(', ') : '';
+  }
+
+  async function createJob() {
+    const inputs = readJobInputs();
+    el('create-result').innerHTML = '';
+    el('create-btn').disabled = true;
+
+    try {
+      const res = await fetch('/api/create-job', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(inputs) });
+      const result = await res.json();
+
+      if (!res.ok) {
+        el('create-result').innerHTML = '<div class="result-box error">' + (result.error || 'Failed to create job.') + '</div>';
+        return;
+      }
+
+      const pendingHtml = (result.pendingConfirmation && result.pendingConfirmation.length)
+        ? '<div class="pending-note">⚠ Needs follow-up before invoicing:<ul>' +
+          result.pendingConfirmation.map((msg) => '<li>' + msg + '</li>').join('') + '</ul></div>'
+        : '';
+
+      el('create-result').innerHTML =
+        '<div class="result-box success">' +
+        '<div><strong>Job created: ' + result.jobId + '</strong></div>' +
+        '<div class="path">' + result.jobFolderPath + '</div>' +
+        '<div>Job Info.txt and job.json written.</div>' +
+        pendingHtml +
+        '</div>';
+    } catch (err) {
+      el('create-result').innerHTML = '<div class="result-box error">' + err.message + '</div>';
+    } finally {
+      updateCreateButtonState();
+    }
+  }
+
+  document.querySelectorAll('input[name="propertyType"], input[name="photography"]').forEach((i) => i.addEventListener('change', refreshPricing));
+  addonIds.forEach((id) => el('addon-' + id).addEventListener('change', refreshPricing));
+  el('addon-virtual_staging').addEventListener('change', function () {
+    el('virtual_staging_qty').disabled = !this.checked;
+    refreshPricing();
+  });
+  el('virtual_staging_qty').addEventListener('input', refreshPricing);
+
+  ['clientName', 'photographerName', 'address', 'shootDate', 'rootFolder'].forEach((id) => {
+    el(id).addEventListener('input', () => { updateCreateButtonState(); refreshFolderPreview(); });
+  });
+
+  el('create-btn').addEventListener('click', createJob);
+
+  // Load the (in-memory, not-yet-persisted) root folder default from the server.
+  fetch('/api/root-folder').then((r) => r.json()).then((data) => {
+    el('rootFolder').value = data.rootFolder;
+    refreshFolderPreview();
+    updateCreateButtonState();
+  });
+
+  refreshPricing();
+})();
+</script>
+
+</body>
+</html>
