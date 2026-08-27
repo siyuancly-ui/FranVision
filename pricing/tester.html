@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>FranVision Pricing Tester</title>
+<style>
+  :root {
+    --bg: #f7f5f0;
+    --panel: #ffffff;
+    --ink: #1a1a1a;
+    --muted: #6b6b6b;
+    --border: #e2ddd2;
+    --accent: #b6892f;
+    --accent-dark: #1a1a1a;
+    --ok-bg: #eef7ee;
+    --ok-border: #b9dcb9;
+    --warn-bg: #fff8e6;
+    --warn-border: #e8cf8a;
+    --error-bg: #fdecec;
+    --error-border: #f0b7b7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+  }
+  header {
+    padding: 20px 28px;
+    border-bottom: 1px solid var(--border);
+    background: var(--accent-dark);
+    color: #fff;
+  }
+  header h1 { margin: 0; font-size: 18px; letter-spacing: 0.02em; }
+  header p { margin: 4px 0 0; font-size: 12.5px; color: #cfcfcf; }
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(280px, 380px) 1fr;
+    gap: 20px;
+    padding: 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  @media (max-width: 820px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+  .panel + .panel { margin-top: 16px; }
+  h2 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin: 0 0 12px;
+  }
+  fieldset {
+    border: none;
+    padding: 0;
+    margin: 0 0 18px;
+  }
+  fieldset:last-child { margin-bottom: 0; }
+  legend {
+    font-size: 12.5px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    padding: 0;
+  }
+  .radio-row, .check-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 0;
+    font-size: 14px;
+  }
+  .check-row label, .radio-row label { cursor: pointer; flex: 1; }
+  input[type="radio"], input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; }
+  .qty-input {
+    width: 56px;
+    padding: 3px 6px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    font-size: 13px;
+  }
+  .adjustment-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .adjustment-row input[type="number"] {
+    flex: 1;
+    padding: 7px 9px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 14px;
+  }
+  .line-items {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    margin-bottom: 4px;
+  }
+  .line-items td { padding: 6px 0; }
+  .line-items td.amt { text-align: right; font-variant-numeric: tabular-nums; }
+  .line-items tr.pkg td:first-child::before { content: "\25A0  "; color: var(--accent); font-size: 10px; }
+  .line-items tr.base td:first-child::before { content: "\25A0  "; color: var(--accent); font-size: 10px; }
+  .line-items tr.addon td:first-child { padding-left: 16px; color: var(--muted); }
+  .totals { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px; font-size: 14px; }
+  .totals .row { display: flex; justify-content: space-between; padding: 3px 0; }
+  .totals .row.total { font-weight: 700; font-size: 17px; border-top: 1px solid var(--border); margin-top: 6px; padding-top: 8px; }
+  .totals .row.adj span:last-child { color: var(--accent); }
+  .status-banner {
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 13.5px;
+    margin-bottom: 14px;
+  }
+  .status-banner.invalid { background: var(--error-bg); border: 1px solid var(--error-border); color: #7a1f1f; }
+  .status-banner.ambiguous { background: var(--warn-bg); border: 1px solid var(--warn-border); color: #6b510f; }
+  .status-banner.ok { background: var(--ok-bg); border: 1px solid var(--ok-border); color: #2b5c2b; }
+  .explanation {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--border);
+  }
+  .explanation ul { margin: 6px 0 0; padding-left: 18px; }
+  .explanation li { margin-bottom: 3px; }
+  .candidate-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    cursor: pointer;
+  }
+  .candidate-card:hover { border-color: var(--accent); }
+  .candidate-card.selected { border-color: var(--accent); background: #fbf4e6; }
+  .candidate-card h3 { margin: 0 0 6px; font-size: 13px; }
+  .empty-hint { color: var(--muted); font-size: 13.5px; }
+  .wave-compare {
+    margin-top: 4px;
+  }
+  .wave-compare label { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 4px; }
+  .wave-compare input {
+    width: 100%;
+    padding: 7px 9px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 14px;
+  }
+  .diff-line { font-size: 13.5px; margin-top: 8px; padding: 8px 10px; border-radius: 6px; }
+  .diff-line.match { background: var(--ok-bg); color: #2b5c2b; }
+  .diff-line.mismatch { background: var(--error-bg); color: #7a1f1f; }
+  .diff-line.pending { color: var(--muted); background: transparent; padding-left: 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>FranVision Pricing Tester</h1>
+  <p>Enter an order, compare the computed total against your Wave invoice. Edit <code>pricing-config.js</code> to change prices — this page never hardcodes any.</p>
+</header>
+
+<div class="layout">
+  <!-- LEFT: inputs -->
+  <div>
+    <div class="panel">
+      <h2>Order</h2>
+
+      <fieldset>
+        <legend>Property Type</legend>
+        <div class="radio-row"><input type="radio" name="propertyType" id="pt-condo" value="condo" checked><label for="pt-condo">Condo</label></div>
+        <div class="radio-row"><input type="radio" name="propertyType" id="pt-house" value="house"><label for="pt-house">House</label></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Photography</legend>
+        <div class="radio-row"><input type="radio" name="photography" id="ph-standard" value="standard" checked><label for="ph-standard">Standard</label></div>
+        <div class="radio-row"><input type="radio" name="photography" id="ph-luxury" value="luxury"><label for="ph-luxury">Luxury</label></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Add-ons</legend>
+        <div class="check-row"><input type="checkbox" id="addon-floor_plan"><label for="addon-floor_plan">Floor Plan</label></div>
+        <div class="check-row"><input type="checkbox" id="addon-site_plan"><label for="addon-site_plan">Site Plan</label></div>
+        <div class="check-row"><input type="checkbox" id="addon-walkthrough_video"><label for="addon-walkthrough_video">Walkthrough Video</label></div>
+        <div class="check-row"><input type="checkbox" id="addon-vlog_video"><label for="addon-vlog_video">Vlog Video</label></div>
+        <div class="check-row"><input type="checkbox" id="addon-drone_photos"><label for="addon-drone_photos">Drone Photos</label></div>
+        <div class="check-row"><input type="checkbox" id="addon-three_d_tour"><label for="addon-three_d_tour">3D Virtual Tour</label></div>
+        <div class="check-row"><input type="checkbox" id="addon-feature_sheets"><label for="addon-feature_sheets">Feature Sheets</label></div>
+        <div class="check-row">
+          <input type="checkbox" id="addon-virtual_staging">
+          <label for="addon-virtual_staging">Virtual Staging</label>
+          <input type="number" min="0" step="1" value="1" class="qty-input" id="virtual_staging_qty" disabled>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Manual Adjustment (optional)</legend>
+        <div class="adjustment-row">
+          <span>$</span>
+          <input type="number" step="0.01" id="manual-adjustment" placeholder="0.00">
+        </div>
+        <p class="empty-hint" style="margin:6px 0 0;">Positive or negative. Applied to the subtotal before HST. Does not change the pricing breakdown above it.</p>
+      </fieldset>
+    </div>
+
+    <div class="panel">
+      <h2>Compare against Wave Invoice</h2>
+      <div class="wave-compare">
+        <label for="wave-total">Wave invoice total ($, including HST)</label>
+        <input type="number" step="0.01" id="wave-total" placeholder="e.g. 502.85">
+      </div>
+      <div id="diff-output" class="diff-line pending">Enter a Wave total to compare.</div>
+    </div>
+  </div>
+
+  <!-- RIGHT: output -->
+  <div class="panel" id="output-panel">
+    <h2>Pricing Breakdown</h2>
+    <div id="output-body"></div>
+  </div>
+</div>
+
+<script src="pricing-config.js"></script>
+<script src="engine.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  const el = (id) => document.getElementById(id);
+  const addonIds = ['floor_plan', 'site_plan', 'walkthrough_video', 'vlog_video', 'drone_photos', 'three_d_tour', 'feature_sheets'];
+
+  let selectedCandidateIndex = 0; // used only when status === 'ambiguous'
+
+  function centsToDisplay(cents) {
+    const sign = cents < 0 ? '-' : '';
+    return sign + '$' + (Math.abs(cents) / 100).toFixed(2);
+  }
+
+  function readOrder() {
+    const propertyType = document.querySelector('input[name="propertyType"]:checked').value;
+    const photography = document.querySelector('input[name="photography"]:checked').value;
+    const addons = {};
+    addonIds.forEach((id) => { addons[id] = el('addon-' + id).checked; });
+    addons.virtual_staging_qty = el('addon-virtual_staging').checked ? (parseInt(el('virtual_staging_qty').value, 10) || 0) : 0;
+
+    const adjustmentDollars = parseFloat(el('manual-adjustment').value);
+    const manualAdjustmentCents = isNaN(adjustmentDollars) ? 0 : Math.round(adjustmentDollars * 100);
+
+    return { propertyType, photography, addons, manualAdjustmentCents };
+  }
+
+  function renderLineItems(container, lineItems) {
+    const table = document.createElement('table');
+    table.className = 'line-items';
+    lineItems.forEach((li) => {
+      const tr = document.createElement('tr');
+      tr.className = li.type === 'addon' ? 'addon' : (li.type === 'package' ? 'pkg' : 'base');
+      const tdLabel = document.createElement('td');
+      tdLabel.textContent = li.label;
+      const tdAmt = document.createElement('td');
+      tdAmt.className = 'amt';
+      tdAmt.textContent = centsToDisplay(li.amountCents);
+      tr.appendChild(tdLabel);
+      tr.appendChild(tdAmt);
+      table.appendChild(tr);
+    });
+    container.appendChild(table);
+  }
+
+  function renderTotals(container, result) {
+    const box = document.createElement('div');
+    box.className = 'totals';
+
+    const subtotalRow = document.createElement('div');
+    subtotalRow.className = 'row';
+    subtotalRow.innerHTML = '<span>Subtotal</span><span>' + centsToDisplay(result.subtotalCents) + '</span>';
+    box.appendChild(subtotalRow);
+
+    if (result.manualAdjustmentCents) {
+      const adjRow = document.createElement('div');
+      adjRow.className = 'row adj';
+      adjRow.innerHTML = '<span>Manual adjustment</span><span>' + centsToDisplay(result.manualAdjustmentCents) + '</span>';
+      box.appendChild(adjRow);
+
+      const finalSubRow = document.createElement('div');
+      finalSubRow.className = 'row';
+      finalSubRow.innerHTML = '<span>Adjusted subtotal</span><span>' + centsToDisplay(result.finalSubtotalCents) + '</span>';
+      box.appendChild(finalSubRow);
+    }
+
+    const hstRow = document.createElement('div');
+    hstRow.className = 'row';
+    hstRow.innerHTML = '<span>HST (' + PRICING_CONFIG.taxRatePercent + '%)</span><span>' + centsToDisplay(result.hstCents) + '</span>';
+    box.appendChild(hstRow);
+
+    const totalRow = document.createElement('div');
+    totalRow.className = 'row total';
+    totalRow.innerHTML = '<span>Total</span><span>' + centsToDisplay(result.totalCents) + '</span>';
+    box.appendChild(totalRow);
+
+    container.appendChild(box);
+  }
+
+  function renderExplanation(container, explanation) {
+    if (!explanation || explanation.length === 0) return;
+    const box = document.createElement('div');
+    box.className = 'explanation';
+    const title = document.createElement('div');
+    title.textContent = 'Calculation Explanation';
+    box.appendChild(title);
+    const ul = document.createElement('ul');
+    explanation.forEach((line) => {
+      const li = document.createElement('li');
+      li.textContent = line;
+      ul.appendChild(li);
+    });
+    box.appendChild(ul);
+    container.appendChild(box);
+  }
+
+  function candidateSummary(candidate) {
+    const mainLabels = candidate.lineItems.filter((li) => li.type === 'package' || li.type === 'base').map((li) => li.label);
+    const addonLabels = candidate.lineItems.filter((li) => li.type === 'addon').map((li) => li.label);
+    let s = mainLabels.length ? mainLabels.join(' + ') : 'No package';
+    if (addonLabels.length) s += ' + ' + addonLabels.join(' + ');
+    return s + '  —  ' + centsToDisplay(candidate.totalCents);
+  }
+
+  function render() {
+    const order = readOrder();
+    const result = PricingEngine.calculatePrice(order, PRICING_CONFIG);
+    const out = el('output-body');
+    out.innerHTML = '';
+
+    if (result.status === 'invalid') {
+      const banner = document.createElement('div');
+      banner.className = 'status-banner invalid';
+      banner.textContent = result.reason;
+      out.appendChild(banner);
+      updateDiff(null);
+      return;
+    }
+
+    if (result.status === 'ambiguous') {
+      const banner = document.createElement('div');
+      banner.className = 'status-banner ambiguous';
+      banner.textContent = 'Multiple equally-valid pricing options were found. Pick one below.';
+      out.appendChild(banner);
+
+      if (selectedCandidateIndex >= result.candidates.length) selectedCandidateIndex = 0;
+
+      result.candidates.forEach((candidate, i) => {
+        const card = document.createElement('div');
+        card.className = 'candidate-card' + (i === selectedCandidateIndex ? ' selected' : '');
+        card.innerHTML = '<h3>Option ' + (i + 1) + '</h3><div>' + candidateSummary(candidate) + '</div>';
+        card.addEventListener('click', () => { selectedCandidateIndex = i; render(); });
+        out.appendChild(card);
+      });
+
+      const chosen = result.candidates[selectedCandidateIndex];
+      renderLineItems(out, chosen.lineItems);
+      renderTotals(out, chosen);
+      renderExplanation(out, chosen.explanation);
+      updateDiff(chosen.totalCents);
+      return;
+    }
+
+    // status === 'ok'
+    if (result.lineItems.length === 0) {
+      const banner = document.createElement('div');
+      banner.className = 'status-banner ok';
+      banner.textContent = 'No services selected yet.';
+      out.appendChild(banner);
+      updateDiff(null);
+      return;
+    }
+
+    renderLineItems(out, result.lineItems);
+    renderTotals(out, result);
+    renderExplanation(out, result.explanation);
+    updateDiff(result.totalCents);
+  }
+
+  function updateDiff(computedTotalCents) {
+    const diffEl = el('diff-output');
+    const waveVal = parseFloat(el('wave-total').value);
+
+    if (computedTotalCents == null) {
+      diffEl.className = 'diff-line pending';
+      diffEl.textContent = 'Enter a Wave total to compare.';
+      return;
+    }
+    if (isNaN(waveVal)) {
+      diffEl.className = 'diff-line pending';
+      diffEl.textContent = 'Engine total: ' + centsToDisplay(computedTotalCents) + '. Enter a Wave total to compare.';
+      return;
+    }
+    const waveCents = Math.round(waveVal * 100);
+    const diffCents = waveCents - computedTotalCents;
+    if (diffCents === 0) {
+      diffEl.className = 'diff-line match';
+      diffEl.textContent = 'Match — engine total ' + centsToDisplay(computedTotalCents) + ' equals Wave total.';
+    } else {
+      diffEl.className = 'diff-line mismatch';
+      diffEl.textContent = 'Mismatch — engine says ' + centsToDisplay(computedTotalCents) + ', Wave says ' + centsToDisplay(waveCents) +
+        ' (difference: ' + centsToDisplay(diffCents) + ').';
+    }
+  }
+
+  document.querySelectorAll('input[name="propertyType"], input[name="photography"]').forEach((i) => i.addEventListener('change', () => { selectedCandidateIndex = 0; render(); }));
+  addonIds.forEach((id) => el('addon-' + id).addEventListener('change', () => { selectedCandidateIndex = 0; render(); }));
+  el('addon-virtual_staging').addEventListener('change', function () {
+    el('virtual_staging_qty').disabled = !this.checked;
+    selectedCandidateIndex = 0;
+    render();
+  });
+  el('virtual_staging_qty').addEventListener('input', render);
+  el('manual-adjustment').addEventListener('input', render);
+  el('wave-total').addEventListener('input', render);
+
+  render();
+})();
+</script>
+
+</body>
+</html>
