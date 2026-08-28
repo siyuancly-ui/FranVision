@@ -20,42 +20,49 @@
 
   function mount(root, app) {
     root.innerHTML = '';
-    var head = el('div', { class: 'fsb-lib-head' }, [
-      el('div', { class: 'fsb-lib-title' }, [
-        el('span', { text: 'Photo Library' }),
-        el('span', { class: 'fsb-lib-count', id: 'fsb-lib-count', text: '0' }),
-      ]),
-      (function () {
+    // The library adapts to the photo source: an upload source shows the
+    // upload button + dropzone + per-photo delete; a read-only source
+    // (e.g. a Wix gallery) shows just the scrollable grid.
+    var canUpload = !!(src.supportsUpload && src.supportsUpload());
+
+    var titleKids = [
+      el('span', { text: 'Photo Library' }),
+      el('span', { class: 'fsb-lib-count', id: 'fsb-lib-count', text: '0' }),
+    ];
+    if (canUpload) {
+      titleKids.push((function () {
         var label = el('label', { class: 'fsb-btn fsb-btn--primary fsb-upload-btn' }, [document.createTextNode('Upload photos')]);
         var input = el('input', { type: 'file', accept: 'image/jpeg,image/png', multiple: 'multiple', style: { display: 'none' } });
         input.addEventListener('change', function () { handleFiles(input.files); input.value = ''; });
         label.appendChild(input);
         return label;
-      })(),
-    ]);
-    var dropHint = el('div', { class: 'fsb-lib-drop', text: 'Drop JPG / PNG here' });
+      })());
+    }
+    var head = el('div', { class: 'fsb-lib-head' }, [el('div', { class: 'fsb-lib-title' }, titleKids)]);
     var grid = el('div', { class: 'fsb-lib-grid', id: 'fsb-lib-grid' });
     root.appendChild(head);
-    root.appendChild(dropHint);
+    if (canUpload) root.appendChild(el('div', { class: 'fsb-lib-drop', text: 'Drop JPG / PNG here' }));
     root.appendChild(grid);
 
-    // ---- drag files onto the library --------------------------------
-    ['dragenter', 'dragover'].forEach(function (ev) {
-      root.addEventListener(ev, function (e) {
-        if (!e.dataTransfer || [].indexOf.call(e.dataTransfer.types || [], 'Files') < 0) return;
-        e.preventDefault();
-        root.classList.add('fsb-lib--dragging');
-      });
-    });
-    ['dragleave', 'drop'].forEach(function (ev) {
-      root.addEventListener(ev, function (e) {
-        if (ev === 'drop') {
+    // ---- drag files onto the library (upload sources only) ----------
+    if (canUpload) {
+      ['dragenter', 'dragover'].forEach(function (ev) {
+        root.addEventListener(ev, function (e) {
+          if (!e.dataTransfer || [].indexOf.call(e.dataTransfer.types || [], 'Files') < 0) return;
           e.preventDefault();
-          if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
-        }
-        if (ev === 'drop' || !root.contains(e.relatedTarget)) root.classList.remove('fsb-lib--dragging');
+          root.classList.add('fsb-lib--dragging');
+        });
       });
-    });
+      ['dragleave', 'drop'].forEach(function (ev) {
+        root.addEventListener(ev, function (e) {
+          if (ev === 'drop') {
+            e.preventDefault();
+            if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
+          }
+          if (ev === 'drop' || !root.contains(e.relatedTarget)) root.classList.remove('fsb-lib--dragging');
+        });
+      });
+    }
 
     // ---- upload queue ---------------------------------------------
     var queue = [];
@@ -120,7 +127,7 @@
         }, [
           img,
           used ? el('span', { class: 'fsb-thumb-badge', text: '×' + used }) : null,
-          el('button', { class: 'fsb-thumb-del', 'data-del': p.id, title: 'Delete photo', text: '✕' }),
+          canUpload ? el('button', { class: 'fsb-thumb-del', 'data-del': p.id, title: 'Delete photo', text: '✕' }) : null,
         ]);
         tile.addEventListener('dragstart', function (e) {
           if (app.isReadOnly()) { e.preventDefault(); return; }

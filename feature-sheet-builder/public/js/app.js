@@ -338,6 +338,11 @@
 
     load.then(function (project) {
       app.setProject(project);
+      // Let a remote photo source (e.g. Wix gallery) fetch + cache its list
+      // before the first render. No-op for the upload source.
+      var ps = window.FSB.photoSource;
+      return Promise.resolve(ps.ready ? ps.ready(project) : null).then(function () { return project; });
+    }).then(function (project) {
       window.FSB.library.mount(document.getElementById('fsb-library'), app);
       window.FSB.infoForm.mount(document.getElementById('fsb-form'), app);
       renderStage();

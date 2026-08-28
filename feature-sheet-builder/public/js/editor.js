@@ -20,8 +20,9 @@
   }
 
   function photoDims(app, photoId) {
-    var p = (app.project.photos || []).filter(function (x) { return x.photoId === photoId; })[0];
-    return { w: p ? p.width : 0, h: p ? p.height : 0 };
+    // via the photo-source seam, not app.project.photos directly.
+    var m = window.FSB.photoSource.getMeta(app.project, photoId);
+    return { w: m ? m.width : 0, h: m ? m.height : 0 };
   }
 
   function applyImg(slotEl, dims, pdims, state) {

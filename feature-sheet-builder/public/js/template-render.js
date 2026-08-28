@@ -30,8 +30,10 @@
     return '/template-assets/' + (project.templateId || T.id) + '/' + rel;
   }
 
+  // Photo pixel size for crop-math -- always via the photo-source seam,
+  // never project.photos directly (a Wix gallery source keeps its own list).
   function photoMeta(project, photoId) {
-    return (project.photos || []).filter(function (p) { return p.photoId === photoId; })[0] || null;
+    return window.FSB.photoSource.getMeta(project, photoId);
   }
 
   function fullUrl(project, photoId) {
@@ -186,7 +188,9 @@
     // Any rebuild clears transient drag styling (opacity/highlight) so a
     // move/swap can't leave a slot looking dimmed.
     node.classList.remove('fsb-slot--dragging', 'fsb-slot--drop', 'fsb-slot--panning');
-    if (state.photoId && photoMeta(project, state.photoId) !== undefined) {
+    // Only render a photo the source actually knows about; an unknown id
+    // (deleted, or a remote list not loaded yet) shows as an empty slot.
+    if (state.photoId && photoMeta(project, state.photoId) != null) {
       node.classList.add('fsb-slot--filled');
       node.classList.remove('fsb-slot--empty');
       node.appendChild(slotImg(project, slot, state, pw, ph));

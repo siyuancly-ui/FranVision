@@ -81,7 +81,8 @@
       wrap._renderPrev = renderPrev;
       inputs[groupKey + '.' + f.key] = wrap;
       wrap.appendChild(preview);
-      wrap.appendChild(pick);
+      // "Choose..." only when the photo source accepts uploads.
+      if (src.supportsUpload && src.supportsUpload()) wrap.appendChild(pick);
       wrap.appendChild(clear);
       renderPrev();
       return wrap;
