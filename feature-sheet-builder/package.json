@@ -1,0 +1,11 @@
+{
+  "name": "franvision-feature-sheet-builder",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FranVision Feature Sheet Builder -- client self-serve photo selection + layout tool for a fixed 2-page Feature Sheet template.",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  }
+}

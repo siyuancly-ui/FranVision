@@ -1,0 +1,4 @@
+# Local project data (projects + uploaded photos). Never committed --
+# this is per-install runtime state, and will move to Supabase later.
+/data/
+.DS_Store

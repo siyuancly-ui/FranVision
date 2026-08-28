@@ -6,3 +6,9 @@
 # Job Generator: local-only state, not part of the codebase
 /job-generator/test-output/
 /job-generator/.config.json
+
+# Feature Sheet Builder: local project + uploaded-photo storage
+/feature-sheet-builder/data/
+
+# Source reference PDF (large binary, not code)
+/Jason FS.pdf
