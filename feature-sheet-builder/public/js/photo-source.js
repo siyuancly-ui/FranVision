@@ -24,6 +24,10 @@
   window.FSB = window.FSB || {};
   var store = window.FSB.store;
 
+  function metaOf(project, id) {
+    return (project && project.photos ? project.photos : []).filter(function (p) { return p.photoId === id; })[0] || null;
+  }
+
   var uploadSource = {
     id: 'project-uploads',
     list: function (project) {
@@ -32,11 +36,13 @@
       });
     },
     thumbUrl: function (project, id) {
-      return (project && project.photos.some(function (p) { return p.photoId === id && p.hasThumb; }))
-        ? store.thumbUrl(project.projectId, id)
-        : store.photoUrl(project.projectId, id);
+      var m = metaOf(project, id);
+      return m ? store.photoUrls(project.projectId, m).thumb : '';
     },
-    fullUrl: function (project, id) { return store.photoUrl(project.projectId, id); },
+    fullUrl: function (project, id) {
+      var m = metaOf(project, id);
+      return m ? store.photoUrls(project.projectId, m).full : '';
+    },
     supportsUpload: function () { return true; },
     upload: function (projectId, file) { return store.uploadPhoto(projectId, file); },
     remove: function (projectId, id) { return store.deletePhoto(projectId, id); },

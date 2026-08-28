@@ -59,6 +59,11 @@ function applyPatch(project, patch) {
   if (patch.agentInfo && typeof patch.agentInfo === 'object') {
     project.agentInfo = Object.assign({}, project.agentInfo, patch.agentInfo);
   }
+  // The client is authoritative for the photo list (it holds every uploaded
+  // photo's metadata in memory); a save replaces the stored array wholesale.
+  if (Array.isArray(patch.photos)) {
+    project.photos = patch.photos;
+  }
   if (patch.pages && typeof patch.pages === 'object') {
     ['page1', 'page2'].forEach((pk) => {
       if (patch.pages[pk] && patch.pages[pk].slots && typeof patch.pages[pk].slots === 'object') {

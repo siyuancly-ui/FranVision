@@ -61,6 +61,7 @@
       app.project.photos.push(meta);
     }
     app.emit('photos');
+    scheduleSave(); // persist the new photo's metadata (binary is already stored)
   };
 
   app.patchInfo = function (group, key, value) {
@@ -118,12 +119,9 @@
   app.save = function () {
     if (!app.project || app._saving) return Promise.resolve();
     app._saving = true; app.emit('save-state');
-    var patch = {
-      propertyInfo: app.project.propertyInfo,
-      agentInfo: app.project.agentInfo,
-      pages: app.project.pages,
-    };
-    return store.updateProject(app.projectId, patch).then(function (updated) {
+    // Pass the whole in-memory project; each store impl persists what it needs
+    // (local server merges a patch; Supabase writes the full data blob).
+    return store.updateProject(app.projectId, app.project).then(function (updated) {
       app.project.updatedAt = updated.updatedAt;
       app._saving = false; app._dirty = false; app.emit('save-state');
     }).catch(function (err) {

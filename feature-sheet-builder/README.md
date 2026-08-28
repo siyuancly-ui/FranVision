@@ -14,7 +14,32 @@ npm test                  # node --test
 or double-click **`../Feature Sheet Builder.command`** in Finder.
 
 `?p=<projectId>` in the URL identifies the project; opening `/` with no `p`
-creates one and rewrites the URL. Data lives under `./data/` (git-ignored).
+creates one and rewrites the URL.
+
+## Backend: Supabase (production) or local disk (dev)
+
+`public/js/config.js` decides:
+- **has `supabaseUrl` + `supabaseAnonKey`** -> the browser talks straight to
+  Supabase (Postgres `projects` row + `photos` storage bucket). No server needed;
+  `node server.js` is then only a convenient static file host.
+- **blank** -> the app uses the local Node server API, storing under `./data/`
+  (git-ignored). Useful offline.
+
+Supabase schema (run once in the SQL Editor): see `NOTES.md`.
+
+## Deploy the frontend (Cloudflare Pages)
+
+1. Cloudflare dashboard -> Workers & Pages -> Create -> Pages -> Connect to Git ->
+   pick this repo.
+2. Build settings:
+   - **Production branch**: `feature-sheet-builder` (or `main` after merge)
+   - **Framework preset**: None
+   - **Build command**: `node feature-sheet-builder/prepare-static.js`
+   - **Build output directory**: `feature-sheet-builder/public`
+3. Save and Deploy -> `https://<name>.pages.dev`.
+
+`prepare-static.js` copies `/shared/*` and `/template-assets/*` (served
+dynamically by `server.js` in dev) into `public/` so it works as pure static.
 
 ## Layout
 

@@ -56,6 +56,22 @@ test('updateProject: patches persist and merge slots by id', async () => {
   assert.ok(out.pages.page2.slots['p2L-1']);
 });
 
+test('updateProject: a photos array in the patch replaces the stored list', async () => {
+  const { store } = freshStore();
+  const p = await store.createProject();
+  const photos = [
+    { photoId: 'aaaaaa', filename: 'a.jpg', ext: 'jpg', width: 100, height: 80, hasThumb: true, uploadedAt: 'x' },
+    { photoId: 'bbbbbb', filename: 'b.png', ext: 'png', width: 50, height: 50, hasThumb: false, uploadedAt: 'y' },
+  ];
+  await store.updateProject(p.projectId, { photos });
+  const out = await store.getProject(p.projectId);
+  assert.deepStrictEqual(out.photos.map((x) => x.photoId), ['aaaaaa', 'bbbbbb']);
+  // a later patch without `photos` leaves it untouched
+  await store.updateProject(p.projectId, { propertyInfo: { address: 'Z' } });
+  const out2 = await store.getProject(p.projectId);
+  assert.strictEqual(out2.photos.length, 2);
+});
+
 test('savePhoto + deletePhoto: files created, slot refs cleared', async () => {
   const { store } = freshStore();
   const p = await store.createProject();

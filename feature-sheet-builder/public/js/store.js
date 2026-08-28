@@ -1,83 +1,308 @@
 /*
  * store.js -- the ONLY place the client talks to a backend.
  *
- * Today it calls the local Node server (server.js). To move persistence to
- * Supabase (or, later, Wix Data / Media) you reimplement these six methods
- * against that backend and change nothing else in the app. Keep the method
- * names and return shapes identical.
+ * Two interchangeable implementations behind one interface:
+ *   - 'supabase' : direct to Supabase (Postgres `projects` row + `photos`
+ *                  storage bucket). Used when window.FSB_CONFIG has creds.
+ *                  This is the hosted / production path.
+ *   - 'local'    : the zero-dep Node server (server.js). Used for dev when
+ *                  FSB_CONFIG is blank.
  *
- * Attaches to window.FSB.store
+ * Interface (all return Promises unless noted):
+ *   createProject(seed)              -> project
+ *   getProject(id)                   -> project
+ *   updateProject(id, project)       -> project   (pass the whole in-memory project)
+ *   confirmProject(id, bool)         -> project
+ *   uploadPhoto(id, File)            -> photoMeta  { photoId, filename, ext, width, height, hasThumb, bytes, uploadedAt }
+ *   deletePhoto(id, photoId)         -> project
+ *   photoUrls(id, photoMeta)         -> { full, thumb }   (sync)
+ *
+ * A "project" object is: { projectId, templateId, propertyInfo, agentInfo,
+ *   photos, pages, confirmed, confirmedAt, createdAt, updatedAt }.
  */
 (function () {
   'use strict';
   window.FSB = window.FSB || {};
 
-  var BASE = ''; // same-origin
+  var CFG = window.FSB_CONFIG || {};
+  var MODE = (CFG.supabaseUrl && CFG.supabaseAnonKey) ? 'supabase' : 'local';
 
-  function jsonFetch(url, opts) {
-    return fetch(BASE + url, opts).then(function (r) {
-      return r.text().then(function (txt) {
-        var body;
-        try { body = txt ? JSON.parse(txt) : {}; } catch (_e) { body = { error: txt || ('HTTP ' + r.status) }; }
-        if (!r.ok) throw new Error(body.error || ('HTTP ' + r.status));
-        return body;
+  var DATA_KEYS = ['templateId', 'propertyInfo', 'agentInfo', 'photos', 'pages', 'confirmed', 'confirmedAt'];
+
+  function pickData(p) {
+    var d = {};
+    DATA_KEYS.forEach(function (k) { if (p[k] !== undefined) d[k] = p[k]; });
+    return d;
+  }
+  function reconstruct(id, data, createdAt, updatedAt) {
+    return Object.assign({ projectId: id }, data, { createdAt: createdAt, updatedAt: updatedAt });
+  }
+  function nowIso() { return new Date().toISOString(); }
+
+  function newId() {
+    var bytes = new Uint8Array(9);
+    (window.crypto || window.msCrypto).getRandomValues(bytes);
+    var s = '';
+    for (var i = 0; i < bytes.length; i++) s += ('0' + bytes[i].toString(16)).slice(-2);
+    // 18 hex chars -> trim to 12, url-safe by construction
+    return s.slice(0, 12);
+  }
+
+  function clearPhotoRefs(project, photoId) {
+    ['page1', 'page2'].forEach(function (pk) {
+      var slots = (project.pages[pk] && project.pages[pk].slots) || {};
+      Object.keys(slots).forEach(function (sid) {
+        if (slots[sid] && slots[sid].photoId === photoId) {
+          slots[sid] = { photoId: null, positionX: 0, positionY: 0, scale: 1 };
+        }
       });
+    });
+    if (project.agentInfo) {
+      if (project.agentInfo.headshotPhotoId === photoId) project.agentInfo.headshotPhotoId = null;
+      if (project.agentInfo.brokerageLogoPhotoId === photoId) project.agentInfo.brokerageLogoPhotoId = null;
+    }
+  }
+
+  // Read pixel size of an image File without decoding it twice.
+  function imageSize(file) {
+    return new Promise(function (resolve) {
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () { URL.revokeObjectURL(url); resolve({ width: img.naturalWidth, height: img.naturalHeight }); };
+      img.onerror = function () { URL.revokeObjectURL(url); resolve({ width: 0, height: 0 }); };
+      img.src = url;
     });
   }
 
-  var store = {
-    /** Create a project. `seed` may include propertyInfo / agentInfo / photos / templateId. */
-    createProject: function (seed) {
-      return jsonFetch('/api/projects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(seed || {}),
-      }).then(function (b) { return b.project; });
-    },
+  // Downscale to a JPEG thumbnail (long edge <= maxEdge) entirely in the browser.
+  function makeThumb(file, maxEdge) {
+    maxEdge = maxEdge || 480;
+    return new Promise(function (resolve) {
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () {
+        URL.revokeObjectURL(url);
+        var scale = Math.min(1, maxEdge / Math.max(img.naturalWidth, img.naturalHeight));
+        var w = Math.max(1, Math.round(img.naturalWidth * scale));
+        var h = Math.max(1, Math.round(img.naturalHeight * scale));
+        var c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        c.toBlob(function (blob) { resolve(blob); }, 'image/jpeg', 0.72);
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); resolve(null); };
+      img.src = url;
+    });
+  }
 
-    getProject: function (id) {
-      return jsonFetch('/api/projects/' + encodeURIComponent(id)).then(function (b) { return b.project; });
-    },
+  function extOf(file) {
+    var t = (file.type || '').toLowerCase();
+    if (t === 'image/png') return 'png';
+    if (t === 'image/jpeg' || t === 'image/jpg') return 'jpg';
+    var m = /\.([a-z0-9]+)$/i.exec(file.name || '');
+    var e = m ? m[1].toLowerCase() : 'jpg';
+    return e === 'jpeg' ? 'jpg' : e;
+  }
 
-    /** Persist a patch: { propertyInfo?, agentInfo?, pages?, templateId?, confirmed? } */
-    updateProject: function (id, patch) {
-      return jsonFetch('/api/projects/' + encodeURIComponent(id), {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patch || {}),
-      }).then(function (b) { return b.project; });
-    },
+  // =====================================================================
+  //  LOCAL (Node server) implementation
+  // =====================================================================
+  function buildLocal() {
+    function jsonFetch(url, opts) {
+      return fetch(url, opts).then(function (r) {
+        return r.text().then(function (txt) {
+          var body;
+          try { body = txt ? JSON.parse(txt) : {}; } catch (_e) { body = { error: txt || ('HTTP ' + r.status) }; }
+          if (!r.ok) throw new Error(body.error || ('HTTP ' + r.status));
+          return body;
+        });
+      });
+    }
+    return {
+      mode: 'local',
+      createProject: function (seed) {
+        return jsonFetch('/api/projects', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(seed || {}),
+        }).then(function (b) { return b.project; });
+      },
+      getProject: function (id) {
+        return jsonFetch('/api/projects/' + encodeURIComponent(id)).then(function (b) { return b.project; });
+      },
+      updateProject: function (id, project) {
+        var patch = {
+          templateId: project.templateId,
+          propertyInfo: project.propertyInfo,
+          agentInfo: project.agentInfo,
+          pages: project.pages,
+          photos: project.photos,
+        };
+        return jsonFetch('/api/projects/' + encodeURIComponent(id), {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
+        }).then(function (b) { return b.project; });
+      },
+      confirmProject: function (id, confirmed) {
+        return jsonFetch('/api/projects/' + encodeURIComponent(id) + '/confirm', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ confirmed: confirmed === undefined ? true : !!confirmed }),
+        }).then(function (b) { return b.project; });
+      },
+      uploadPhoto: function (id, file) {
+        return jsonFetch('/api/projects/' + encodeURIComponent(id) + '/photos', {
+          method: 'POST',
+          headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-Filename': encodeURIComponent(file.name || 'photo.jpg') },
+          body: file,
+        }).then(function (b) { return b.photo; });
+      },
+      deletePhoto: function (id, photoId) {
+        return jsonFetch('/api/projects/' + encodeURIComponent(id) + '/photos/' + encodeURIComponent(photoId), {
+          method: 'DELETE',
+        }).then(function (b) { return b.project; });
+      },
+      photoUrls: function (id, meta) {
+        return {
+          full: '/photos/' + id + '/' + meta.photoId,
+          thumb: meta.hasThumb ? ('/thumbs/' + id + '/' + meta.photoId) : ('/photos/' + id + '/' + meta.photoId),
+        };
+      },
+    };
+  }
 
-    confirmProject: function (id, confirmed) {
-      return jsonFetch('/api/projects/' + encodeURIComponent(id) + '/confirm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ confirmed: confirmed === undefined ? true : !!confirmed }),
-      }).then(function (b) { return b.project; });
-    },
+  // =====================================================================
+  //  SUPABASE implementation
+  // =====================================================================
+  function buildSupabase() {
+    if (!window.supabase || !window.supabase.createClient) {
+      throw new Error('supabase-js failed to load');
+    }
+    var sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, {
+      auth: { persistSession: false },
+    });
+    var BUCKET = CFG.photosBucket || 'photos';
+    var T = window.FSB_TEMPLATE;
 
-    /** Upload one File/Blob. Returns photo meta { photoId, width, height, ... }. */
-    uploadPhoto: function (id, file) {
-      return jsonFetch('/api/projects/' + encodeURIComponent(id) + '/photos', {
-        method: 'POST',
-        headers: {
-          'Content-Type': file.type || 'application/octet-stream',
-          'X-Filename': encodeURIComponent(file.name || 'photo.jpg'),
-        },
-        body: file,
-      }).then(function (b) { return b.photo; });
-    },
+    function pubUrl(path) {
+      return sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+    }
+    function origPath(id, meta) { return id + '/' + meta.photoId + '.' + (meta.ext || 'jpg'); }
+    function thumbPath(id, meta) { return id + '/' + meta.photoId + '_thumb.jpg'; }
 
-    deletePhoto: function (id, photoId) {
-      return jsonFetch('/api/projects/' + encodeURIComponent(id) + '/photos/' + encodeURIComponent(photoId), {
-        method: 'DELETE',
-      }).then(function (b) { return b.project; });
-    },
+    function row2project(row) {
+      return reconstruct(row.id, row.data, row.created_at, row.updated_at);
+    }
 
-    /** URLs for rendering. */
-    photoUrl: function (id, photoId) { return BASE + '/photos/' + id + '/' + photoId; },
-    thumbUrl: function (id, photoId) { return BASE + '/thumbs/' + id + '/' + photoId; },
-  };
+    function fetchProject(id) {
+      return sb.from('projects').select('*').eq('id', id).single().then(function (res) {
+        if (res.error) throw new Error(res.error.message);
+        if (!res.data) throw new Error('Project not found');
+        return row2project(res.data);
+      });
+    }
 
-  window.FSB.store = store;
+    return {
+      mode: 'supabase',
+
+      createProject: function (seed) {
+        seed = seed || {};
+        var data = T.blankProject();
+        if (seed.templateId) data.templateId = seed.templateId;
+        if (seed.propertyInfo) data.propertyInfo = Object.assign({}, data.propertyInfo, seed.propertyInfo);
+        if (seed.agentInfo) data.agentInfo = Object.assign({}, data.agentInfo, seed.agentInfo);
+        if (Array.isArray(seed.photos)) data.photos = seed.photos;
+        var id = newId();
+        return sb.from('projects').insert({ id: id, data: data }).select('*').single().then(function (res) {
+          if (res.error) throw new Error(res.error.message);
+          return row2project(res.data);
+        });
+      },
+
+      getProject: fetchProject,
+
+      updateProject: function (id, project) {
+        return sb.from('projects')
+          .update({ data: pickData(project), updated_at: nowIso() })
+          .eq('id', id).select('*').single()
+          .then(function (res) {
+            if (res.error) throw new Error(res.error.message);
+            return row2project(res.data);
+          });
+      },
+
+      confirmProject: function (id, confirmed) {
+        confirmed = confirmed === undefined ? true : !!confirmed;
+        return fetchProject(id).then(function (p) {
+          p.confirmed = confirmed;
+          p.confirmedAt = confirmed ? (p.confirmedAt || nowIso()) : null;
+          return sb.from('projects').update({ data: pickData(p), updated_at: nowIso() })
+            .eq('id', id).select('*').single().then(function (res) {
+              if (res.error) throw new Error(res.error.message);
+              return row2project(res.data);
+            });
+        });
+      },
+
+      uploadPhoto: function (id, file) {
+        var photoId = newId();
+        var ext = extOf(file);
+        var meta = {
+          photoId: photoId, filename: file.name || (photoId + '.' + ext), ext: ext,
+          width: 0, height: 0, hasThumb: false, bytes: file.size || 0, uploadedAt: nowIso(),
+        };
+        return Promise.all([imageSize(file), makeThumb(file)]).then(function (out) {
+          meta.width = out[0].width; meta.height = out[0].height;
+          var thumbBlob = out[1];
+          var jobs = [
+            sb.storage.from(BUCKET).upload(origPath(id, meta), file, { contentType: file.type || 'image/jpeg', upsert: true }),
+          ];
+          if (thumbBlob) {
+            jobs.push(sb.storage.from(BUCKET).upload(thumbPath(id, meta), thumbBlob, { contentType: 'image/jpeg', upsert: true }));
+          }
+          return Promise.all(jobs).then(function (results) {
+            var upErr = results.map(function (r) { return r && r.error; }).filter(Boolean)[0];
+            if (upErr) throw new Error(upErr.message || 'upload failed');
+            meta.hasThumb = !!thumbBlob;
+            return meta;
+          });
+        });
+      },
+
+      deletePhoto: function (id, photoId) {
+        return fetchProject(id).then(function (project) {
+          var meta = (project.photos || []).filter(function (p) { return p.photoId === photoId; })[0];
+          var paths = [];
+          if (meta) {
+            paths.push(origPath(id, meta));
+            if (meta.hasThumb) paths.push(thumbPath(id, meta));
+          }
+          project.photos = (project.photos || []).filter(function (p) { return p.photoId !== photoId; });
+          clearPhotoRefs(project, photoId);
+          var removeJob = paths.length ? sb.storage.from(BUCKET).remove(paths) : Promise.resolve({});
+          return removeJob.then(function () {
+            return sb.from('projects').update({ data: pickData(project), updated_at: nowIso() })
+              .eq('id', id).select('*').single();
+          }).then(function (res) {
+            if (res.error) throw new Error(res.error.message);
+            return row2project(res.data);
+          });
+        });
+      },
+
+      photoUrls: function (id, meta) {
+        return {
+          full: pubUrl(origPath(id, meta)),
+          thumb: meta.hasThumb ? pubUrl(thumbPath(id, meta)) : pubUrl(origPath(id, meta)),
+        };
+      },
+    };
+  }
+
+  var impl;
+  try {
+    impl = (MODE === 'supabase') ? buildSupabase() : buildLocal();
+  } catch (e) {
+    console.error('[FSB] store init failed (' + MODE + '):', e);
+    impl = buildLocal();
+  }
+
+  impl.MODE = impl.mode;
+  window.FSB.store = impl;
 })();

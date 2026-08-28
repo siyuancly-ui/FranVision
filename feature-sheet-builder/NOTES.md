@@ -66,7 +66,57 @@ open a page, compare to the PDF, tell me "slot p2R-3 is ~2% too low" etc.
   later without touching the rest.
 - Uses CDN libs (`jspdf`, `html-to-image`, `qrcodejs`). Needs internet on first load.
 
-## 7. Not done in this MVP (by design)
+## 7. Supabase backend
+
+`public/js/store.js` runs against Supabase when `public/js/config.js` has the
+project URL + anon (publishable) key; otherwise it uses the local Node server.
+
+One-time schema setup (Supabase Dashboard -> SQL Editor -> run):
+
+```sql
+create table if not exists public.projects (
+  id text primary key,
+  data jsonb not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+grant usage on schema public to anon;
+grant select, insert, update on public.projects to anon;
+
+insert into storage.buckets (id, name, public)
+values ('photos', 'photos', true) on conflict (id) do nothing;
+
+alter table public.projects enable row level security;
+drop policy if exists "open projects read"   on public.projects;
+drop policy if exists "open projects insert" on public.projects;
+drop policy if exists "open projects update" on public.projects;
+create policy "open projects read"   on public.projects for select to anon using (true);
+create policy "open projects insert" on public.projects for insert to anon with check (true);
+create policy "open projects update" on public.projects for update to anon using (true) with check (true);
+drop policy if exists "open photos read"   on storage.objects;
+drop policy if exists "open photos insert" on storage.objects;
+drop policy if exists "open photos delete" on storage.objects;
+create policy "open photos read"   on storage.objects for select to anon using (bucket_id = 'photos');
+create policy "open photos insert" on storage.objects for insert to anon with check (bucket_id = 'photos');
+create policy "open photos delete" on storage.objects for delete to anon using (bucket_id = 'photos');
+```
+
+Behaviour / limits of the v1 backend:
+- **No auth** (matches the brief): anyone with the app URL can create/read/edit/
+  delete any project. Project ids are random 12-hex so not guessable, and there's
+  no sensitive data, but the RLS policies are deliberately wide open.
+- **Concurrent editing** = last-save-wins on the whole project document. Fine for
+  one client at a time; two people editing the same link simultaneously can clobber
+  each other. Add optimistic concurrency later if needed.
+- **Thumbnails** are generated in the browser (canvas) and uploaded alongside the
+  original, so no Supabase image-transform (Pro-only) is required.
+- **Deleting a photo** frees it from Storage immediately, but Supabase's public CDN
+  may keep serving the old URL for up to ~1h. Harmless -- nothing references it.
+- Free tier: 500 MB DB / 1 GB storage / project pauses after ~1 week idle. A few
+  dozen projects of 30-80 photos will fill 1 GB -- upgrade to Pro ($25/mo) when it
+  becomes real volume.
+
+## 8. Not done in this MVP (by design)
 - Second/third templates (architecture is ready — `templates/<id>/`).
 - Real "delivered assets" photo source (abstraction is in `photo-source.js`).
 - Auto-send to print shop (you open confirmed projects manually).
