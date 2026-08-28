@@ -106,17 +106,26 @@
   .totals .row.total { font-weight: 700; font-size: 17px; border-top: 1px solid var(--border); margin-top: 6px; padding-top: 8px; }
   .status-banner { border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin-bottom: 14px; }
   .status-banner.invalid { background: var(--error-bg); border: 1px solid var(--error-border); color: #7a1f1f; }
+  .status-banner.ambiguous { background: var(--warn-bg); border: 1px solid var(--warn-border); color: #6b510f; }
   .status-banner.ok { background: var(--ok-bg); border: 1px solid var(--ok-border); color: #2b5c2b; }
+  .candidate-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; cursor: pointer; }
+  .candidate-card:hover { border-color: var(--accent); }
+  .candidate-card.selected { border-color: var(--accent); background: #fbf4e6; }
+  .candidate-card h3 { margin: 0 0 6px; font-size: 13px; }
+  .adjustment-row { display: flex; align-items: center; gap: 10px; }
+  .adjustment-row input[type="number"] { flex: 1; }
   .empty-hint { color: var(--muted); font-size: 13.5px; }
   .folder-preview { font-size: 13px; color: var(--muted); margin-top: 10px; }
   .folder-preview code { background: #f2efe8; padding: 1px 5px; border-radius: 4px; }
   .folder-preview ul { margin: 6px 0 0; padding-left: 18px; }
   .stub-row { display: flex; align-items: center; gap: 8px; }
-  .stub-btn {
-    padding: 7px 12px; border-radius: 6px; border: 1px dashed var(--border);
-    background: #f2efe8; color: var(--muted); font-size: 13px; cursor: not-allowed;
+  .browse-btn {
+    padding: 7px 12px; border-radius: 6px; border: 1px solid var(--border);
+    background: #fff; color: var(--ink); font-size: 13px; cursor: pointer;
     white-space: nowrap;
   }
+  .browse-btn:hover { border-color: var(--accent); }
+  .browse-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .create-btn {
     width: 100%; padding: 12px; margin-top: 16px;
     background: var(--accent-dark); color: #fff; border: none; border-radius: 8px;
@@ -200,6 +209,14 @@
           <label for="addon-three_d_tour">3D Virtual Tour</label>
         </div>
       </fieldset>
+      <fieldset>
+        <legend>Manual Adjustment (optional)</legend>
+        <div class="adjustment-row">
+          <span>$</span>
+          <input type="number" step="0.01" id="manual-adjustment" placeholder="0.00">
+        </div>
+        <div class="field-hint">Positive or negative. Applied to the subtotal before HST. Same field as pricing/tester.html.</div>
+      </fieldset>
     </div>
   </div>
 
@@ -217,9 +234,13 @@
         <label class="field-label" for="rootFolder">Job Root Folder</label>
         <div class="stub-row">
           <input type="text" id="rootFolder" placeholder="/path/to/Job Root Folder">
-          <button class="stub-btn" type="button" title="Native folder picker not built yet -- paste the path for now">Browse&hellip;</button>
+          <button class="browse-btn" type="button" id="browse-btn" title="Opens a native macOS folder picker">Browse&hellip;</button>
         </div>
-        <div class="field-hint">Not remembered across server restarts yet (module 6 pending) -- resets to the default test folder each time you start the server.</div>
+        <div class="check-row">
+          <input type="checkbox" id="save-default-folder">
+          <label for="save-default-folder">Save as default path</label>
+        </div>
+        <div class="field-hint">While checked, this path is saved to disk as the default (survives restarting the app). Uncheck it to use a one-off path without changing your saved default.</div>
       </div>
 
       <div id="folder-preview" class="folder-preview"></div>
@@ -240,6 +261,7 @@
   const addonIds = ['floor_plan', 'walkthrough_video', 'vlog_video', 'drone_photos', 'site_plan', 'virtual_staging', 'feature_sheets', 'three_d_tour'];
 
   let latestPrice = null;
+  let selectedCandidateIndex = 0; // used only when latestPrice.status === 'ambiguous' -- same role as in pricing/tester.html
 
   function centsToDisplay(cents) {
     const sign = cents < 0 ? '-' : '';
@@ -252,7 +274,19 @@
     const addons = {};
     addonIds.forEach((id) => { addons[id] = el('addon-' + id).checked; });
     addons.virtual_staging_qty = el('addon-virtual_staging').checked ? (parseInt(el('virtual_staging_qty').value, 10) || 0) : 0;
-    return { propertyType, photography, addons };
+
+    const adjustmentDollars = parseFloat(el('manual-adjustment').value);
+    const manualAdjustmentCents = isNaN(adjustmentDollars) ? 0 : Math.round(adjustmentDollars * 100);
+
+    return { propertyType, photography, addons, manualAdjustmentCents };
+  }
+
+  function candidateSummary(candidate) {
+    const mainLabels = candidate.lineItems.filter((li) => li.type === 'package' || li.type === 'base').map((li) => li.label);
+    const addonLabels = candidate.lineItems.filter((li) => li.type === 'addon').map((li) => li.label);
+    let s = mainLabels.length ? mainLabels.join(' + ') : 'No package';
+    if (addonLabels.length) s += ' + ' + addonLabels.join(' + ');
+    return s + '  —  ' + centsToDisplay(candidate.totalCents);
   }
 
   function readJobInputs() {
@@ -322,9 +356,23 @@
       out.appendChild(banner);
     } else if (result.status === 'ambiguous') {
       const banner = document.createElement('div');
-      banner.className = 'status-banner invalid';
-      banner.textContent = 'Multiple equally-valid pricing options found -- picking between them in the UI is not built yet. Adjust your selection.';
+      banner.className = 'status-banner ambiguous';
+      banner.textContent = 'Multiple equally-valid pricing options were found. Pick one below.';
       out.appendChild(banner);
+
+      if (selectedCandidateIndex >= result.candidates.length) selectedCandidateIndex = 0;
+
+      result.candidates.forEach((candidate, i) => {
+        const card = document.createElement('div');
+        card.className = 'candidate-card' + (i === selectedCandidateIndex ? ' selected' : '');
+        card.innerHTML = '<h3>Option ' + (i + 1) + '</h3><div>' + candidateSummary(candidate) + '</div>';
+        card.addEventListener('click', () => { selectedCandidateIndex = i; refreshPricing(); });
+        out.appendChild(card);
+      });
+
+      const chosen = result.candidates[selectedCandidateIndex];
+      renderLineItems(out, chosen.lineItems);
+      renderTotals(out, chosen);
     } else if (result.lineItems.length === 0) {
       const banner = document.createElement('div');
       banner.className = 'status-banner ok';
@@ -361,9 +409,11 @@
       reasons.push('Shoot Date (must be valid yyyy/mm/dd)');
     }
     if (!inputs.rootFolder) reasons.push('Job Root Folder');
-    if (!latestPrice || latestPrice.status !== 'ok' || latestPrice.lineItems.length === 0) {
-      reasons.push('a valid, non-empty service selection');
-    }
+    const priceOk = latestPrice && (
+      (latestPrice.status === 'ok' && latestPrice.lineItems.length > 0) ||
+      (latestPrice.status === 'ambiguous' && latestPrice.candidates && latestPrice.candidates.length > 0)
+    );
+    if (!priceOk) reasons.push('a valid, non-empty service selection');
     // Photographer Name is intentionally NOT required here -- it's fine to
     // create the job without it and fill it in later (see pendingConfirmation).
     return reasons;
@@ -377,6 +427,9 @@
 
   async function createJob() {
     const inputs = readJobInputs();
+    if (latestPrice && latestPrice.status === 'ambiguous') {
+      inputs.chosenCandidateIndex = selectedCandidateIndex;
+    }
     el('create-result').innerHTML = '';
     el('create-btn').disabled = true;
 
@@ -408,23 +461,67 @@
     }
   }
 
-  document.querySelectorAll('input[name="propertyType"], input[name="photography"]').forEach((i) => i.addEventListener('change', refreshPricing));
-  addonIds.forEach((id) => el('addon-' + id).addEventListener('change', refreshPricing));
+  function resetCandidateAndRefresh() { selectedCandidateIndex = 0; refreshPricing(); }
+
+  document.querySelectorAll('input[name="propertyType"], input[name="photography"]').forEach((i) => i.addEventListener('change', resetCandidateAndRefresh));
+  addonIds.forEach((id) => el('addon-' + id).addEventListener('change', resetCandidateAndRefresh));
   el('addon-virtual_staging').addEventListener('change', function () {
     el('virtual_staging_qty').disabled = !this.checked;
-    refreshPricing();
+    resetCandidateAndRefresh();
   });
+  // Quantity and manual adjustment do NOT reset the chosen candidate --
+  // same as pricing/tester.html (they don't change which packages match).
   el('virtual_staging_qty').addEventListener('input', refreshPricing);
+  el('manual-adjustment').addEventListener('input', refreshPricing);
 
-  ['clientName', 'photographerName', 'address', 'shootDate', 'rootFolder'].forEach((id) => {
+  ['clientName', 'photographerName', 'address', 'shootDate'].forEach((id) => {
     el(id).addEventListener('input', () => { updateCreateButtonState(); refreshFolderPreview(); });
   });
 
+  // Persisting the Job Root Folder as the on-disk default is opt-in via
+  // the "Save as default path" checkbox -- typing or Browse-picking a
+  // path always affects THIS job (readJobInputs() always sends the
+  // field's current value), but only updates the saved default when the
+  // box is checked. This lets a one-off path not disturb your usual default.
+  async function persistRootFolderIfChecked() {
+    if (!el('save-default-folder').checked) return;
+    const value = el('rootFolder').value.trim();
+    if (!value) return;
+    await fetch('/api/root-folder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rootFolder: value }) });
+  }
+
+  el('rootFolder').addEventListener('input', () => {
+    updateCreateButtonState();
+    refreshFolderPreview();
+    persistRootFolderIfChecked();
+  });
+
+  el('save-default-folder').addEventListener('change', persistRootFolderIfChecked);
+
   el('create-btn').addEventListener('click', createJob);
 
-  // Load the (in-memory, not-yet-persisted) root folder default from the server.
+  el('browse-btn').addEventListener('click', async () => {
+    el('browse-btn').disabled = true;
+    try {
+      const res = await fetch('/api/pick-folder', { method: 'POST' });
+      const result = await res.json();
+      if (!result.cancelled && result.path) {
+        el('rootFolder').value = result.path;
+        updateCreateButtonState();
+        refreshFolderPreview();
+        persistRootFolderIfChecked();
+      }
+    } finally {
+      el('browse-btn').disabled = false;
+    }
+  });
+
+  // Load the saved default Job Root Folder from disk. The loaded value IS
+  // the current saved default, so the checkbox starts checked to reflect
+  // that accurately.
   fetch('/api/root-folder').then((r) => r.json()).then((data) => {
     el('rootFolder').value = data.rootFolder;
+    el('save-default-folder').checked = true;
     refreshFolderPreview();
     updateCreateButtonState();
   });

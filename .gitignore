@@ -3,5 +3,6 @@
 
 !/pricing/
 
-# Job Generator scratch output from the try-it.js test harness
+# Job Generator: local-only state, not part of the codebase
 /job-generator/test-output/
+/job-generator/.config.json

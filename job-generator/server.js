@@ -8,17 +8,12 @@
 //   folder-builder.js   -- folder structure
 //   sanitize.js          -- safe folder names
 //   job-files.js         -- Job Info.txt + job.json
-//
-// STUBBED (deliberately not built yet, per user request to see the UI
-// first): Job Root Folder is only remembered in-memory for this running
-// server process -- it resets to the default every time you restart the
-// server. Persisting it to disk across restarts is module 6, still to do.
-// The native "Browse" folder-picker dialog is also stubbed -- for now you
-// paste/type the path into the text field.
+//   config-store.js      -- Job Root Folder persistence (module 6)
 
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { execFile } = require('child_process');
 
 const sanitize = require('./sanitize.js');
 const validate = require('./validate.js');
@@ -26,9 +21,11 @@ const idGenerator = require('./id-generator.js');
 const folderBuilder = require('./folder-builder.js');
 const pricingAdapter = require('./pricing-adapter.js');
 const jobFiles = require('./job-files.js');
+const configStore = require('./config-store.js');
 
 const PORT = 4173;
 const PUBLIC_DIR = path.join(__dirname, 'public');
+const DEFAULT_ROOT_FOLDER = path.join(__dirname, 'test-output');
 
 // Modules in job-generator/ that also need to run client-side (browser
 // <script> tag), so validation/formatting logic has exactly one
@@ -39,8 +36,33 @@ const SHARED_FILES = {
   '/shared/validate.js': path.join(__dirname, 'validate.js'),
 };
 
-// ---- module 6 stub: in-memory only, resets on restart ----
-let rootFolder = path.join(__dirname, 'test-output');
+// In-memory for this process, but backed by config-store.js on disk --
+// loaded once at startup, and every assignment below is paired with a
+// setRootFolder() call so it survives quitting and reopening the launcher.
+let rootFolder = configStore.getRootFolder(DEFAULT_ROOT_FOLDER);
+
+function setAndPersistRootFolder(newRootFolder) {
+  rootFolder = newRootFolder;
+  configStore.setRootFolder(newRootFolder);
+}
+
+// Native macOS "choose folder" dialog via AppleScript -- no dependencies,
+// same spirit as the .command launcher already used in this project.
+// Resolves { cancelled: true } if the user dismisses the dialog rather
+// than rejecting, since that's a normal outcome, not an error.
+function pickFolderNative() {
+  return new Promise((resolve) => {
+    if (process.platform === 'darwin') {
+      execFile('osascript', ['-e', 'POSIX path of (choose folder with prompt "Select Job Root Folder:")'], (err, stdout) => {
+        if (err) return resolve({ cancelled: true });
+        resolve({ cancelled: false, path: stdout.trim() });
+      });
+      return;
+    }
+
+    resolve({ cancelled: true, unsupported: true });
+  });
+}
 
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
@@ -85,7 +107,7 @@ function serveStatic(req, res, urlPath) {
 async function handleApi(req, res, urlPath) {
   try {
     if (urlPath === '/api/root-folder' && req.method === 'GET') {
-      return sendJson(res, 200, { rootFolder, persisted: false });
+      return sendJson(res, 200, { rootFolder, persisted: true });
     }
 
     if (urlPath === '/api/root-folder' && req.method === 'POST') {
@@ -93,8 +115,16 @@ async function handleApi(req, res, urlPath) {
       if (!body.rootFolder || typeof body.rootFolder !== 'string') {
         return sendJson(res, 400, { error: 'rootFolder (string) is required.' });
       }
-      rootFolder = body.rootFolder;
-      return sendJson(res, 200, { rootFolder, persisted: false });
+      setAndPersistRootFolder(body.rootFolder);
+      return sendJson(res, 200, { rootFolder, persisted: true });
+    }
+
+    if (urlPath === '/api/pick-folder' && req.method === 'POST') {
+      // Just returns the picked path -- does NOT persist it. Saving as the
+      // default is opt-in via the UI's "Save as default path" checkbox,
+      // which calls POST /api/root-folder itself when checked.
+      const result = await pickFolderNative();
+      return sendJson(res, 200, result);
     }
 
     if (urlPath === '/api/price' && req.method === 'POST') {
@@ -105,33 +135,58 @@ async function handleApi(req, res, urlPath) {
 
     if (urlPath === '/api/plan' && req.method === 'POST') {
       const body = await readJsonBody(req);
+      // The client's Job Root Folder field is authoritative for its own
+      // requests (whether typed or set via Browse) -- the in-memory
+      // `rootFolder` is only the fallback default for a blank field.
+      const effectiveRootFolder = body.rootFolder || rootFolder;
       const folderName = sanitize.buildJobFolderName({
         shootDate: body.shootDate, address: body.address, clientName: body.clientName,
       });
       const componentFolders = folderBuilder.getComponentFolders(body.order || {});
-      const jobIdPreview = idGenerator.getNextJobId(rootFolder);
-      return sendJson(res, 200, { folderName, componentFolders, jobIdPreview, rootFolder });
+      const jobIdPreview = idGenerator.getNextJobId(effectiveRootFolder);
+      return sendJson(res, 200, { folderName, componentFolders, jobIdPreview, rootFolder: effectiveRootFolder });
     }
 
     if (urlPath === '/api/create-job' && req.method === 'POST') {
       const body = await readJsonBody(req);
       const order = body.order || {};
+      const effectiveRootFolder = body.rootFolder || rootFolder;
 
+      if (!effectiveRootFolder) {
+        return sendJson(res, 400, { error: 'Job Root Folder is required.' });
+      }
       if (!validate.isValidShootDate(body.shootDate)) {
         return sendJson(res, 400, { error: 'Shoot Date must be a valid calendar date in yyyy/mm/dd format (e.g. 2026/08/27).' });
       }
 
       // Recompute price server-side -- never trust a client-supplied total.
-      const price = pricingAdapter.calculatePrice(order);
-      if (price.status !== 'ok') {
-        return sendJson(res, 400, { error: 'Pricing is not valid/final for this selection.', price });
+      // Same algorithm as pricing/tester.html: 'ok' is used as-is; when
+      // 'ambiguous', the client already showed the same candidate cards
+      // tester.html shows and picked one by index -- we just re-select
+      // that exact candidate here rather than guessing server-side.
+      const rawPrice = pricingAdapter.calculatePrice(order);
+      let price;
+      if (rawPrice.status === 'ok') {
+        price = rawPrice;
+      } else if (rawPrice.status === 'ambiguous') {
+        const idx = Number(body.chosenCandidateIndex);
+        if (!Number.isInteger(idx) || idx < 0 || idx >= rawPrice.candidates.length) {
+          return sendJson(res, 400, { error: 'Ambiguous pricing -- chosenCandidateIndex is required.', price: rawPrice });
+        }
+        price = Object.assign({ status: 'ok' }, rawPrice.candidates[idx]);
+      } else {
+        return sendJson(res, 400, { error: 'Pricing is not valid for this selection.', price: rawPrice });
       }
 
-      const jobId = idGenerator.getNextJobId(rootFolder);
+      const jobId = idGenerator.getNextJobId(effectiveRootFolder);
       const folderName = sanitize.buildJobFolderName({
         shootDate: body.shootDate, address: body.address, clientName: body.clientName,
       });
-      const jobFolderPath = path.join(rootFolder, folderName);
+      const jobFolderPath = path.join(effectiveRootFolder, folderName);
+      // Deliberately does NOT persist effectiveRootFolder as the default --
+      // that's opt-in via the UI's "Save as default path" checkbox
+      // (POST /api/root-folder), so a one-off job elsewhere never
+      // silently changes what the next job defaults to.
       const componentFolders = folderBuilder.createJobFolders(jobFolderPath, order).slice(1)
         .map((abs) => path.relative(jobFolderPath, abs));
 
@@ -180,5 +235,5 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log('FranVision Job Generator running at http://localhost:' + PORT);
-  console.log('Job Root Folder (this session only, not yet remembered across restarts): ' + rootFolder);
+  console.log('Job Root Folder (remembered from ' + configStore.DEFAULT_CONFIG_PATH + '): ' + rootFolder);
 });
