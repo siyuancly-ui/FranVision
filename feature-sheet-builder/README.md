@@ -27,19 +27,24 @@ creates one and rewrites the URL.
 
 Supabase schema (run once in the SQL Editor): see `NOTES.md`.
 
-## Deploy the frontend (Cloudflare Pages)
+## Deploy the frontend (Cloudflare)
 
-1. Cloudflare dashboard -> Workers & Pages -> Create -> Pages -> Connect to Git ->
-   pick this repo.
-2. Build settings:
-   - **Production branch**: `feature-sheet-builder` (or `main` after merge)
-   - **Framework preset**: None
+Cloudflare merged Pages into Workers, so this ships as an **assets-only
+Worker**. Config is `wrangler.jsonc` at the repo root.
+
+1. Cloudflare dashboard -> Compute -> Create app -> Import repository -> this repo.
+2. Settings:
    - **Build command**: `node feature-sheet-builder/prepare-static.js`
-   - **Build output directory**: `feature-sheet-builder/public`
-3. Save and Deploy -> `https://<name>.pages.dev`.
+   - **Deploy command**: `npx wrangler deploy`  (the default)
+   - Production branch: `main`
+3. Deploy -> `https://feature-sheet-generator.<subdomain>.workers.dev`
 
 `prepare-static.js` copies `/shared/*` and `/template-assets/*` (served
-dynamically by `server.js` in dev) into `public/` so it works as pure static.
+dynamically by `server.js` in dev) into `public/`; `wrangler.jsonc` points
+`assets.directory` at `feature-sheet-builder/public`.
+
+Local deploy from a machine with wrangler installed: `npx wrangler deploy`
+from the repo root (after `node feature-sheet-builder/prepare-static.js`).
 
 ## Layout
 

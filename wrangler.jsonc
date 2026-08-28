@@ -1,0 +1,21 @@
+/**
+ * Cloudflare deploy config for the Feature Sheet Builder (static site).
+ *
+ * Cloudflare merged Pages into Workers; a static site now ships as an
+ * "assets-only" Worker. `npx wrangler deploy` reads this file from the repo
+ * root and uploads `feature-sheet-builder/public/` as the site.
+ *
+ * Cloudflare project (Workers & Pages) build settings:
+ *   Build command:   node feature-sheet-builder/prepare-static.js
+ *   Deploy command:  npx wrangler deploy      (the default)
+ *
+ * `prepare-static.js` regenerates feature-sheet-builder/public/shared/ and
+ * .../template-assets/ (git-ignored) before deploy.
+ */
+{
+  "name": "feature-sheet-generator",
+  "compatibility_date": "2025-06-01",
+  "assets": {
+    "directory": "./feature-sheet-builder/public"
+  }
+}
