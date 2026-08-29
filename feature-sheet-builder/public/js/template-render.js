@@ -172,8 +172,9 @@
       el('span', { class: 'fsb-slot-move-grip', text: '⠿' }),
       el('span', { class: 'fsb-slot-move-txt', text: 'Move' }),
     ]));
-    // Crop + remove controls, top-right.
+    // Change / crop / remove controls, top-right.
     frag.appendChild(el('div', { class: 'fsb-slot-tools' }, [
+      el('button', { 'data-action': 'change', title: 'Change photo 换图', text: '⇄' }),
       el('button', { 'data-action': 'zoom-out', title: 'Zoom out', text: '−' }),
       el('button', { 'data-action': 'zoom-in', title: 'Zoom in', text: '+' }),
       el('button', { 'data-action': 'reset', title: 'Reset framing', text: '↺' }),
@@ -202,8 +203,8 @@
       // the template frame showing through.
       if (interactive) {
         node.appendChild(el('div', { class: 'fsb-slot-hint' }, [
-          el('div', { class: 'fsb-slot-hint-ico', text: '⬆' }),
-          el('div', { class: 'fsb-slot-hint-label', text: slot.label || 'Photo' }),
+          el('div', { class: 'fsb-slot-hint-ico', text: '＋' }),
+          el('div', { class: 'fsb-slot-hint-label', text: 'Click to add a photo\n点击选择照片' }),
         ]));
       }
     }

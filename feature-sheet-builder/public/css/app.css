@@ -70,8 +70,9 @@ h2, h3 { margin: 0 0 8px; }
   flex: none; background: var(--panel); overflow-y: auto;
   border-right: 1px solid var(--line);
 }
-.fsb-panel--library { width: 260px; }
-.fsb-panel--form { width: 320px; border-right: none; border-left: 1px solid var(--line); padding: 14px; }
+/* Panels scale with the viewport (fixed px looked cramped on wide monitors). */
+.fsb-panel--library { width: clamp(216px, 17vw, 320px); }
+.fsb-panel--form { width: clamp(300px, 22vw, 420px); border-right: none; border-left: 1px solid var(--line); padding: 14px; }
 .fsb-center { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
 .fsb-pagenav {
@@ -83,9 +84,17 @@ h2, h3 { margin: 0 0 8px; }
   padding: 4px 12px; font-size: 12px; color: var(--ink-soft);
 }
 .fsb-pagenav-btn:hover { color: var(--ink); }
+.fsb-pagenav-sp { flex: 1; }
+.fsb-zoom-btn {
+  border: 1px solid var(--line); background: #fff; border-radius: 6px;
+  min-width: 28px; padding: 4px 8px; font-size: 12px; color: var(--ink-soft);
+}
+.fsb-zoom-btn:hover { color: var(--ink); }
+.fsb-zoom-fit { min-width: 46px; font-variant-numeric: tabular-nums; }
 
 .fsb-stage-wrap { flex: 1; min-height: 0; overflow: auto; }
-.fsb-stage { padding: 22px; display: flex; flex-direction: column; align-items: center; gap: 26px; }
+/* Centred, width-capped so ultrawide screens get even margins, not sprawl. */
+.fsb-stage { padding: 22px; display: flex; flex-direction: column; align-items: center; gap: 26px; max-width: 1180px; margin: 0 auto; }
 .fsb-stage-page { display: flex; flex-direction: column; gap: 6px; }
 .fsb-stage-page-label, .fsb-modal-page-label { font-size: 11px; letter-spacing: .12em; color: var(--ink-soft); text-transform: uppercase; }
 .fsb-stage--locked .fsb-slot { pointer-events: none; }
@@ -135,8 +144,8 @@ h2, h3 { margin: 0 0 8px; }
   align-items: center; justify-content: center; gap: 4px; text-align: center;
   color: rgba(255,255,255,.82); padding: 4px; pointer-events: none;
 }
-.fsb-slot-hint-ico { font-size: 20px; opacity: .85; }
-.fsb-slot-hint-label { font-size: 10px; line-height: 1.25; letter-spacing: .04em; font-weight: 600; }
+.fsb-slot-hint-ico { font-size: 22px; opacity: .9; font-weight: 300; }
+.fsb-slot-hint-label { font-size: 10px; line-height: 1.3; letter-spacing: .03em; font-weight: 600; white-space: pre-line; }
 
 /* Move handle -- slot<->slot drag */
 .fsb-slot-move {
@@ -152,6 +161,7 @@ h2, h3 { margin: 0 0 8px; }
 
 .fsb-slot-tools {
   position: absolute; top: 4px; right: 4px; display: flex; gap: 3px;
+  flex-wrap: wrap; justify-content: flex-end; max-width: calc(100% - 8px);
   opacity: 0; transition: opacity .12s; z-index: 3;
 }
 .fsb-slot--filled:hover .fsb-slot-tools,
@@ -184,10 +194,10 @@ h2, h3 { margin: 0 0 8px; }
 
 /* ---- Photo library --------------------------------------------- */
 .fsb-lib-head { position: sticky; top: 0; background: var(--panel); padding: 12px; border-bottom: 1px solid var(--line); z-index: 2; }
-.fsb-lib-title { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; margin-bottom: 10px; }
+.fsb-lib-title { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; margin-bottom: 10px; white-space: nowrap; }
 .fsb-lib-count { font-weight: 400; color: var(--ink-soft); background: #eef1f5; border-radius: 999px; padding: 1px 8px; font-size: 12px; }
-.fsb-upload-btn { display: block; text-align: center; }
-.fsb-lib-drop { margin: 10px 12px; padding: 10px; border: 1px dashed var(--line); border-radius: 8px; text-align: center; color: var(--ink-soft); font-size: 12px; }
+.fsb-upload-btn { display: block; width: 100%; text-align: center; }
+.fsb-lib-drop { margin: 10px 0 0; padding: 8px; border: 1px dashed var(--line); border-radius: 8px; text-align: center; color: var(--ink-soft); font-size: 11px; }
 .fsb-lib--dragging { background: #f0f6ff; }
 .fsb-lib--dragging .fsb-lib-drop { border-color: var(--accent); color: var(--accent); }
 
@@ -244,8 +254,31 @@ body.fsb-modal-open { overflow: hidden; }
 .fsb-modal-bar .fsb-btn:hover { background: rgba(255,255,255,.24); }
 .fsb-modal-scroll { flex: 1; overflow: auto; padding: 24px; }
 .fsb-modal-pages { display: flex; flex-direction: column; align-items: center; gap: 28px; }
-.fsb-modal-page { display: flex; flex-direction: column; gap: 6px; }
+.fsb-modal-page { display: flex; flex-direction: column; gap: 6px; position: relative; }
 .fsb-modal-page-label { color: #aeb6c2; }
+.fsb-modal-title { white-space: normal; }
+
+/* Preview watermark -- diagonal tiled text, over the whole page */
+.fsb-preview-wm {
+  position: absolute; inset: 0; z-index: 50; pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='340' height='190'%3E%3Ctext x='0' y='110' transform='rotate(-24 0 110)' font-family='Arial, sans-serif' font-size='26' font-weight='700' fill='%23ffffff' fill-opacity='0.16'%3EPREVIEW · 预览 · NOT FOR PRINT%3C/text%3E%3C/svg%3E");
+  background-repeat: repeat;
+}
+
+/* Photo picker modal */
+.fsb-picker .fsb-modal-scroll { padding: 18px; }
+.fsb-picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.fsb-picker-empty { grid-column: 1/-1; color: #b7bfca; text-align: center; padding: 40px 12px; line-height: 1.6; }
+.fsb-picker-tile {
+  position: relative; aspect-ratio: 4/3; border-radius: 8px; overflow: hidden;
+  background: #1f242c; border: 2px solid transparent; cursor: pointer;
+}
+.fsb-picker-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.fsb-picker-tile:hover { border-color: #63c8ff; }
+.fsb-picker-tile.is-current { border-color: var(--ok); }
+.fsb-picker-tile.is-used::after { content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 0 2px var(--ok); opacity: .5; }
+.fsb-picker-badge { position: absolute; left: 6px; bottom: 6px; background: var(--ok); color: #fff; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 999px; }
+.fsb-picker-cur { position: absolute; right: 6px; top: 6px; background: var(--ok); color: #fff; width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; }
 
 /* ---- Busy + toasts ------------------------------------------ */
 .fsb-busy { position: fixed; inset: 0; z-index: 1100; background: rgba(20,24,32,.35); display: none; align-items: center; justify-content: center; }

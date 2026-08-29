@@ -1,7 +1,9 @@
 /*
- * preview.js -- full-size, read-only preview of both pages.
- * Same renderer as the editor and PDF export, so it is an accurate proof
- * of the final Feature Sheet (photos, crops, property + agent info, layout).
+ * preview.js -- read-only proof of the final Feature Sheet.
+ * Same renderer as the editor, at MEDIUM resolution and with a diagonal
+ * watermark: enough to check photos / crops / text / layout, deliberately
+ * not good enough to screenshot and print. The clean high-res output only
+ * goes to the studio via Confirm & Submit.
  *
  * FSB.preview.open(app)
  */
@@ -12,13 +14,16 @@
   var render = window.FSB.render;
   var T = window.FSB_TEMPLATE;
 
+  // Cap the rendered page width -> ~medium res (well below print quality).
+  var MAX_PREVIEW_PAGE_PX = 900;
+
   function open(app) {
     var pageCount = T.page.count;
     var overlay = el('div', { class: 'fsb-modal' });
     var bar = el('div', { class: 'fsb-modal-bar' }, [
-      el('span', { class: 'fsb-modal-title', text: 'Preview — final Feature Sheet' }),
+      el('span', { class: 'fsb-modal-title', text: 'Preview 预览 — proof only, not for print / 仅供核对，不可用于打印' }),
       el('span', { class: 'fsb-modal-spacer' }),
-      el('button', { class: 'fsb-btn fsb-btn--ghost', text: 'Close (Esc)', onclick: close }),
+      el('button', { class: 'fsb-btn fsb-btn--ghost', text: 'Close 关闭 (Esc)', onclick: close }),
     ]);
     var scroll = el('div', { class: 'fsb-modal-scroll' });
     var pages = el('div', { class: 'fsb-modal-pages' });
@@ -31,11 +36,13 @@
     function draw() {
       pages.innerHTML = '';
       var avail = scroll.clientWidth - 48;
-      var scale = Math.min(avail / T.page.widthPt, 1600 / T.page.widthPt);
+      var scale = Math.min(avail / T.page.widthPt, MAX_PREVIEW_PAGE_PX / T.page.widthPt);
       for (var p = 1; p <= pageCount; p++) {
         var wrap = el('div', { class: 'fsb-modal-page' });
         wrap.appendChild(el('div', { class: 'fsb-modal-page-label', text: 'Page ' + p }));
-        wrap.appendChild(render.renderPage(p, app.project, { scale: scale, interactive: false, placeholders: false }));
+        var pageEl = render.renderPage(p, app.project, { scale: scale, interactive: false, placeholders: false });
+        pageEl.appendChild(el('div', { class: 'fsb-preview-wm' })); // watermark overlay (CSS)
+        wrap.appendChild(pageEl);
         pages.appendChild(wrap);
       }
     }

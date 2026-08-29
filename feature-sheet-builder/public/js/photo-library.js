@@ -25,23 +25,22 @@
     // (e.g. a Wix gallery) shows just the scrollable grid.
     var canUpload = !!(src.supportsUpload && src.supportsUpload());
 
-    var titleKids = [
-      el('span', { text: 'Photo Library' }),
-      el('span', { class: 'fsb-lib-count', id: 'fsb-lib-count', text: '0' }),
-    ];
+    var head = el('div', { class: 'fsb-lib-head' }, [
+      el('div', { class: 'fsb-lib-title' }, [
+        el('span', { text: 'Photo Library' }),
+        el('span', { class: 'fsb-lib-count', id: 'fsb-lib-count', text: '0' }),
+      ]),
+    ]);
     if (canUpload) {
-      titleKids.push((function () {
-        var label = el('label', { class: 'fsb-btn fsb-btn--primary fsb-upload-btn' }, [document.createTextNode('Upload photos')]);
-        var input = el('input', { type: 'file', accept: 'image/jpeg,image/png', multiple: 'multiple', style: { display: 'none' } });
-        input.addEventListener('change', function () { handleFiles(input.files); input.value = ''; });
-        label.appendChild(input);
-        return label;
-      })());
+      var label = el('label', { class: 'fsb-btn fsb-btn--primary fsb-upload-btn' }, [document.createTextNode('Upload photos 上传照片')]);
+      var input = el('input', { type: 'file', accept: 'image/jpeg,image/png', multiple: 'multiple', style: { display: 'none' } });
+      input.addEventListener('change', function () { handleFiles(input.files); input.value = ''; });
+      label.appendChild(input);
+      head.appendChild(label);
+      head.appendChild(el('div', { class: 'fsb-lib-drop', text: 'or drop JPG / PNG here' }));
     }
-    var head = el('div', { class: 'fsb-lib-head' }, [el('div', { class: 'fsb-lib-title' }, titleKids)]);
     var grid = el('div', { class: 'fsb-lib-grid', id: 'fsb-lib-grid' });
     root.appendChild(head);
-    if (canUpload) root.appendChild(el('div', { class: 'fsb-lib-drop', text: 'Drop JPG / PNG here' }));
     root.appendChild(grid);
 
     // ---- drag files onto the library (upload sources only) ----------
@@ -121,22 +120,16 @@
         var used = app.slotsUsingPhoto(p.id);
         var img = el('img', { class: 'fsb-thumb-img', draggable: 'false', loading: 'lazy', alt: p.filename });
         img.src = src.thumbUrl(project, p.id);
+        // The library is browse + upload + delete only. Photos go into
+        // slots by clicking a slot on the sheet (photo-picker modal).
         var tile = el('div', {
           class: 'fsb-thumb' + (used ? ' fsb-thumb--used' : ''),
-          draggable: 'true', title: p.filename, 'data-photo-id': p.id,
+          title: p.filename + (used ? ('  ·  used ×' + used) : ''), 'data-photo-id': p.id,
         }, [
           img,
           used ? el('span', { class: 'fsb-thumb-badge', text: '×' + used }) : null,
           canUpload ? el('button', { class: 'fsb-thumb-del', 'data-del': p.id, title: 'Delete photo', text: '✕' }) : null,
         ]);
-        tile.addEventListener('dragstart', function (e) {
-          if (app.isReadOnly()) { e.preventDefault(); return; }
-          e.dataTransfer.effectAllowed = 'copy';
-          e.dataTransfer.setData(MIME_PHOTO, p.id);
-          try { e.dataTransfer.setDragImage(img, 30, 30); } catch (_e) {}
-          tile.classList.add('fsb-thumb--drag');
-        });
-        tile.addEventListener('dragend', function () { tile.classList.remove('fsb-thumb--drag'); });
         grid.appendChild(tile);
       });
     }

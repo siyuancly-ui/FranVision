@@ -69,13 +69,15 @@
     });
     stage.addEventListener('dragend', clearDragState);
 
+    // Only slot<->slot moves are dragged now (via the Move handle);
+    // photos get INTO slots by clicking the slot -> picker modal.
     stage.addEventListener('dragover', function (e) {
       var slotEl = e.target.closest('.fsb-slot');
       if (!slotEl || app.isReadOnly()) return;
       var t = e.dataTransfer.types || [];
-      if ([].indexOf.call(t, MIME_PHOTO) < 0 && [].indexOf.call(t, MIME_SLOT) < 0) return;
+      if ([].indexOf.call(t, MIME_SLOT) < 0) return;
       e.preventDefault();
-      e.dataTransfer.dropEffect = [].indexOf.call(t, MIME_SLOT) >= 0 ? 'move' : 'copy';
+      e.dataTransfer.dropEffect = 'move';
       slotEl.classList.add('fsb-slot--drop');
     });
     stage.addEventListener('dragleave', function (e) {
@@ -88,16 +90,25 @@
       e.preventDefault();
       slotEl.classList.remove('fsb-slot--drop');
       var target = slotRef(slotEl);
-
       var slotData = e.dataTransfer.getData(MIME_SLOT);
       if (slotData) {
-        var src = JSON.parse(slotData);
-        if (!(src.page === target.page && src.slotId === target.slotId)) app.swapSlots(src, target);
-      } else {
-        var photoId = e.dataTransfer.getData(MIME_PHOTO);
-        if (photoId) app.assignPhotoToSlot(target, photoId);
+        var s = JSON.parse(slotData);
+        if (!(s.page === target.page && s.slotId === target.slotId)) app.swapSlots(s, target);
       }
       clearDragState(); // in case the re-render swallows the dragend
+    });
+
+    // ---- click a slot -> photo picker -----------------------------
+    // Empty slot: click anywhere. Filled slot: the "change" toolbar button
+    // (clicking the image itself is reserved for panning).
+    stage.addEventListener('click', function (e) {
+      if (app.isReadOnly()) return;
+      var changeBtn = e.target.closest('.fsb-slot-tools button[data-action="change"]');
+      var emptySlot = e.target.closest('.fsb-slot--empty');
+      var slotEl = changeBtn ? changeBtn.closest('.fsb-slot') : emptySlot;
+      if (slotEl && (changeBtn || emptySlot)) {
+        window.FSB.photoPicker.open(app, slotRef(slotEl));
+      }
     });
 
     // ---- toolbar buttons ------------------------------------------
@@ -107,6 +118,7 @@
       var slotEl = btn.closest('.fsb-slot');
       var ref = slotRef(slotEl);
       var action = btn.getAttribute('data-action');
+      if (action === 'change') return; // handled above
       if (action === 'clear') { app.clearSlot(ref); return; }
       if (action === 'reset') { app.mutateSlot(ref, { positionX: 0, positionY: 0, scale: 1 }); return; }
       if (action === 'zoom-in' || action === 'zoom-out') {

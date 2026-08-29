@@ -131,21 +131,45 @@
   };
 
   // ---- confirm ------------------------------------------------
+  // Confirm = the agent's final sign-off: lock the design, then submit it
+  // for printing (emails the finished sheet to the studio, when the submit
+  // module is wired up).
   app.confirmDesign = function () {
-    util.confirmDialog('Confirm this design? It will be locked — you can un-confirm later to keep editing.', { okText: 'Confirm Design' })
-      .then(function (ok) {
-        if (!ok) return;
-        app.setBusy('Confirming…');
-        return app.save().then(function () { return store.confirmProject(app.projectId, true); })
-          .then(function (updated) { app.setProject(updated); util.toast('Design confirmed.'); })
-          .catch(function (err) { util.toast('Confirm failed: ' + err.message, 'error'); })
-          .then(function () { app.setBusy(null); });
-      });
+    util.confirmDialog(
+      'Submit this design for printing?\n\nOnce submitted it is locked. You can still re-open it to make changes and submit again.\n\n' +
+      '确认将当前版本提交打印？\n\n提交后会锁定。之后仍可重新打开修改并再次提交。',
+      { okText: 'Confirm & Submit  确认提交', cancelText: 'Not yet  暂不' }
+    ).then(function (ok) {
+      if (!ok) return;
+      app.setBusy('Submitting… 提交中…');
+      return app.save()
+        .then(function () {
+          // Email + PDF handoff. No-op until FSB.submit is wired (needs the
+          // Resend key + edge function); the lock/timestamp still happens.
+          if (window.FSB.submit && window.FSB.submit.send) return window.FSB.submit.send(app);
+          return null;
+        })
+        .then(function () { return store.confirmProject(app.projectId, true); })
+        .then(function (updated) {
+          app.setProject(updated);
+          util.toast('Submitted for printing 已提交打印');
+        })
+        .catch(function (err) { util.toast('Submit failed 提交失败: ' + err.message, 'error'); })
+        .then(function () { app.setBusy(null); });
+    });
   };
+
   app.unconfirm = function () {
-    store.confirmProject(app.projectId, false)
-      .then(function (updated) { app.setProject(updated); util.toast('Un-confirmed — editing enabled.'); })
-      .catch(function (err) { util.toast('Failed: ' + err.message, 'error'); });
+    util.confirmDialog(
+      'Re-open for editing? You will need to Confirm & Submit again to send the updated version.\n\n' +
+      '重新打开编辑？修改后需要再次「确认提交」才会发送新版本。',
+      { okText: 'Re-open  重新打开', cancelText: 'Cancel  取消' }
+    ).then(function (ok) {
+      if (!ok) return;
+      store.confirmProject(app.projectId, false)
+        .then(function (updated) { app.setProject(updated); util.toast('Re-opened for editing 已解锁'); })
+        .catch(function (err) { util.toast('Failed: ' + err.message, 'error'); });
+    });
   };
 
   // ---- busy overlay --------------------------------------------
@@ -174,10 +198,9 @@
       ]),
       el('div', { class: 'fsb-topbar-actions' }, [
         el('button', { class: 'fsb-btn fsb-btn--ghost', id: 'fsb-toggle-form', text: 'Info' }),
-        el('button', { class: 'fsb-btn', id: 'fsb-btn-preview', text: 'Preview' }),
-        el('button', { class: 'fsb-btn', id: 'fsb-btn-export', text: 'Export PDF' }),
-        el('button', { class: 'fsb-btn fsb-btn--primary', id: 'fsb-btn-confirm', text: 'Confirm Design' }),
-        el('button', { class: 'fsb-btn fsb-btn--save', id: 'fsb-btn-save', text: 'Save' }),
+        el('button', { class: 'fsb-btn', id: 'fsb-btn-preview', text: 'Preview 预览' }),
+        el('button', { class: 'fsb-btn fsb-btn--save', id: 'fsb-btn-save', text: 'Save 保存' }),
+        el('button', { class: 'fsb-btn fsb-btn--primary', id: 'fsb-btn-confirm', text: 'Confirm & Submit 确认提交' }),
       ]),
     ]);
 
@@ -201,8 +224,7 @@
     rootApp.appendChild(toasts);
 
     document.getElementById('fsb-btn-preview').addEventListener('click', function () { window.FSB.preview.open(app); });
-    document.getElementById('fsb-btn-export').addEventListener('click', function () { window.FSB.exportPdf.run(app); });
-    document.getElementById('fsb-btn-save').addEventListener('click', function () { app.save().then(function () { util.toast('Saved.'); }); });
+    document.getElementById('fsb-btn-save').addEventListener('click', function () { app.save().then(function () { util.toast('Saved 已保存'); }); });
     document.getElementById('fsb-btn-confirm').addEventListener('click', function () {
       if (app.isReadOnly()) app.unconfirm(); else app.confirmDesign();
     });
@@ -225,12 +247,27 @@
         }));
       })(p);
     }
+    // Zoom control -- lets each agent size the working view to their screen,
+    // which is the real fix for "looks different on Windows/Mac/mobile".
+    nav.appendChild(el('span', { class: 'fsb-pagenav-sp' }));
+    nav.appendChild(el('button', { class: 'fsb-zoom-btn', text: '−', title: 'Zoom out', onclick: function () { stepZoom(-1); } }));
+    nav.appendChild(el('button', { class: 'fsb-zoom-btn fsb-zoom-fit', id: 'fsb-zoom-label', text: 'Fit', title: 'Fit to width', onclick: function () { app._userZoom = null; renderStage(); } }));
+    nav.appendChild(el('button', { class: 'fsb-zoom-btn', text: '+', title: 'Zoom in', onclick: function () { stepZoom(1); } }));
+  }
+
+  function stepZoom(dir) {
+    var cur = app._userZoom || app._scale || 0.6;
+    app._userZoom = Math.max(0.3, Math.min(1.3, Math.round((cur + dir * 0.1) * 100) / 100));
+    renderStage();
   }
 
   function computeScale() {
     var stage = document.getElementById('fsb-stage');
-    var w = stage.clientWidth || 700;
-    app._scale = Math.max(0.35, Math.min(w / T.page.widthPt, 0.95));
+    var w = (stage.clientWidth || 700) - 8;
+    var fit = Math.max(0.3, Math.min(w / T.page.widthPt, 1.0));
+    app._scale = app._userZoom ? app._userZoom : fit;
+    var lbl = document.getElementById('fsb-zoom-label');
+    if (lbl) lbl.textContent = app._userZoom ? (Math.round(app._userZoom * 100) + '%') : 'Fit';
   }
 
   function renderStage() {
@@ -264,13 +301,13 @@
     var btn = document.getElementById('fsb-btn-confirm');
     if (!badge || !btn) return;
     if (app.project && app.project.confirmed) {
-      badge.textContent = 'CONFIRMED · ' + util.formatDateTime(app.project.confirmedAt);
+      badge.textContent = 'SUBMITTED 已提交 · ' + util.formatDateTime(app.project.confirmedAt);
       badge.classList.add('show');
-      btn.textContent = 'Un-confirm';
+      btn.textContent = 'Re-open 重新打开';
       btn.classList.remove('fsb-btn--primary');
     } else {
       badge.classList.remove('show');
-      btn.textContent = 'Confirm Design';
+      btn.textContent = 'Confirm & Submit 确认提交';
       btn.classList.add('fsb-btn--primary');
     }
     document.getElementById('fsb-app').classList.toggle('is-confirmed', !!(app.project && app.project.confirmed));
