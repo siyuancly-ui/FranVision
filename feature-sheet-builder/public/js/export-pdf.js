@@ -7,7 +7,9 @@
  *
  * Libraries load from cdnjs in index.html: window.jspdf, window.htmlToImage.
  *
- * FSB.exportPdf.run(app)
+ * FSB.exportPdf.buildBlob(app)  -> Promise<Blob>   (used by submit.js)
+ * FSB.exportPdf.fileName(project)
+ * FSB.exportPdf.run(app)        -> save to disk (dev / debugging only)
  */
 (function () {
   'use strict';
@@ -64,14 +66,11 @@
     return (a ? base + ' - ' : '') + 'Feature Sheet.pdf';
   }
 
-  function run(app) {
+  // -> Promise<jsPDF>
+  function buildPdf(app) {
     if (!window.jspdf || !window.htmlToImage) {
-      toast('PDF libraries did not load (offline?).', 'error');
-      return Promise.reject(new Error('missing libs'));
+      return Promise.reject(new Error('PDF libraries did not load (offline?)'));
     }
-    var btnBusy = window.FSB.app && window.FSB.app.setBusy;
-    if (btnBusy) btnBusy('Exporting PDF…');
-
     var JsPDF = window.jspdf.jsPDF;
     var pdf = new JsPDF({ unit: 'pt', format: [T.page.widthPt, T.page.heightPt], orientation: 'landscape', compress: true });
     var pw = pdf.internal.pageSize.getWidth();
@@ -87,7 +86,17 @@
           });
       })(p);
     }
-    return chain.then(function () {
+    return chain.then(function () { return pdf; });
+  }
+
+  function buildBlob(app) {
+    return buildPdf(app).then(function (pdf) { return pdf.output('blob'); });
+  }
+
+  function run(app) {
+    var btnBusy = window.FSB.app && window.FSB.app.setBusy;
+    if (btnBusy) btnBusy('Exporting PDF…');
+    return buildPdf(app).then(function (pdf) {
       pdf.save(fileName(app.project));
       if (btnBusy) btnBusy(null);
       toast('PDF exported.');
@@ -98,5 +107,5 @@
     });
   }
 
-  window.FSB.exportPdf = { run: run, renderPageToImage: renderPageToImage };
+  window.FSB.exportPdf = { run: run, buildBlob: buildBlob, fileName: fileName, renderPageToImage: renderPageToImage };
 })();

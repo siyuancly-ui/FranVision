@@ -164,6 +164,10 @@
           thumb: meta.hasThumb ? ('/thumbs/' + id + '/' + meta.photoId) : ('/photos/' + id + '/' + meta.photoId),
         };
       },
+
+      // Submit-for-printing is a Supabase-only feature (edge function + email).
+      uploadSubmission: function () { return Promise.reject(new Error('submission upload needs the Supabase backend')); },
+      invokeFunction: function () { return Promise.reject(new Error('edge functions need the Supabase backend')); },
     };
   }
 
@@ -291,6 +295,22 @@
           full: pubUrl(origPath(id, meta)),
           thumb: meta.hasThumb ? pubUrl(thumbPath(id, meta)) : pubUrl(origPath(id, meta)),
         };
+      },
+
+      // ---- submit for printing --------------------------------------
+      uploadSubmission: function (projectId, blob) {
+        return sb.storage.from('submissions').upload(projectId + '.pdf', blob, {
+          contentType: 'application/pdf', upsert: true,
+        }).then(function (res) {
+          if (res.error) throw new Error(res.error.message);
+          return res.data;
+        });
+      },
+      invokeFunction: function (name, body) {
+        return sb.functions.invoke(name, { body: body }).then(function (res) {
+          if (res.error) throw new Error(res.error.message || 'function error');
+          return res.data;
+        });
       },
     };
   }

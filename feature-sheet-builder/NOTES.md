@@ -101,7 +101,39 @@ create policy "open photos insert" on storage.objects for insert to anon with ch
 create policy "open photos delete" on storage.objects for delete to anon using (bucket_id = 'photos');
 ```
 
-Behaviour / limits of the v1 backend:
+### Confirm & Submit -> email the studio
+
+"Confirm & Submit" builds the print PDF in the browser, uploads it to a
+private `submissions` bucket, then calls the `notify-submission` Edge
+Function which emails the studio (Resend). One-time setup:
+
+1. **Bucket + policies** -- SQL Editor:
+   ```sql
+   insert into storage.buckets (id, name, public)
+   values ('submissions', 'submissions', false) on conflict (id) do nothing;
+
+   drop policy if exists "submissions anon insert" on storage.objects;
+   drop policy if exists "submissions anon update" on storage.objects;
+   create policy "submissions anon insert" on storage.objects
+     for insert to anon with check (bucket_id = 'submissions');
+   create policy "submissions anon update" on storage.objects
+     for update to anon using (bucket_id = 'submissions') with check (bucket_id = 'submissions');
+   ```
+   (No select policy -- agents can't download each other's submissions;
+   the function makes short-lived signed links via the service role.)
+
+2. **Deploy the function** -- `supabase/functions/notify-submission/index.ts`.
+   CLI: `supabase functions deploy notify-submission`
+   or Dashboard -> Edge Functions -> Deploy a new function -> paste the file.
+
+3. **Secrets** -- Dashboard -> Edge Functions -> Secrets, add:
+   `RESEND_API_KEY` = your Resend key (secret; never committed).
+   Optional overrides: `SUBMIT_TO`, `SUBMIT_FROM`, `APP_BASE_URL`.
+
+Until this is set up, Confirm & Submit still saves + locks the design but
+the email step fails (agent sees an error and can retry).
+
+### Behaviour / limits of the v1 backend
 - **No auth** (matches the brief): anyone with the app URL can create/read/edit/
   delete any project. Project ids are random 12-hex so not guessable, and there's
   no sensitive data, but the RLS policies are deliberately wide open.
