@@ -298,8 +298,11 @@
       },
 
       // ---- submit for printing --------------------------------------
+      // Stored in the working `photos` bucket under a `submissions/` prefix
+      // (a dedicated private bucket refused anon writes on this project).
+      // The path is never surfaced in the UI.
       uploadSubmission: function (projectId, blob) {
-        return sb.storage.from('submissions').upload(projectId + '.pdf', blob, {
+        return sb.storage.from(BUCKET).upload('submissions/' + projectId + '.pdf', blob, {
           contentType: 'application/pdf', upsert: true,
         }).then(function (res) {
           if (res.error) throw new Error(res.error.message);

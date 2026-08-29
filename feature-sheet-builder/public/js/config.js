@@ -8,7 +8,8 @@
  * Do NOT put the `service_role` / secret key here.
  */
 window.FSB_CONFIG = {
-  supabaseUrl: 'https://obzxjgzdtylmkwjejgbl.supabase.co',
-  supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9ienhqZ3pkdHlsbWt3amVqZ2JsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc5Mjc5MTUsImV4cCI6MjEwMzUwMzkxNX0.nYh0JsORFHA5SGDdqQMy4ue3Uuf6gFXsSFJf2Uw1ar8',
+  // Franky's Supabase project (owner of the data + hosting).
+  supabaseUrl: 'https://papaswihicvajzcubbri.supabase.co',
+  supabaseAnonKey: 'sb_publishable_4Ct6GKlbNJbPEFzFL-CN_A_DudWMwBy',
   photosBucket: 'photos',
 };

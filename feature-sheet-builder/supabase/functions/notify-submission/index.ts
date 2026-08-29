@@ -87,11 +87,18 @@ Deno.serve(async (req: Request) => {
   const pi = d.propertyInfo ?? {};
   const ai = d.agentInfo ?? {};
 
-  // 30-day signed link to the print PDF the client just uploaded.
+  // Link to the print PDF the client just uploaded (photos bucket,
+  // submissions/ prefix). Try a long-lived signed URL first; fall back to
+  // the public URL if the bucket is public.
   let pdfUrl = "";
-  const { data: signed } = await admin.storage.from("submissions")
-    .createSignedUrl(`${projectId}.pdf`, 60 * 60 * 24 * 30);
-  if (signed?.signedUrl) pdfUrl = signed.signedUrl;
+  const pdfKey = `submissions/${projectId}.pdf`;
+  const { data: signed } = await admin.storage.from("photos")
+    .createSignedUrl(pdfKey, 60 * 60 * 24 * 30);
+  if (signed?.signedUrl) {
+    pdfUrl = signed.signedUrl;
+  } else {
+    pdfUrl = admin.storage.from("photos").getPublicUrl(pdfKey).data.publicUrl;
+  }
 
   const openUrl = `${APP_BASE_URL}/?p=${encodeURIComponent(projectId)}`;
   const addr = [pi.address, pi.city].filter(Boolean).join(", ") || "(no address)";
