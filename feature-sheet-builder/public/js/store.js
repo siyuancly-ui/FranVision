@@ -176,6 +176,12 @@
       // Submit-for-printing is a Supabase-only feature (edge function + email).
       uploadSubmission: function () { return Promise.reject(new Error('submission upload needs the Supabase backend')); },
       invokeFunction: function () { return Promise.reject(new Error('edge functions need the Supabase backend')); },
+
+      // Admin (Franky) -- list every project. Gated by the admin token.
+      listAllProjects: function (token) {
+        return jsonFetch('/api/admin/projects', { headers: { 'X-Admin-Token': token || '' } })
+          .then(function (b) { return b.projects || []; });
+      },
     };
   }
 
@@ -322,6 +328,15 @@
         return sb.functions.invoke(name, { body: body }).then(function (res) {
           if (res.error) throw new Error(res.error.message || 'function error');
           return res.data;
+        });
+      },
+
+      // Admin (Franky) -- list every project via an edge function that
+      // checks the shared admin token and reads with the service role.
+      listAllProjects: function (token) {
+        return sb.functions.invoke('list-projects', { body: { token: token || '' } }).then(function (res) {
+          if (res.error) throw new Error(res.error.message || 'unauthorized');
+          return (res.data && res.data.projects) || [];
         });
       },
     };

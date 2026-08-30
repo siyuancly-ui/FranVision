@@ -303,6 +303,26 @@ class LocalDiskStorage {
       return [];
     }
   }
+
+  // Admin summary of every project (dev only; Supabase uses the edge fn).
+  async listProjects() {
+    return this.listProjectIds().map((id) => {
+      let d = {};
+      try { d = JSON.parse(fs.readFileSync(this._projFile(id), 'utf8')); } catch (_e) { d = {}; }
+      const pi = d.propertyInfo || {};
+      const agents = [d.agentInfo && d.agentInfo.name, d.agentInfo2 && d.agentInfo2.name].filter(Boolean);
+      return {
+        id,
+        address: pi.address || '',
+        city: pi.city || '',
+        agents,
+        theme: d.colorTheme || 'navy',
+        confirmed: !!d.confirmed,
+        createdAt: d.createdAt || null,
+        updatedAt: d.updatedAt || null,
+      };
+    }).sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+  }
 }
 
 module.exports = { LocalDiskStorage, _internals: { applyPatch, clearPhotoRefs, extFor, newId, safeId } };

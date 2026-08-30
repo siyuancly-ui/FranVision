@@ -348,3 +348,34 @@ body.fsb-modal-open { overflow: hidden; }
   line-height: 1; padding: 0 2px;
 }
 .fsb-mysheets-del:hover { color: #d64545; }
+
+/* ---- admin / "All feature sheets" view (v2) ---- */
+.fsb-admin { max-width: 1100px; margin: 0 auto; padding: 24px 20px 60px; }
+.fsb-admin-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap; padding-bottom: 16px; margin-bottom: 8px;
+  border-bottom: 2px solid #e4e0d6;
+}
+.fsb-admin-actions { display: flex; gap: 10px; align-items: center; }
+#fsb-admin-search {
+  width: 240px; padding: 7px 10px; border: 1px solid #d0d5dd; border-radius: 6px; font-size: 13px;
+}
+.fsb-admin-loading, .fsb-admin-empty, .fsb-admin-error {
+  padding: 40px 10px; text-align: center; color: #8a94a3; font-size: 14px;
+}
+.fsb-admin-error { color: #c0392b; }
+.fsb-admin-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.fsb-admin-table th {
+  text-align: left; padding: 8px 12px; border-bottom: 2px solid #e4e0d6;
+  font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: #667;
+}
+.fsb-admin-table td { padding: 10px 12px; border-bottom: 1px solid #eee; vertical-align: top; }
+.fsb-admin-addr { font-weight: 600; color: #1f5fd6; text-decoration: none; }
+.fsb-admin-addr:hover { text-decoration: underline; }
+.fsb-admin-sub { color: #8a94a3; font-size: 12px; margin-top: 2px; }
+.fsb-admin-time { white-space: nowrap; color: #667; }
+.fsb-admin-status { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+.fsb-admin-status.is-draft { background: #eef1f5; color: #667; }
+.fsb-admin-status.is-submitted { background: #e4f4e8; color: #2e7d43; }
+.fsb-admin-rowact { display: flex; gap: 6px; white-space: nowrap; }
+.fsb-btn--sm { padding: 4px 10px; font-size: 12px; }

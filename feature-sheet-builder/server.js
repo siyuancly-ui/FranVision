@@ -158,6 +158,15 @@ async function handleApi(req, res, parts, urlPath) {
     return sendJson(res, 200, { defaultId: templates.DEFAULT_ID, ids: templates.ids() });
   }
 
+  // ---- admin: list every project (dev; Supabase uses the edge fn) ----
+  if (parts[1] === 'admin' && parts[2] === 'projects' && method === 'GET') {
+    const want = process.env.ADMIN_TOKEN || 'dev-admin';
+    const got = req.headers['x-admin-token'] || '';
+    if (got !== want) return sendJson(res, 401, { error: 'unauthorized' });
+    const projects = await storage.listProjects();
+    return sendJson(res, 200, { projects });
+  }
+
   // ---- projects ---------------------------------------------------
   if (parts[1] === 'projects') {
     // POST /api/projects

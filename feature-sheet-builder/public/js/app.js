@@ -176,41 +176,11 @@
     return work.then(function (updated) {
       app.project.updatedAt = updated.updatedAt;
       app._saving = false; app._dirty = false; app.emit('save-state');
-      mySheets.record(app.project);
     }).catch(function (err) {
       app._saving = false; app.emit('save-state');
       util.toast('Save failed: ' + err.message, 'error');
     });
   };
-
-  // ---- "my sheets" (this browser only) --------------------------
-  var mySheets = {
-    KEY: 'fsb_my_sheets_v2',
-    read: function () {
-      try { return JSON.parse(localStorage.getItem(mySheets.KEY) || '[]'); }
-      catch (e) { return []; }
-    },
-    write: function (list) {
-      try { localStorage.setItem(mySheets.KEY, JSON.stringify(list.slice(0, 40))); } catch (e) {}
-    },
-    record: function (project) {
-      if (!project || !project.projectId) return;
-      var pi = project.propertyInfo || {};
-      var list = mySheets.read().filter(function (s) { return s.id !== project.projectId; });
-      list.unshift({
-        id: project.projectId,
-        address: pi.address || '',
-        city: pi.city || '',
-        theme: project.colorTheme || 'navy',
-        at: Date.now(),
-      });
-      mySheets.write(list);
-    },
-    remove: function (id) {
-      mySheets.write(mySheets.read().filter(function (s) { return s.id !== id; }));
-    },
-  };
-  app.mySheets = mySheets;
 
   function updateTitle() {
     var a = app.project && app.project.propertyInfo && app.project.propertyInfo.address;
@@ -288,11 +258,12 @@
         el('span', { class: 'fsb-confirmed', id: 'fsb-confirmed-badge' }),
       ]),
       el('div', { class: 'fsb-topbar-actions' }, [
-        el('button', { class: 'fsb-btn fsb-btn--ghost', id: 'fsb-btn-new', text: '+ New 新建' }),
-        el('div', { class: 'fsb-mysheets-wrap' }, [
-          el('button', { class: 'fsb-btn fsb-btn--ghost', id: 'fsb-btn-mysheets', text: 'My sheets 我的 ▾' }),
-          el('div', { class: 'fsb-mysheets-menu', id: 'fsb-mysheets-menu', hidden: true }),
-        ]),
+        // "All sheets" only in Franky's admin context; agents get no list.
+        app.adminToken
+          ? el('a', { class: 'fsb-btn fsb-btn--ghost', id: 'fsb-btn-allsheets',
+              href: window.location.pathname + '?admin=' + encodeURIComponent(app.adminToken),
+              text: '← All sheets 全部' })
+          : null,
         el('button', { class: 'fsb-btn fsb-btn--ghost', id: 'fsb-toggle-form', text: 'Info' }),
         el('button', { class: 'fsb-btn', id: 'fsb-btn-preview', text: 'Preview 预览' }),
         el('button', { class: 'fsb-btn fsb-btn--save', id: 'fsb-btn-save', text: 'Save 保存' }),
@@ -328,58 +299,6 @@
       document.getElementById('fsb-app').classList.toggle('fsb-form-open');
     });
 
-    document.getElementById('fsb-btn-new').addEventListener('click', function () {
-      var go = function () { window.location.href = window.location.pathname; };
-      if (app._dirty || app._saving) {
-        util.confirmDialog(
-          ['Start a new feature sheet? Unsaved changes on this one will be lost.',
-           '新建一份 Feature Sheet？当前未保存的改动会丢失。'],
-          { okText: 'New sheet 新建', cancelText: 'Cancel 取消' }
-        ).then(function (ok) { if (ok) go(); });
-      } else { go(); }
-    });
-
-    var menu = document.getElementById('fsb-mysheets-menu');
-    document.getElementById('fsb-btn-mysheets').addEventListener('click', function (e) {
-      e.stopPropagation();
-      if (!menu.hidden) { menu.hidden = true; return; }
-      renderMySheetsMenu(menu);
-      menu.hidden = false;
-    });
-    document.addEventListener('click', function () { menu.hidden = true; });
-  }
-
-  function renderMySheetsMenu(menu) {
-    menu.innerHTML = '';
-    var list = app.mySheets.read();
-    if (!list.length) {
-      menu.appendChild(el('div', { class: 'fsb-mysheets-empty', text: '还没有保存过的 Feature Sheet' }));
-      return;
-    }
-    list.forEach(function (s) {
-      var row = el('a', { class: 'fsb-mysheets-item', href: window.location.pathname + '?p=' + encodeURIComponent(s.id) });
-      if (s.id === app.projectId) row.classList.add('is-current');
-      row.appendChild(el('span', { class: 'fsb-mysheets-addr',
-        text: s.address || '(未命名 untitled)' }));
-      row.appendChild(el('span', { class: 'fsb-mysheets-meta',
-        text: (s.city ? s.city + ' · ' : '') + timeAgo(s.at) }));
-      var del = el('button', { class: 'fsb-mysheets-del', title: 'Forget this link 从列表移除', text: '×' });
-      del.addEventListener('click', function (ev) {
-        ev.preventDefault(); ev.stopPropagation();
-        app.mySheets.remove(s.id); renderMySheetsMenu(menu);
-      });
-      row.appendChild(del);
-      menu.appendChild(row);
-    });
-  }
-
-  function timeAgo(ts) {
-    if (!ts) return '';
-    var s = Math.floor((Date.now() - ts) / 1000);
-    if (s < 60) return 'just now';
-    if (s < 3600) return Math.floor(s / 60) + 'm ago';
-    if (s < 86400) return Math.floor(s / 3600) + 'h ago';
-    return Math.floor(s / 86400) + 'd ago';
   }
 
   function buildPageNav() {
@@ -507,15 +426,22 @@
   }
 
   function start() {
+    var params = new URL(window.location.href).searchParams;
+    var pid = params.get('p');
+    app.adminToken = params.get('admin') || '';
+
+    // Franky's admin view: ?admin=<token> with no ?p= -> the central list.
+    if (app.adminToken && !pid) {
+      window.FSB.admin.mount(document.getElementById('fsb-app'), app.adminToken);
+      return;
+    }
+
     buildChrome();
     buildPageNav();
     wireEvents();
 
     var stage = document.getElementById('fsb-stage');
     window.FSB.editor.attach(stage, app);
-
-    var params = new URL(window.location.href).searchParams;
-    var pid = params.get('p');
 
     var load = pid
       ? store.getProject(pid).catch(function (err) {
