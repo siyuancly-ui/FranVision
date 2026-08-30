@@ -74,8 +74,13 @@
     return new Promise(function (resolve) {
       var okBtn = el('button', { class: 'fsb-btn fsb-btn--primary', text: opts.okText || 'OK' });
       var cancelBtn = el('button', { class: 'fsb-btn fsb-btn--ghost', text: opts.cancelText || 'Cancel' });
+      // message may be a string or an array of paragraphs (rendered with a
+      // gap between them, e.g. an English block then a 中文 block).
+      var paras = Array.isArray(message) ? message : [message];
+      var msgWrap = el('div', { class: 'fsb-confirm-msg' },
+        paras.map(function (p) { return el('p', { text: p }); }));
       var card = el('div', { class: 'fsb-confirm-card' }, [
-        el('p', { class: 'fsb-confirm-msg', text: message }),
+        msgWrap,
         el('div', { class: 'fsb-confirm-actions' }, [cancelBtn, okBtn]),
       ]);
       var overlay = el('div', { class: 'fsb-confirm-overlay' }, [card]);

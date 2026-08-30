@@ -195,7 +195,7 @@
     return im;
   }
 
-  function textLine(theme, scale, t, ty) {
+  function textLine(theme, scale, t, ty, wrap) {
     var p = el('div', { text: String(t) });
     ty = ty || {};
     p.style.fontFamily = famFor(theme, ty.font || 'sans');
@@ -204,11 +204,41 @@
     p.style.letterSpacing = ty.tracking ? ty.tracking + 'em' : 'normal';
     p.style.color = ty.token ? tokenColor(theme, ty.token) : tokenColor(theme, 'ink');
     p.style.lineHeight = 1.34;
-    p.style.whiteSpace = 'nowrap';
-    p.style.overflow = 'hidden';
-    p.style.textOverflow = 'ellipsis';
     p.style.maxWidth = '100%';
+    if (wrap) {
+      p.style.whiteSpace = 'normal';
+      p.style.wordBreak = 'break-word';
+    } else {
+      p.style.whiteSpace = 'nowrap';
+      p.style.overflow = 'hidden';
+      p.style.textOverflow = 'ellipsis';
+    }
     return p;
+  }
+
+  // two side-by-side per-agent contact stacks (Tel / Email), for the
+  // co-listing agent card centre column.
+  function contactRow(project, theme, scale, pairs, ty) {
+    var wrap = el('div');
+    wrap.style.cssText = 'display:flex;gap:' + (10 * scale) + 'px;width:100%;justify-content:center;' +
+      'margin-top:' + (3 * scale) + 'px;';
+    pairs.forEach(function (pr) {
+      var tel = val(project, pr.tel), email = val(project, pr.email);
+      if (!tel && !email) return;
+      var col = el('div');
+      col.style.cssText = 'flex:1;min-width:0;text-align:center;';
+      if (tel) col.appendChild(textLine(theme, scale, 'Tel: ' + formatPhone(tel), ty, false));
+      if (email) col.appendChild(textLine(theme, scale, 'Email: ' + email, ty, true));
+      wrap.appendChild(col);
+    });
+    return wrap.children.length ? wrap : null;
+  }
+
+  function formatPhone(raw) {
+    var d = String(raw || '').replace(/\D/g, '');
+    if (d.length === 11 && d[0] === '1') d = d.slice(1);
+    if (d.length === 10) return d.slice(0, 3) + '-' + d.slice(3, 6) + '-' + d.slice(6);
+    return String(raw || '');
   }
 
   function buildAgent(project, info, pw, ph, scale, theme) {
@@ -248,18 +278,23 @@
           if (ln.qr) {
             var url = val(project, ln.qr);
             if (!url) return;
-            var qpx = Math.max(28, Math.round(boxH * 0.30));
+            var qpx = Math.max(22, Math.round(boxH * 0.20));
             var qb = el('div', { class: 'fsb-agent-qr' });
             qb.style.cssText = 'width:' + qpx + 'px;height:' + qpx + 'px;background:#fff;padding:' +
-              (2 * scale) + 'px;box-sizing:border-box;flex:0 0 auto;margin-top:' + (3 * scale) + 'px;';
+              (2 * scale) + 'px;box-sizing:border-box;flex:0 0 auto;margin-top:' + (3 * scale) + 'px;align-self:center;';
             if (window.FSB.qr) window.FSB.qr.render(qb, url, { size: qpx, dark: '#141414', light: '#ffffff' });
             c.appendChild(qb); return;
+          }
+          if (ln.contactRow) {
+            var cr = contactRow(project, theme, scale, ln.contactRow, ln.type);
+            if (cr) c.appendChild(cr);
+            return;
           }
           var t = ln.text != null ? ln.text
             : ln.compose ? composeLine(project, ln.compose)
             : val(project, ln.field);
           if (t == null || String(t).trim() === '' || /^[\s|&]*$/.test(String(t))) return;
-          c.appendChild(textLine(theme, scale, t, ln.type));
+          c.appendChild(textLine(theme, scale, t, ln.type, ln.wrap));
         });
       }
       box.appendChild(c);
@@ -325,10 +360,13 @@
         vAlign: 'flex-start',
       });
       addr.textContent = '';
+      addr.style.alignItems = 'stretch';
       var l1 = el('div', { text: R.address.value.address || (opts.placeholders ? '123 Example St' : '') });
+      l1.style.textAlign = 'right';
       var l2 = el('div', { text: R.address.value.city || (opts.placeholders ? 'City' : '') });
-      l2.style.cssText = 'font-size:' + (R.address.spec.cityType.sizePt * scale) + 'px;font-style:italic;letter-spacing:' +
-        R.address.spec.cityType.tracking + 'em;';
+      // city line is CENTRED under the (right-aligned) street address
+      l2.style.cssText = 'width:100%;text-align:center;font-size:' + (R.address.spec.cityType.sizePt * scale) +
+        'px;font-style:italic;letter-spacing:' + R.address.spec.cityType.tracking + 'em;';
       addr.appendChild(l1); addr.appendChild(l2);
       page.appendChild(addr);
 

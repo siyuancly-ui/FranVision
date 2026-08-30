@@ -223,8 +223,10 @@
   // module is wired up).
   app.confirmDesign = function () {
     util.confirmDialog(
-      'Submit this design for printing?\n\nOnce submitted it is locked. You can still re-open it to make changes and submit again.\n\n' +
-      '确认将当前版本提交打印？\n\n提交后会锁定。之后仍可重新打开修改并再次提交。',
+      [
+        'Submit this design for printing?\nOnce submitted it is locked — you can still re-open it to make changes and submit again.',
+        '确认将当前版本提交打印？\n提交后会锁定；之后仍可重新打开修改，并再次提交。',
+      ],
       { okText: 'Confirm & Submit  确认提交', cancelText: 'Not yet  暂不' }
     ).then(function (ok) {
       if (!ok) return;
@@ -248,8 +250,10 @@
 
   app.unconfirm = function () {
     util.confirmDialog(
-      'Re-open for editing? You will need to Confirm & Submit again to send the updated version.\n\n' +
-      '重新打开编辑？修改后需要再次「确认提交」才会发送新版本。',
+      [
+        'Re-open for editing? You will need to Confirm & Submit again to send the updated version.',
+        '重新打开编辑？修改后需要再次「确认提交」才会发送新版本。',
+      ],
       { okText: 'Re-open  重新打开', cancelText: 'Cancel  取消' }
     ).then(function (ok) {
       if (!ok) return;
@@ -328,7 +332,8 @@
       var go = function () { window.location.href = window.location.pathname; };
       if (app._dirty || app._saving) {
         util.confirmDialog(
-          'Start a new feature sheet? Unsaved changes on this one will be lost.\n\n新建一份 Feature Sheet？当前未保存的改动会丢失。',
+          ['Start a new feature sheet? Unsaved changes on this one will be lost.',
+           '新建一份 Feature Sheet？当前未保存的改动会丢失。'],
           { okText: 'New sheet 新建', cancelText: 'Cancel 取消' }
         ).then(function (ok) { if (ok) go(); });
       } else { go(); }

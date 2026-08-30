@@ -113,20 +113,31 @@
       ],
     },
 
+    // co-listing layout (see the "Mo Zhang / June Liu" reference):
+    //   [headshot1] [name1+title1] [logo + address + 2x contact + QR] [name2+title2] [headshot2]
     dual: {
       id: 'agent-dual',
-      // 2 headshots flank a centred "Presented By" + shared logo below
       cols: [
-        { id: 'headshot1', wFrac: 0.20, kind: 'headshot', aspect: 0.62, ref: 'agentInfo' },
-        { id: 'center', wFrac: 0.60, kind: 'stack', align: 'center', lines: [
-          { text: 'PRESENTED BY', type: { font: 'sans', sizePt: 10, weight: 600, tracking: 0.14, token: 'gold' } },
-          { compose: ['agentInfo.name', ' & ', 'agentInfo2.name'], type: { font: 'serif', sizePt: 15, weight: 700 } },
-          { field: 'agentInfo.brokerage', type: { font: 'sans', sizePt: 9, token: 'inkMuted' } },
-          { field: 'agentInfo.brokerageAddress', type: { font: 'sans', sizePt: 8.5, token: 'inkMuted' } },
-          { img: 'agentInfo.brokerageLogoPhotoId', placeholder: 'Logo', hFrac: 0.24 },
+        { id: 'headshot1', wFrac: 0.15, kind: 'headshot', aspect: 0.78, ref: 'agentInfo', fullHeight: true },
+        { id: 'label1', wFrac: 0.19, kind: 'stack', align: 'center', lines: [
+          { field: 'agentInfo.name', wrap: true, type: { font: 'serif', sizePt: 15, weight: 700, token: 'gold' } },
+          { field: 'agentInfo.credentials', wrap: true, type: { font: 'sans', sizePt: 8.5, token: 'inkMuted' } },
+        ] },
+        { id: 'center', wFrac: 0.32, kind: 'stack', align: 'center', lines: [
+          { img: 'agentInfo.brokerageLogoPhotoId', placeholder: 'Logo', hFrac: 0.20 },
+          { field: 'agentInfo.brokerage', type: { font: 'sans', sizePt: 8, weight: 600, token: 'inkMuted' } },
+          { field: 'agentInfo.brokerageAddress', wrap: true, type: { font: 'sans', sizePt: 7.5, token: 'inkMuted' } },
+          { contactRow: [
+            { tel: 'agentInfo.cellPhone', email: 'agentInfo.email' },
+            { tel: 'agentInfo2.cellPhone', email: 'agentInfo2.email' },
+          ], type: { font: 'sans', sizePt: 7, token: 'inkMuted' } },
           { qr: 'propertyInfo.onlineTourUrl' },
         ] },
-        { id: 'headshot2', wFrac: 0.20, kind: 'headshot', aspect: 0.62, ref: 'agentInfo2' },
+        { id: 'label2', wFrac: 0.19, kind: 'stack', align: 'center', lines: [
+          { field: 'agentInfo2.name', wrap: true, type: { font: 'serif', sizePt: 15, weight: 700, token: 'gold' } },
+          { field: 'agentInfo2.credentials', wrap: true, type: { font: 'sans', sizePt: 8.5, token: 'inkMuted' } },
+        ] },
+        { id: 'headshot2', wFrac: 0.15, kind: 'headshot', aspect: 0.78, ref: 'agentInfo2', fullHeight: true },
       ],
     },
   };
