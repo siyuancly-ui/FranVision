@@ -185,63 +185,68 @@
     }).join('');
   }
 
+  function imgBox(theme, scale, url, label, minH) {
+    var im = el('div', { class: 'fsb-agent-img' });
+    im.style.cssText = 'flex:1 1 auto;min-height:' + minH + 'px;display:flex;align-items:center;' +
+      'justify-content:center;background:center/contain no-repeat;border-radius:2px;' +
+      'font-size:' + (8 * scale) + 'px;color:' + tokenColor(theme, 'inkMuted') + ';';
+    if (url) { im.style.backgroundImage = 'url(' + url + ')'; im.style.background += ',' + tokenColor(theme, 'bgDeep'); }
+    else { im.style.border = '1px dashed ' + tokenColor(theme, 'goldLine'); im.textContent = label; }
+    return im;
+  }
+
+  function textLine(theme, scale, t, ty) {
+    var p = el('div', { text: String(t) });
+    ty = ty || {};
+    p.style.fontFamily = famFor(theme, ty.font || 'sans');
+    p.style.fontSize = ((ty.sizePt || 9) * scale) + 'px';
+    p.style.fontWeight = ty.weight || 400;
+    p.style.letterSpacing = ty.tracking ? ty.tracking + 'em' : 'normal';
+    p.style.color = ty.token ? tokenColor(theme, ty.token) : tokenColor(theme, 'ink');
+    p.style.lineHeight = 1.34;
+    p.style.whiteSpace = 'nowrap';
+    p.style.overflow = 'hidden';
+    p.style.textOverflow = 'ellipsis';
+    p.style.maxWidth = '100%';
+    return p;
+  }
+
   function buildAgent(project, info, pw, ph, scale, theme) {
     var box = el('div', { class: 'fsb-agent fsb-agent--' + info.variant });
     setBox(box, info.rect, pw, ph);
-    box.style.display = 'flex';
-    box.style.alignItems = 'stretch';
-    box.style.gap = (info.rect[2] * pw * 0.02) + 'px';
-    box.style.color = tokenColor(theme, 'ink');
-    box.style.border = '1px solid ' + tokenColor(theme, 'goldLine');
-    box.style.borderRadius = (4 * scale) + 'px';
-    box.style.padding = (10 * scale) + 'px';
-    box.style.boxSizing = 'border-box';
+    var boxH = info.rect[3] * ph;
+    var pad = Math.max(6, 12 * scale);
+    box.style.cssText += ';display:flex;align-items:stretch;box-sizing:border-box;' +
+      'gap:' + (info.rect[2] * pw * 0.025) + 'px;padding:' + pad + 'px;' +
+      'color:' + tokenColor(theme, 'ink') + ';border:1px solid ' + tokenColor(theme, 'goldLine') +
+      ';border-radius:' + (3 * scale) + 'px;';
 
     (info.spec.cols || []).forEach(function (col) {
       var c = el('div', { class: 'fsb-agent-col fsb-agent-col--' + col.kind });
-      c.style.flex = col.wFrac;
-      c.style.display = 'flex';
-      c.style.flexDirection = 'column';
-      c.style.justifyContent = 'center';
-      if (info.spec.align === 'center' || col.align === 'center') c.style.alignItems = 'center';
-      if (col.kind === 'logo' || col.kind === 'headshot') {
-        var pid = col.kind === 'logo'
-          ? val(project, 'agentInfo.brokerageLogoPhotoId')
-          : val(project, (col.ref || 'agentInfo') + '.headshotPhotoId');
-        var im = el('div', { class: 'fsb-agent-img' });
-        im.style.cssText = 'flex:1;background:#0002 center/contain no-repeat;border-radius:2px;min-height:' +
-          (info.rect[3] * ph * 0.5) + 'px;';
-        if (pid) im.style.backgroundImage = 'url(' + fullUrl(project, pid) + ')';
-        else im.appendChild(el('span', { class: 'fsb-agent-imghint',
-          text: col.kind === 'logo' ? 'Logo' : 'Headshot' }));
-        im.querySelector && (im.style.display = 'flex');
-        im.style.alignItems = 'center'; im.style.justifyContent = 'center';
-        im.style.color = tokenColor(theme, 'inkMuted');
-        im.style.fontSize = (9 * scale) + 'px';
-        c.appendChild(im);
+      c.style.cssText = 'flex:' + col.wFrac + ' 1 0;min-width:0;display:flex;flex-direction:column;' +
+        'justify-content:center;gap:' + (2 * scale) + 'px;' +
+        ((info.spec.align === 'center' || col.align === 'center') ? 'align-items:center;text-align:center;' : '');
+
+      if (col.kind === 'logo') {
+        c.appendChild(imgBox(theme, scale, val(project, 'agentInfo.brokerageLogoPhotoId') &&
+          fullUrl(project, val(project, 'agentInfo.brokerageLogoPhotoId')), 'Logo', boxH * 0.42));
+        var bn = val(project, 'agentInfo.brokerage');
+        if (bn) c.appendChild(textLine(theme, scale, bn, { font: 'sans', sizePt: 8, token: 'inkMuted' }));
+      } else if (col.kind === 'headshot') {
+        var hpid = val(project, (col.ref || 'agentInfo') + '.headshotPhotoId');
+        c.appendChild(imgBox(theme, scale, hpid && fullUrl(project, hpid), 'Headshot', boxH * 0.66));
       } else if (col.kind === 'stack') {
         (col.lines || []).forEach(function (ln) {
           var t = ln.text != null ? ln.text
             : ln.compose ? composeLine(project, ln.compose)
             : val(project, ln.field);
-          if (t == null || String(t).trim() === '') return;
-          var p = el('div', { text: String(t) });
-          var ty = ln.type || {};
-          p.style.fontFamily = famFor(theme, ty.font || 'sans');
-          p.style.fontSize = ((ty.sizePt || 9) * scale) + 'px';
-          p.style.fontWeight = ty.weight || 400;
-          p.style.letterSpacing = ty.tracking ? ty.tracking + 'em' : 'normal';
-          p.style.color = ty.token ? tokenColor(theme, ty.token) : 'inherit';
-          p.style.lineHeight = 1.32;
-          c.appendChild(p);
+          if (t == null || String(t).trim() === '' || /^[\s|&]*$/.test(String(t))) return;
+          c.appendChild(textLine(theme, scale, t, ln.type));
         });
         if (col.logoBelow) {
-          var lb = el('div', { class: 'fsb-agent-logo-below', text: 'Logo' });
-          lb.style.cssText = 'margin-top:' + (6 * scale) + 'px;height:' + (info.rect[3] * ph * 0.28) +
-            'px;background:#0002 center/contain no-repeat;display:flex;align-items:center;justify-content:center;font-size:' +
-            (9 * scale) + 'px;color:' + tokenColor(theme, 'inkMuted') + ';';
           var lpid = val(project, 'agentInfo.brokerageLogoPhotoId');
-          if (lpid) { lb.style.backgroundImage = 'url(' + fullUrl(project, lpid) + ')'; lb.textContent = ''; }
+          var lb = imgBox(theme, scale, lpid && fullUrl(project, lpid), 'Logo', boxH * 0.26);
+          lb.style.flex = '0 0 auto'; lb.style.width = '55%'; lb.style.marginTop = (5 * scale) + 'px';
           c.appendChild(lb);
         }
       }
@@ -251,8 +256,23 @@
   }
 
   // ---- flourish + panel border (page 2) -----------------------
+  // Symmetric filigree: central palmette + two mirrored scrolling tendrils.
   function flourishSvg(color) {
-    return '<svg viewBox="0 0 200 60" fill="' + color + '"><path d="M100 8c6 0 11 5 14 12 3-5 8-8 14-8-4 3-6 8-6 13 5-2 10-1 14 2-5 0-9 3-11 8 6 1 11 5 13 11-6-4-13-5-19-2 2 5 1 11-3 15 1-6-1-12-5-16-4 4-6 10-5 16-4-4-5-10-3-15-6-3-13-2-19 2 2-6 7-10 13-11-2-5-6-8-11-8 4-3 9-4 14-2 0-5-2-10-6-13 6 0 11 3 14 8 3-7 8-12 14-12z"/><path d="M40 34h40M120 34h40" stroke="' + color + '" stroke-width="2"/><circle cx="30" cy="34" r="3"/><circle cx="170" cy="34" r="3"/></svg>';
+    var half =
+      '<path d="M100 26 C100 26 92 14 78 12 C64 10 58 20 62 27 C65 32 74 32 76 26 ' +
+      'C77 22 72 19 68 21 C72 20 75 24 72 28 C68 33 58 31 56 24 C54 16 63 8 78 9 ' +
+      'C90 10 100 20 100 26 Z" fill="' + color + '"/>' +
+      '<path d="M60 26 C48 26 40 24 30 26 C22 27.5 16 26 12 26" fill="none" ' +
+      'stroke="' + color + '" stroke-width="1.6" stroke-linecap="round"/>' +
+      '<circle cx="10" cy="26" r="2.4" fill="' + color + '"/>' +
+      '<path d="M44 22 C40 16 32 16 30 22 C29 26 34 28 36 24" fill="none" ' +
+      'stroke="' + color + '" stroke-width="1.4" stroke-linecap="round"/>';
+    return '<svg viewBox="0 0 200 40" preserveAspectRatio="xMidYMid meet">' +
+      '<g>' + half + '</g>' +
+      '<g transform="translate(200,0) scale(-1,1)">' + half + '</g>' +
+      '<path d="M100 12 C104 6 108 6 110 10 M100 12 C96 6 92 6 90 10" fill="none" ' +
+      'stroke="' + color + '" stroke-width="1.4" stroke-linecap="round"/>' +
+      '<circle cx="100" cy="30" r="2.6" fill="' + color + '"/></svg>';
   }
 
   // ================================================================
@@ -309,7 +329,9 @@
       page.appendChild(addr);
 
       var hero = buildSlot(project, 'p1R-hero', R.hero.rect, pw, ph, interactive);
-      hero.style.border = (R.hero.border.widthPt * scale) + 'px solid ' + tokenColor(theme, 'gold');
+      var hbw = Math.max(2, R.hero.border.widthPt * scale);
+      hero.style.border = hbw + 'px solid ' + tokenColor(theme, 'gold');
+      hero.style.boxShadow = 'inset 0 0 0 ' + Math.max(1, hbw * 0.4) + 'px ' + tokenColor(theme, 'bg');
       hero.style.boxSizing = 'border-box';
       page.appendChild(hero);
 

@@ -97,15 +97,16 @@
     //  and is not used). Only the palette changes between themes.
     // ================================================================
     page2: {
-      // gold filigree ornament centred above each panel
+      // gold filigree ornament centred above each panel (in the navy band
+      // between the page top and the panel border)
       flourish: [
-        { panel: 'L', rect: [0.159, 0.016, 0.181, 0.059] },
-        { panel: 'R', rect: [0.660, 0.015, 0.181, 0.059] },
+        { panel: 'L', rect: [0.150, 0.012, 0.200, 0.050] },
+        { panel: 'R', rect: [0.650, 0.012, 0.200, 0.050] },
       ],
       // gold double keyline framing each panel's photo block
       panelBorder: [
-        { panel: 'L', rect: [0.011, 0.070, 0.480, 0.918] },
-        { panel: 'R', rect: [0.510, 0.070, 0.480, 0.918] },
+        { panel: 'L', rect: [0.012, 0.072, 0.477, 0.914] },
+        { panel: 'R', rect: [0.511, 0.072, 0.477, 0.914] },
       ],
       // 5 photo slots per panel: 1 big + 2x2 grid
       slots: [

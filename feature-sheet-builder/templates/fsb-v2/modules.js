@@ -54,7 +54,7 @@
           growWeight: 0, gapAfter: 0.024 },
         { id: 'p1L-desc', kind: 'text', field: 'propertyInfo.description',
           minHFrac: 0.26, growWeight: 1,
-          type: { font: 'serif', sizePt: 15, leadingPt: 20, align: 'left' } },
+          type: { font: 'serif', sizePt: 16, leadingPt: 22, align: 'left' } },
       ],
     },
 
@@ -67,7 +67,7 @@
           growWeight: 0, gapAfter: 0.024 },
         { id: 'p1L-desc', kind: 'text', field: 'propertyInfo.description',
           minHFrac: 0.24, growWeight: 1,
-          type: { font: 'serif', sizePt: 15, leadingPt: 20, align: 'left' } },
+          type: { font: 'serif', sizePt: 16, leadingPt: 22, align: 'left' } },
       ],
     },
 
@@ -76,14 +76,14 @@
       id: 'left-collage6',
       column: LEFT,
       bands: [
-        { id: 'p1L-big', kind: 'photos', slots: row(['p1L-1'], { aspect: 2.02 }),
-          growWeight: 0, gapAfter: 0.016 },
-        { id: 'p1L-mid', kind: 'photos', slots: row(['p1L-2', 'p1L-3'], { aspect: 1.42, gap: 0.016 }),
-          growWeight: 0, gapAfter: 0.016 },
-        { id: 'p1L-bot', kind: 'photos', slots: row(['p1L-4', 'p1L-5', 'p1L-6'], { aspect: 1.34, gap: 0.014 }),
+        { id: 'p1L-big', kind: 'photos', slots: row(['p1L-1'], { aspect: 1.78 }),
+          growWeight: 0, gapAfter: 0.015 },
+        { id: 'p1L-mid', kind: 'photos', slots: row(['p1L-2', 'p1L-3'], { aspect: 1.30, gap: 0.015 }),
+          growWeight: 0, gapAfter: 0.015 },
+        { id: 'p1L-bot', kind: 'photos', slots: row(['p1L-4', 'p1L-5', 'p1L-6'], { aspect: 1.16, gap: 0.013 }),
           growWeight: 0, gapAfter: 0 },
       ],
-      // leftover vertical slack is spread into the two gapAfter values
+      // any small leftover is spread into the two gapAfter values
       slackToGaps: true,
     },
   };
