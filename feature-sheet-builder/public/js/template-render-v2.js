@@ -39,7 +39,9 @@
     return (theme.tokens && theme.tokens[name]) || name || 'inherit';
   }
 
-  // ---- photo slot (editor-compatible DOM) --------------------------
+  // ---- photo slot (editor-compatible DOM, matches template-render.js) ----
+  var CROP = window.FSB_CROP;
+
   function slotState(project, id) {
     var pg = id.indexOf('p2') === 0 ? 'page2' : 'page1';
     var s = project.pages[pg].slots[id];
@@ -48,34 +50,71 @@
   }
   function pageKeyOf(id) { return id.indexOf('p2') === 0 ? 2 : 1; }
 
+  function photoMeta(project, id) {
+    var ps = photoSource();
+    return ps && ps.getMeta && id ? ps.getMeta(project, id) : null;
+  }
+
   function buildSlot(project, id, rect, pw, ph, interactive) {
     var wrap = el('div', { class: 'fsb-slot', 'data-slot-id': id, 'data-page': pageKeyOf(id) });
     setBox(wrap, rect, pw, ph);
+    wrap._rectPx = px(rect, pw, ph);
     fillSlot(wrap, project, id, pw, ph, interactive);
     return wrap;
   }
 
+  function slotImg(project, id, state, rectPx) {
+    var meta = photoMeta(project, state.photoId);
+    var img = el('img', { class: 'fsb-slot-img', draggable: 'false', alt: '' });
+    img.src = fullUrl(project, state.photoId);
+    var layout = CROP.computeLayout({
+      slotW: rectPx.width, slotH: rectPx.height,
+      photoW: meta ? meta.width : 0, photoH: meta ? meta.height : 0,
+      scale: state.scale, positionX: state.positionX, positionY: state.positionY,
+    });
+    img.style.width = layout.displayW + 'px';
+    img.style.height = layout.displayH + 'px';
+    img.style.left = layout.offsetX + 'px';
+    img.style.top = layout.offsetY + 'px';
+    return img;
+  }
+
+  function slotToolbar() {
+    var frag = document.createDocumentFragment();
+    frag.appendChild(el('div', { class: 'fsb-slot-move', 'data-action': 'drag', draggable: 'true',
+      title: 'Drag onto another slot to move / swap this photo' }, [
+      el('span', { class: 'fsb-slot-move-grip', text: '⠿' }),
+      el('span', { class: 'fsb-slot-move-txt', text: 'Move' }),
+    ]));
+    frag.appendChild(el('div', { class: 'fsb-slot-tools' }, [
+      el('button', { 'data-action': 'change', title: 'Change photo 换图', text: '⇄' }),
+      el('button', { 'data-action': 'zoom-out', title: 'Zoom out', text: '−' }),
+      el('button', { 'data-action': 'zoom-in', title: 'Zoom in', text: '+' }),
+      el('button', { 'data-action': 'reset', title: 'Reset framing', text: '↺' }),
+      el('button', { 'data-action': 'clear', title: 'Remove photo', text: '✕' }),
+    ]));
+    return frag;
+  }
+
   function fillSlot(wrap, project, id, pw, ph, interactive) {
-    wrap.classList.remove('fsb-slot--dragging', 'fsb-slot--drop', 'fsb-slot--panning');
-    var st = slotState(project, id);
+    var state = slotState(project, id);
+    var rectPx = wrap._rectPx || { width: wrap.offsetWidth, height: wrap.offsetHeight };
     wrap.innerHTML = '';
-    if (st.photoId) {
+    wrap.classList.remove('fsb-slot--dragging', 'fsb-slot--drop', 'fsb-slot--panning');
+    if (state.photoId && photoMeta(project, state.photoId) != null) {
+      wrap.classList.add('fsb-slot--filled');
       wrap.classList.remove('fsb-slot--empty');
-      var img = el('img', { class: 'fsb-slot-img', src: fullUrl(project, st.photoId), alt: '' });
-      var CROP = window.FSB_CROP;
-      if (CROP && CROP.applyToImg) CROP.applyToImg(img, st, wrap, project, id);
-      else img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;';
-      wrap.appendChild(img);
+      wrap.appendChild(slotImg(project, id, state, rectPx));
+      if (interactive) wrap.appendChild(slotToolbar());
+    } else {
+      wrap.classList.remove('fsb-slot--filled');
+      wrap.classList.add('fsb-slot--empty');
       if (interactive) {
-        wrap.appendChild(el('div', { class: 'fsb-slot-tools' }, [
-          el('button', { type: 'button', 'data-action': 'change', title: '换图', text: '⇄' }),
-          el('button', { type: 'button', 'data-action': 'clear', title: '清空', text: '×' }),
-          el('span', { class: 'fsb-slot-move', 'data-action': 'move', title: '移动', text: '⠢' }),
+        wrap.appendChild(el('div', { class: 'fsb-slot-hint' }, [
+          el('div', { class: 'fsb-slot-hint-ico', text: '＋' }),
+          el('div', { class: 'fsb-slot-hint-label', text: 'Click to add a photo\n点击选择照片' }),
         ]));
       }
-    } else {
-      wrap.classList.add('fsb-slot--empty');
-      wrap.appendChild(el('div', { class: 'fsb-slot-hint', text: 'Click to add a photo\n点击选择照片' }));
     }
   }
 

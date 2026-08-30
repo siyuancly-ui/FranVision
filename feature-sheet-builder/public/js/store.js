@@ -27,7 +27,8 @@
   var CFG = window.FSB_CONFIG || {};
   var MODE = (CFG.supabaseUrl && CFG.supabaseAnonKey) ? 'supabase' : 'local';
 
-  var DATA_KEYS = ['templateId', 'propertyInfo', 'agentInfo', 'photos', 'pages', 'confirmed', 'confirmedAt'];
+  var DATA_KEYS = ['templateSystem', 'colorTheme', 'topPhotoStyle', 'templateId',
+    'propertyInfo', 'agentInfo', 'agentInfo2', 'photos', 'pages', 'confirmed', 'confirmedAt'];
 
   function pickData(p) {
     var d = {};
@@ -130,9 +131,13 @@
       },
       updateProject: function (id, project) {
         var patch = {
+          templateSystem: project.templateSystem,
+          colorTheme: project.colorTheme,
+          topPhotoStyle: project.topPhotoStyle,
           templateId: project.templateId,
           propertyInfo: project.propertyInfo,
           agentInfo: project.agentInfo,
+          agentInfo2: project.agentInfo2,
           pages: project.pages,
           photos: project.photos,
         };
@@ -182,7 +187,7 @@
       auth: { persistSession: false },
     });
     var BUCKET = CFG.photosBucket || 'photos';
-    var T = window.FSB_TEMPLATE;
+    var V2 = window.FSB_V2;
 
     function pubUrl(path) {
       return sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
@@ -207,10 +212,11 @@
 
       createProject: function (seed) {
         seed = seed || {};
-        var data = T.blankProject();
-        if (seed.templateId) data.templateId = seed.templateId;
+        var data = V2.blankProject(seed.colorTheme);
+        if (seed.topPhotoStyle) data.topPhotoStyle = seed.topPhotoStyle;
         if (seed.propertyInfo) data.propertyInfo = Object.assign({}, data.propertyInfo, seed.propertyInfo);
         if (seed.agentInfo) data.agentInfo = Object.assign({}, data.agentInfo, seed.agentInfo);
+        if (seed.agentInfo2) data.agentInfo2 = Object.assign({}, seed.agentInfo2);
         if (Array.isArray(seed.photos)) data.photos = seed.photos;
         var id = newId();
         return sb.from('projects').insert({ id: id, data: data }).select('*').single().then(function (res) {

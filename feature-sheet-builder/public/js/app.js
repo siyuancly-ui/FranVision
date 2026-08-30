@@ -13,7 +13,10 @@
   var store = window.FSB.store;
   var render = window.FSB.render;
   var CROP = window.FSB_CROP;
-  var T = window.FSB_TEMPLATE;
+  // fsb-v2: geometry replaces the old single template-config
+  var GEO = window.FSB_V2_GEOMETRY;
+  var PAGE_COUNT = GEO.page.count;          // 2
+  var PAGE_WIDTH_PT = GEO.page.trimWidthPt; // 1224
 
   var app = {
     project: null,
@@ -65,7 +68,15 @@
   };
 
   app.patchInfo = function (group, key, value) {
+    if (!app.project[group]) app.project[group] = {};
     app.project[group][key] = value;
+    app.emit('dynamic');
+    scheduleSave();
+  };
+
+  // top-level project fields (colorTheme, topPhotoStyle)
+  app.patchTop = function (key, value) {
+    app.project[key] = value;
     app.emit('dynamic');
     scheduleSave();
   };
@@ -236,7 +247,7 @@
   function buildPageNav() {
     var nav = document.getElementById('fsb-pagenav');
     nav.innerHTML = '';
-    for (var p = 1; p <= T.page.count; p++) {
+    for (var p = 1; p <= PAGE_COUNT; p++) {
       (function (pageNum) {
         nav.appendChild(el('button', {
           class: 'fsb-pagenav-btn', text: 'Page ' + pageNum,
@@ -264,7 +275,7 @@
   function computeScale() {
     var stage = document.getElementById('fsb-stage');
     var w = (stage.clientWidth || 700) - 8;
-    var fit = Math.max(0.3, Math.min(w / T.page.widthPt, 1.0));
+    var fit = Math.max(0.3, Math.min(w / PAGE_WIDTH_PT, 1.0));
     app._scale = app._userZoom ? app._userZoom : fit;
     var lbl = document.getElementById('fsb-zoom-label');
     if (lbl) lbl.textContent = app._userZoom ? (Math.round(app._userZoom * 100) + '%') : 'Fit';
@@ -275,7 +286,7 @@
     var stage = document.getElementById('fsb-stage');
     stage.innerHTML = '';
     app._pageEls = {};
-    for (var p = 1; p <= T.page.count; p++) {
+    for (var p = 1; p <= PAGE_COUNT; p++) {
       var wrap = el('div', { class: 'fsb-stage-page', id: 'fsb-stage-page-' + p });
       wrap.appendChild(el('div', { class: 'fsb-stage-page-label', text: 'Page ' + p }));
       var pageEl = render.renderPage(p, app.project, {

@@ -1,9 +1,11 @@
 /*
- * info-form.js -- the only thing the client types.
+ * info-form.js -- the only thing the client types (fsb-v2).
  *
- * Fields are declared in template-config.js (T.form). Values write back to
- * project.propertyInfo / project.agentInfo; the template pulls font, size,
- * position and alignment from the config -- the user never touches layout.
+ * Field schema is defined here (no template-config dependency). Values
+ * write to project.propertyInfo / project.agentInfo / project.agentInfo2
+ * and the top-level project (colorTheme, topPhotoStyle). Layout is chosen
+ * from these values by templates/fsb-v2/registry.js -- the user never
+ * touches position, font or size.
  *
  * FSB.infoForm.mount(rootEl, app)
  */
@@ -13,50 +15,99 @@
   var el = window.FSB.util.el;
   var debounce = window.FSB.util.debounce;
   var toast = window.FSB.util.toast;
-  var T = window.FSB_TEMPLATE;
   var src = window.FSB.photoSource;
+  var THEMES = window.FSB_V2_THEMES;
+
+  var AGENT_FIELDS = [
+    { key: 'name', label: 'Name 姓名' },
+    { key: 'credentials', label: 'Title / credentials 职务' },
+    { key: 'busPhone', label: 'Office phone 办公电话' },
+    { key: 'cellPhone', label: 'Mobile phone 手机' },
+    { key: 'email', label: 'Email 邮箱' },
+    { key: 'brokerage', label: 'Brokerage 经纪公司' },
+    { key: 'brokerageAddress', label: 'Brokerage address 公司地址' },
+    { key: 'website', label: 'Website 网站', optional: true },
+    { key: 'headshotPhotoId', label: 'Headshot 头像', type: 'image' },
+    { key: 'brokerageLogoPhotoId', label: 'Brokerage logo 公司 Logo', type: 'image' },
+  ];
+
+  var SCHEMA = {
+    layout: {
+      title: 'Template 模板',
+      top: true,
+      fields: [
+        { key: 'colorTheme', label: 'Colour theme 主题色', type: 'select',
+          options: Object.keys(THEMES).map(function (k) { return { v: k, t: THEMES[k].name }; }) },
+        { key: 'topPhotoStyle', label: 'Top photo (when description filled) 顶部照片', type: 'select',
+          options: [{ v: 'wide', t: 'One wide photo 单张宽图' }, { v: 'paired', t: 'Two side by side 两张并列' }] },
+      ],
+    },
+    propertyInfo: {
+      title: 'Property 房源信息',
+      fields: [
+        { key: 'address', label: 'Street address 街道地址', required: true },
+        { key: 'city', label: 'City 城市', required: true },
+        { key: 'description', label: 'Description 房源描述', type: 'textarea', rows: 7,
+          hint: '留空 = 用 6 图拼贴版式；填写 = 用带描述版式' },
+        { key: 'bedrooms', label: 'Bedrooms 卧室', hint: '如 4+1，留空则隐藏该图标' },
+        { key: 'bathrooms', label: 'Bathrooms 卫生间' },
+        { key: 'garage', label: 'Garage / parking 车库' },
+        { key: 'onlineTourUrl', label: 'Online tour URL 看房链接', hint: '用于生成二维码' },
+      ],
+    },
+    agentInfo: { title: 'Agent 经纪', fields: AGENT_FIELDS },
+    agentInfo2: { title: 'Second agent 第二经纪 (co-listing，可选)', fields: AGENT_FIELDS, optionalGroup: true },
+  };
 
   function mount(root, app) {
     root.innerHTML = '';
-    var groups = [
-      { key: 'propertyInfo', title: 'Property Information', fields: T.form.propertyInfo },
-      { key: 'agentInfo', title: 'Agent Information', fields: T.form.agentInfo },
-    ];
-    var inputs = {}; // "group.key" -> element
+    var inputs = {};
 
-    groups.forEach(function (g) {
+    Object.keys(SCHEMA).forEach(function (groupKey) {
+      var g = SCHEMA[groupKey];
       var sec = el('div', { class: 'fsb-form-sec' }, [el('h3', { text: g.title })]);
+      if (g.optionalGroup) {
+        var hint = el('p', { class: 'fsb-form-hint', text: '填了姓名即切换为双经纪版式。' });
+        sec.appendChild(hint);
+      }
       g.fields.forEach(function (f) {
-        var id = 'f-' + g.key + '-' + f.key;
+        var id = 'f-' + groupKey + '-' + f.key;
         var row = el('div', { class: 'fsb-form-row' });
         row.appendChild(el('label', { for: id, text: f.label + (f.required ? ' *' : '') }));
 
         if (f.type === 'image') {
-          row.appendChild(buildImageField(g.key, f, id, app));
+          row.appendChild(buildImageField(groupKey, f, id, app, inputs));
+        } else if (f.type === 'select') {
+          var sel = el('select', { id: id });
+          f.options.forEach(function (o) { sel.appendChild(el('option', { value: o.v, text: o.t })); });
+          sel.value = readVal(app, groupKey, g.top, f.key) || f.options[0].v;
+          sel.addEventListener('change', function () { writeVal(app, groupKey, g.top, f.key, sel.value); });
+          inputs[groupKey + '.' + f.key] = sel;
+          row.appendChild(sel);
         } else {
           var input = f.type === 'textarea'
             ? el('textarea', { id: id, rows: f.rows || 4 })
             : el('input', { id: id, type: 'text' });
-          input.value = (app.project[g.key] && app.project[g.key][f.key]) || '';
-          var commit = debounce(function () { app.patchInfo(g.key, f.key, input.value); }, 200);
+          input.value = readVal(app, groupKey, g.top, f.key) || '';
+          var commit = debounce(function () { writeVal(app, groupKey, g.top, f.key, input.value); }, 220);
           input.addEventListener('input', commit);
-          inputs[g.key + '.' + f.key] = input;
+          inputs[groupKey + '.' + f.key] = input;
           row.appendChild(input);
-          if (f.hint) row.appendChild(el('span', { class: 'fsb-form-hint', text: f.hint }));
         }
+        if (f.hint) row.appendChild(el('span', { class: 'fsb-form-hint', text: f.hint }));
         sec.appendChild(row);
       });
       root.appendChild(sec);
     });
 
-    function buildImageField(groupKey, f, id, app) {
+    function buildImageField(groupKey, f, id, app, inputs) {
       var wrap = el('div', { class: 'fsb-img-field' });
       var preview = el('div', { class: 'fsb-img-prev' });
       var fileInput = el('input', { id: id, type: 'file', accept: 'image/jpeg,image/png', style: { display: 'none' } });
-      var pick = el('button', { class: 'fsb-btn fsb-btn--sm', type: 'button', text: 'Choose…' });
-      var clear = el('button', { class: 'fsb-btn fsb-btn--sm fsb-btn--ghost', type: 'button', text: 'Use default' });
+      var pick = el('button', { class: 'fsb-btn fsb-btn--sm', type: 'button', text: 'Choose… 选择' });
+      var clear = el('button', { class: 'fsb-btn fsb-btn--sm fsb-btn--ghost', type: 'button', text: 'Clear 清除' });
       pick.addEventListener('click', function () { fileInput.click(); });
-      clear.addEventListener('click', function () { app.patchInfo(groupKey, f.key, null); renderPrev(); });
+      clear.addEventListener('click', function () { writeVal(app, groupKey, false, f.key, null); renderPrev(); });
       fileInput.addEventListener('change', function () {
         var file = fileInput.files[0]; fileInput.value = '';
         if (!file) return;
@@ -64,24 +115,21 @@
         preview.classList.add('is-loading');
         src.upload(app.projectId, file).then(function (meta) {
           app.addPhoto(meta);
-          app.patchInfo(groupKey, f.key, meta.photoId);
+          writeVal(app, groupKey, false, f.key, meta.photoId);
           renderPrev();
         }).catch(function (err) { toast('Upload failed: ' + err.message, 'error'); })
           .then(function () { preview.classList.remove('is-loading'); });
       });
       function renderPrev() {
-        var pid = app.project[groupKey][f.key];
+        var grp = app.project[groupKey] || {};
+        var pid = grp[f.key];
         preview.innerHTML = '';
-        var img = el('img', { alt: '' });
-        img.src = pid ? src.fullUrl(app.project, pid)
-          : ('/template-assets/' + app.project.templateId + '/' +
-             (f.key === 'headshotPhotoId' ? T.headshotSlot.defaultAsset : T.logoSlot.defaultAsset));
-        preview.appendChild(img);
+        if (pid) preview.appendChild(el('img', { alt: '', src: src.fullUrl(app.project, pid) }));
+        else preview.appendChild(el('span', { class: 'fsb-img-empty', text: f.key.indexOf('logo') > -1 ? 'Logo' : 'Headshot' }));
       }
       wrap._renderPrev = renderPrev;
       inputs[groupKey + '.' + f.key] = wrap;
       wrap.appendChild(preview);
-      // "Choose..." only when the photo source accepts uploads.
       if (src.supportsUpload && src.supportsUpload()) wrap.appendChild(pick);
       wrap.appendChild(clear);
       renderPrev();
@@ -90,17 +138,30 @@
 
     function repopulate() {
       Object.keys(inputs).forEach(function (path) {
-        var parts = path.split('.');
-        var val = app.project[parts[0]] ? app.project[parts[0]][parts[1]] : '';
+        var parts = path.split('.'), groupKey = parts[0], key = parts[1];
+        var g = SCHEMA[groupKey];
         var node = inputs[path];
-        if (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA') {
-          if (node.value !== (val || '')) node.value = val || '';
-        } else if (node._renderPrev) {
-          node._renderPrev();
-        }
+        if (node._renderPrev) { node._renderPrev(); return; }
+        var val = readVal(app, groupKey, g && g.top, key);
+        if (node.tagName === 'SELECT') { if (val) node.value = val; }
+        else if (node.value !== (val || '')) node.value = val || '';
       });
     }
     app.on('project', repopulate);
+  }
+
+  // ---- value access -------------------------------------------------
+  function readVal(app, groupKey, isTop, key) {
+    if (isTop) return app.project[key];
+    var grp = app.project[groupKey];
+    return grp ? grp[key] : '';
+  }
+  function writeVal(app, groupKey, isTop, key, value) {
+    if (isTop) { app.patchTop(key, value); return; }
+    if (groupKey === 'agentInfo2' && !app.project.agentInfo2) {
+      app.project.agentInfo2 = {};
+    }
+    app.patchInfo(groupKey, key, value);
   }
 
   window.FSB.infoForm = { mount: mount };
