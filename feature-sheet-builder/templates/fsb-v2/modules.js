@@ -76,11 +76,11 @@
       id: 'left-collage6',
       column: LEFT,
       bands: [
-        { id: 'p1L-big', kind: 'photos', slots: row(['p1L-1'], { aspect: 1.62 }),
-          growWeight: 0, gapAfter: 0.018 },
-        { id: 'p1L-mid', kind: 'photos', slots: row(['p1L-2', 'p1L-3'], { aspect: 1.30, gap: 0.016 }),
-          growWeight: 0, gapAfter: 0.018 },
-        { id: 'p1L-bot', kind: 'photos', slots: row(['p1L-4', 'p1L-5', 'p1L-6'], { aspect: 0.92, gap: 0.014 }),
+        { id: 'p1L-big', kind: 'photos', slots: row(['p1L-1'], { aspect: 2.02 }),
+          growWeight: 0, gapAfter: 0.016 },
+        { id: 'p1L-mid', kind: 'photos', slots: row(['p1L-2', 'p1L-3'], { aspect: 1.42, gap: 0.016 }),
+          growWeight: 0, gapAfter: 0.016 },
+        { id: 'p1L-bot', kind: 'photos', slots: row(['p1L-4', 'p1L-5', 'p1L-6'], { aspect: 1.34, gap: 0.014 }),
           growWeight: 0, gapAfter: 0 },
       ],
       // leftover vertical slack is spread into the two gapAfter values
