@@ -25,7 +25,10 @@
   window.FSB = window.FSB || {};
 
   var CFG = window.FSB_CONFIG || {};
-  var MODE = (CFG.supabaseUrl && CFG.supabaseAnonKey) ? 'supabase' : 'local';
+  // ?local=1 forces the Node-server backend even when Supabase creds are
+  // present -- for local testing without touching the live database.
+  var FORCE_LOCAL = /[?&]local=1\b/.test(window.location.search);
+  var MODE = (!FORCE_LOCAL && CFG.supabaseUrl && CFG.supabaseAnonKey) ? 'supabase' : 'local';
 
   var DATA_KEYS = ['templateSystem', 'colorTheme', 'topPhotoStyle', 'templateId',
     'propertyInfo', 'agentInfo', 'agentInfo2', 'photos', 'pages', 'confirmed', 'confirmedAt'];

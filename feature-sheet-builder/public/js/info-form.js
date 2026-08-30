@@ -113,7 +113,9 @@
         if (!file) return;
         if (app.isReadOnly()) { toast('Project is confirmed.', 'error'); return; }
         preview.classList.add('is-loading');
-        src.upload(app.projectId, file).then(function (meta) {
+        (app.ensureCreated ? app.ensureCreated() : Promise.resolve())
+          .then(function () { return src.upload(app.projectId, file); })
+          .then(function (meta) {
           app.addPhoto(meta);
           writeVal(app, groupKey, false, f.key, meta.photoId);
           renderPrev();

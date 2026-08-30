@@ -89,7 +89,9 @@
         var job = queue.shift();
         active++;
         (function (job) {
-          src.upload(app.projectId, job.file).then(function (meta) {
+          (app.ensureCreated ? app.ensureCreated() : Promise.resolve())
+            .then(function () { return src.upload(app.projectId, job.file); })
+            .then(function (meta) {
             app.addPhoto(meta);
             job.tile.remove();
           }).catch(function (err) {

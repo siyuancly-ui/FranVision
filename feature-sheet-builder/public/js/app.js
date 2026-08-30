@@ -81,6 +81,26 @@
     scheduleSave();
   };
 
+  // Resolve once the project row exists (lazy creation). Photo uploads and
+  // image fields need a real projectId before they can POST.
+  app.ensureCreated = function () {
+    if (app.projectId) return Promise.resolve(app.projectId);
+    if (!app._createPromise) {
+      app._createPromise = new Promise(function (resolve, reject) {
+        (function attempt() {
+          if (app.projectId) { app._createPromise = null; return resolve(app.projectId); }
+          if (app._saving) { setTimeout(attempt, 120); return; }  // a save is already in flight
+          app.save().then(function () {
+            app._createPromise = null;
+            if (app.projectId) resolve(app.projectId);
+            else reject(new Error('could not create the project'));
+          }, function (e) { app._createPromise = null; reject(e); });
+        })();
+      });
+    }
+    return app._createPromise;
+  };
+
   app.assignPhotoToSlot = function (ref, photoId) {
     var st = app.slotState(ref.page, ref.slotId);
     st.photoId = photoId; st.positionX = 0; st.positionY = 0; st.scale = 1;
