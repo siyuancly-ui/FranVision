@@ -53,11 +53,20 @@ function applyPatch(project, patch) {
   if (!patch || typeof patch !== 'object') return project;
 
   if (patch.templateId && templates.has(patch.templateId)) project.templateId = patch.templateId;
+  // fsb-v2 top-level fields
+  if (patch.templateSystem) project.templateSystem = patch.templateSystem;
+  if (patch.colorTheme) project.colorTheme = patch.colorTheme;
+  if (patch.topPhotoStyle) project.topPhotoStyle = patch.topPhotoStyle;
   if (patch.propertyInfo && typeof patch.propertyInfo === 'object') {
     project.propertyInfo = Object.assign({}, project.propertyInfo, patch.propertyInfo);
   }
   if (patch.agentInfo && typeof patch.agentInfo === 'object') {
     project.agentInfo = Object.assign({}, project.agentInfo, patch.agentInfo);
+  }
+  if ('agentInfo2' in patch && patch.agentInfo2 !== undefined) {
+    project.agentInfo2 = patch.agentInfo2 && typeof patch.agentInfo2 === 'object'
+      ? Object.assign({}, project.agentInfo2 || {}, patch.agentInfo2)
+      : patch.agentInfo2; // null clears it
   }
   // The client is authoritative for the photo list (it holds every uploaded
   // photo's metadata in memory); a save replaces the stored array wholesale.
@@ -148,22 +157,43 @@ class LocalDiskStorage {
 
   async createProject(initial) {
     initial = initial || {};
-    const tplId = templates.has(initial.templateId) ? initial.templateId : templates.DEFAULT_ID;
-    const tpl = templates.get(tplId);
-    const base = tpl.blankProject();
     const id = newId();
-    const project = Object.assign(base, {
-      projectId: id,
-      templateId: tplId,
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-    });
+    let project;
+    if (initial.templateSystem === 'fsb-v2') {
+      // Minimal v2 scaffold; the client is authoritative for geometry.
+      project = {
+        projectId: id,
+        templateSystem: 'fsb-v2',
+        colorTheme: initial.colorTheme || 'navy',
+        topPhotoStyle: initial.topPhotoStyle || 'wide',
+        propertyInfo: { address: '', city: '', description: '',
+          bedrooms: '', bathrooms: '', garage: '', onlineTourUrl: '' },
+        agentInfo: { name: '', credentials: '', busPhone: '', cellPhone: '', email: '',
+          brokerage: '', brokerageAddress: '', website: '',
+          headshotPhotoId: null, brokerageLogoPhotoId: null },
+        agentInfo2: null,
+        photos: [],
+        pages: { page1: { slots: {} }, page2: { slots: {} } },
+        confirmed: false, confirmedAt: null,
+        createdAt: nowIso(), updatedAt: nowIso(),
+      };
+    } else {
+      const tplId = templates.has(initial.templateId) ? initial.templateId : templates.DEFAULT_ID;
+      const tpl = templates.get(tplId);
+      project = Object.assign(tpl.blankProject(), {
+        projectId: id, templateId: tplId, createdAt: nowIso(), updatedAt: nowIso(),
+      });
+    }
     // Optional seed data (property/agent info, pre-attached photos) so the
     // wider FranVision platform can auto-create a filled project from a
     // delivery/job later.
     applyPatch(project, {
+      templateSystem: initial.templateSystem,
+      colorTheme: initial.colorTheme,
+      topPhotoStyle: initial.topPhotoStyle,
       propertyInfo: initial.propertyInfo,
       agentInfo: initial.agentInfo,
+      agentInfo2: initial.agentInfo2,
       pages: initial.pages,
     });
     if (Array.isArray(initial.photos)) project.photos = initial.photos;

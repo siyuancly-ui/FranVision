@@ -322,3 +322,26 @@ body.fsb-modal-open { overflow: hidden; }
   body { overflow: auto; }
   #fsb-app { height: auto; min-height: 100vh; }
 }
+
+/* ---- multi-sheet: "My sheets" menu (v2) ---- */
+.fsb-mysheets-wrap { position: relative; }
+.fsb-mysheets-menu {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 60;
+  width: 300px; max-height: 60vh; overflow-y: auto;
+  background: #fff; border: 1px solid #d8dde5; border-radius: 8px;
+  box-shadow: 0 12px 34px rgba(20,28,44,.18); padding: 4px;
+}
+.fsb-mysheets-empty { padding: 14px; color: #8a94a3; font-size: 13px; text-align: center; }
+.fsb-mysheets-item {
+  display: flex; align-items: baseline; gap: 8px; padding: 8px 10px;
+  border-radius: 6px; text-decoration: none; color: #1e2530;
+}
+.fsb-mysheets-item:hover { background: #f1f4f9; }
+.fsb-mysheets-item.is-current { background: #eef3ff; }
+.fsb-mysheets-addr { font-weight: 600; font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fsb-mysheets-meta { font-size: 11px; color: #8a94a3; white-space: nowrap; }
+.fsb-mysheets-del {
+  border: 0; background: none; color: #b7bfca; cursor: pointer; font-size: 16px;
+  line-height: 1; padding: 0 2px;
+}
+.fsb-mysheets-del:hover { color: #d64545; }

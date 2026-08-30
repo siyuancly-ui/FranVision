@@ -125,21 +125,77 @@
   var scheduleSave = util.debounce(function () { app.save(); }, 800);
   app._markDirty = function () { app._dirty = true; app.emit('save-state'); };
   var origSchedule = scheduleSave;
-  scheduleSave = function () { app._markDirty(); origSchedule(); };
+  scheduleSave = function () {
+    app._markDirty();
+    // Materialise the row on the very first change so photo uploads (which
+    // need a projectId) and the shareable ?p= URL are available right away.
+    if (!app.projectId && !app._saving) { app.save(); return; }
+    origSchedule();
+  };
 
   app.save = function () {
     if (!app.project || app._saving) return Promise.resolve();
     app._saving = true; app.emit('save-state');
-    // Pass the whole in-memory project; each store impl persists what it needs
-    // (local server merges a patch; Supabase writes the full data blob).
-    return store.updateProject(app.projectId, app.project).then(function (updated) {
+    // Lazy creation: a bare-URL visit holds an in-memory blank project with
+    // no id. The row is only written on the first real save (= first edit),
+    // so "just looking" never leaves an orphan.
+    var work;
+    if (!app.projectId) {
+      work = store.createProject(app.project).then(function (created) {
+        app.projectId = created.projectId;
+        app.project.projectId = created.projectId;
+        app.project.createdAt = created.createdAt;
+        setUrlProject(created.projectId);
+        return created;
+      });
+    } else {
+      // Pass the whole in-memory project; each store impl persists what it
+      // needs (local server merges a patch; Supabase writes the full blob).
+      work = store.updateProject(app.projectId, app.project);
+    }
+    return work.then(function (updated) {
       app.project.updatedAt = updated.updatedAt;
       app._saving = false; app._dirty = false; app.emit('save-state');
+      mySheets.record(app.project);
     }).catch(function (err) {
       app._saving = false; app.emit('save-state');
       util.toast('Save failed: ' + err.message, 'error');
     });
   };
+
+  // ---- "my sheets" (this browser only) --------------------------
+  var mySheets = {
+    KEY: 'fsb_my_sheets_v2',
+    read: function () {
+      try { return JSON.parse(localStorage.getItem(mySheets.KEY) || '[]'); }
+      catch (e) { return []; }
+    },
+    write: function (list) {
+      try { localStorage.setItem(mySheets.KEY, JSON.stringify(list.slice(0, 40))); } catch (e) {}
+    },
+    record: function (project) {
+      if (!project || !project.projectId) return;
+      var pi = project.propertyInfo || {};
+      var list = mySheets.read().filter(function (s) { return s.id !== project.projectId; });
+      list.unshift({
+        id: project.projectId,
+        address: pi.address || '',
+        city: pi.city || '',
+        theme: project.colorTheme || 'navy',
+        at: Date.now(),
+      });
+      mySheets.write(list);
+    },
+    remove: function (id) {
+      mySheets.write(mySheets.read().filter(function (s) { return s.id !== id; }));
+    },
+  };
+  app.mySheets = mySheets;
+
+  function updateTitle() {
+    var a = app.project && app.project.propertyInfo && app.project.propertyInfo.address;
+    document.title = (a ? a + ' — ' : '') + 'FranVision Feature Sheet Builder';
+  }
 
   // ---- confirm ------------------------------------------------
   // Confirm = the agent's final sign-off: lock the design, then submit it
@@ -208,6 +264,11 @@
         el('span', { class: 'fsb-confirmed', id: 'fsb-confirmed-badge' }),
       ]),
       el('div', { class: 'fsb-topbar-actions' }, [
+        el('button', { class: 'fsb-btn fsb-btn--ghost', id: 'fsb-btn-new', text: '+ New 新建' }),
+        el('div', { class: 'fsb-mysheets-wrap' }, [
+          el('button', { class: 'fsb-btn fsb-btn--ghost', id: 'fsb-btn-mysheets', text: 'My sheets 我的 ▾' }),
+          el('div', { class: 'fsb-mysheets-menu', id: 'fsb-mysheets-menu', hidden: true }),
+        ]),
         el('button', { class: 'fsb-btn fsb-btn--ghost', id: 'fsb-toggle-form', text: 'Info' }),
         el('button', { class: 'fsb-btn', id: 'fsb-btn-preview', text: 'Preview 预览' }),
         el('button', { class: 'fsb-btn fsb-btn--save', id: 'fsb-btn-save', text: 'Save 保存' }),
@@ -242,6 +303,58 @@
     document.getElementById('fsb-toggle-form').addEventListener('click', function () {
       document.getElementById('fsb-app').classList.toggle('fsb-form-open');
     });
+
+    document.getElementById('fsb-btn-new').addEventListener('click', function () {
+      var go = function () { window.location.href = window.location.pathname; };
+      if (app._dirty || app._saving) {
+        util.confirmDialog(
+          'Start a new feature sheet? Unsaved changes on this one will be lost.\n\n新建一份 Feature Sheet？当前未保存的改动会丢失。',
+          { okText: 'New sheet 新建', cancelText: 'Cancel 取消' }
+        ).then(function (ok) { if (ok) go(); });
+      } else { go(); }
+    });
+
+    var menu = document.getElementById('fsb-mysheets-menu');
+    document.getElementById('fsb-btn-mysheets').addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (!menu.hidden) { menu.hidden = true; return; }
+      renderMySheetsMenu(menu);
+      menu.hidden = false;
+    });
+    document.addEventListener('click', function () { menu.hidden = true; });
+  }
+
+  function renderMySheetsMenu(menu) {
+    menu.innerHTML = '';
+    var list = app.mySheets.read();
+    if (!list.length) {
+      menu.appendChild(el('div', { class: 'fsb-mysheets-empty', text: '还没有保存过的 Feature Sheet' }));
+      return;
+    }
+    list.forEach(function (s) {
+      var row = el('a', { class: 'fsb-mysheets-item', href: window.location.pathname + '?p=' + encodeURIComponent(s.id) });
+      if (s.id === app.projectId) row.classList.add('is-current');
+      row.appendChild(el('span', { class: 'fsb-mysheets-addr',
+        text: s.address || '(未命名 untitled)' }));
+      row.appendChild(el('span', { class: 'fsb-mysheets-meta',
+        text: (s.city ? s.city + ' · ' : '') + timeAgo(s.at) }));
+      var del = el('button', { class: 'fsb-mysheets-del', title: 'Forget this link 从列表移除', text: '×' });
+      del.addEventListener('click', function (ev) {
+        ev.preventDefault(); ev.stopPropagation();
+        app.mySheets.remove(s.id); renderMySheetsMenu(menu);
+      });
+      row.appendChild(del);
+      menu.appendChild(row);
+    });
+  }
+
+  function timeAgo(ts) {
+    if (!ts) return '';
+    var s = Math.floor((Date.now() - ts) / 1000);
+    if (s < 60) return 'just now';
+    if (s < 3600) return Math.floor(s / 60) + 'm ago';
+    if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+    return Math.floor(s / 86400) + 'd ago';
   }
 
   function buildPageNav() {
@@ -329,10 +442,12 @@
     app.on('save-state', reflectSaveState);
     app.on('dynamic', function () {
       [1, 2].forEach(function (p) { if (app._pageEls[p]) render.updateDynamic(app._pageEls[p], app.project); });
+      updateTitle();
     });
     app.on('project', function () {
       renderStage();
       [1, 2].forEach(function (p) { if (app._pageEls[p]) render.updateDynamic(app._pageEls[p], app.project); });
+      updateTitle();
     });
 
     var onResize = util.debounce(function () {
@@ -382,7 +497,11 @@
           if (/not found/i.test(err.message)) { showFatal('That project link could not be found.', true); throw err; }
           throw err;
         })
-      : store.createProject().then(function (project) { setUrlProject(project.projectId); return project; });
+      // Lazy: no id -> in-memory blank project, no row written yet. The
+      // first edit triggers save() which creates the row + sets ?p=.
+      : Promise.resolve(Object.assign(
+          window.FSB_V2.blankProject('navy'),
+          { projectId: null, createdAt: null, updatedAt: null }));
 
     load.then(function (project) {
       app.setProject(project);
