@@ -59,6 +59,7 @@ const SHARED_FILES = {
   '/shared/v2/modules.js': path.join(__dirname, 'templates', 'fsb-v2', 'modules.js'),
   '/shared/v2/layout-engine.js': path.join(__dirname, 'templates', 'fsb-v2', 'layout-engine.js'),
   '/shared/v2/registry.js': path.join(__dirname, 'templates', 'fsb-v2', 'registry.js'),
+  '/shared/v2/assets/flourish.svg': path.join(__dirname, 'templates', 'fsb-v2', 'assets', 'flourish.svg'),
 };
 
 const MIME = {

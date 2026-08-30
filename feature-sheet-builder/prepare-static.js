@@ -35,6 +35,8 @@ copy(path.join(ROOT, 'templates', 'jason-fs-v1', 'template-config.js'), path.joi
 for (const f of ['geometry.js', 'themes.js', 'modules.js', 'layout-engine.js', 'registry.js']) {
   copy(path.join(ROOT, 'templates', 'fsb-v2', f), path.join(PUB, 'shared', 'v2', f));
 }
+copy(path.join(ROOT, 'templates', 'fsb-v2', 'assets', 'flourish.svg'),
+  path.join(PUB, 'shared', 'v2', 'assets', 'flourish.svg'));
 
 // Template assets referenced as /template-assets/<templateId>/...
 const tplDir = path.join(ROOT, 'templates');

@@ -26,7 +26,6 @@
     { key: 'email', label: 'Email 邮箱' },
     { key: 'brokerage', label: 'Brokerage 经纪公司' },
     { key: 'brokerageAddress', label: 'Brokerage address 公司地址' },
-    { key: 'website', label: 'Website 网站', optional: true },
     { key: 'headshotPhotoId', label: 'Headshot 头像', type: 'image' },
     { key: 'brokerageLogoPhotoId', label: 'Brokerage logo 公司 Logo', type: 'image' },
   ];
@@ -38,8 +37,6 @@
       fields: [
         { key: 'colorTheme', label: 'Colour theme 主题色', type: 'select',
           options: Object.keys(THEMES).map(function (k) { return { v: k, t: THEMES[k].name }; }) },
-        { key: 'topPhotoStyle', label: 'Top photo (when description filled) 顶部照片', type: 'select',
-          options: [{ v: 'wide', t: 'One wide photo 单张宽图' }, { v: 'paired', t: 'Two side by side 两张并列' }] },
       ],
     },
     propertyInfo: {

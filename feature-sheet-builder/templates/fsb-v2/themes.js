@@ -39,38 +39,43 @@
     return { id: id, name: name, fonts: fonts, tokens: tokens, bg: bg };
   }
 
+  // Backgrounds are LINEAR gradients, matching the originals (IDML
+  // Gradient stops): navy 120 = CMYK 98/89/50/44 -> 98/89/62/68;
+  // burgundy M&S/Sue = CMYK 56/100/87/56 -> 56/100/87/90; marble = a
+  // placed light-stone image, approximated. Endpoints tuned to the
+  // sampled press-PDF colours.
   var THEMES = {
     navy: theme('navy', '藏蓝 · Navy', {
-      bg: '#141825',
-      bgDeep: '#11141f',
-      ink: '#F4EFE6',          // warm off-white body/headings
+      bg: '#141b30',
+      bgDeep: '#0d1220',
+      ink: '#F4EFE6',
       inkMuted: '#cdbfa6',
-      gold: '#D9B28D',         // champagne accent (hero keyline, values)
+      gold: '#D9B28D',
       goldDeep: '#c0925f',
-      goldLine: '#a97c4f',    // hairline gold
+      goldLine: '#a97c4f',
       panelInk: '#F4EFE6',
     }, {
       asset: null,
-      css: 'radial-gradient(120% 90% at 28% 32%, #1b2133 0%, #141825 46%, #11131d 100%)',
+      css: 'linear-gradient(157deg, #1a2340 0%, #131a30 42%, #0c1120 100%)',
     }),
 
     marble: theme('marble', '白大理石 · Marble', {
-      bg: '#F5F4F1',
-      bgDeep: '#ECEAE3',
-      ink: '#262A30',
+      bg: '#F4F2EC',
+      bgDeep: '#E7E3D8',
+      ink: '#26292F',
       inkMuted: '#5c6068',
-      gold: '#B69A3E',         // brass gold reads better on light marble
-      goldDeep: '#8f7a2f',
-      goldLine: '#b9a45a',
-      panelInk: '#262A30',
+      gold: '#9c7b33',         // deeper brass reads on light stone
+      goldDeep: '#7c6128',
+      goldLine: '#b39a56',
+      panelInk: '#26292F',
     }, {
       asset: null,
-      css: 'linear-gradient(135deg, #FAF9F6 0%, #F1EFE9 45%, #E7E4DB 100%)',
+      css: 'linear-gradient(157deg, #FAF8F2 0%, #F0EDE4 46%, #E4DFD2 100%)',
     }),
 
     burgundy: theme('burgundy', '酒红 · Burgundy', {
-      bg: '#301417',
-      bgDeep: '#1c0708',
+      bg: '#38151a',
+      bgDeep: '#1a0708',
       ink: '#F4EFE6',
       inkMuted: '#d8c3ad',
       gold: '#D9B28D',
@@ -79,7 +84,7 @@
       panelInk: '#F4EFE6',
     }, {
       asset: null,
-      css: 'radial-gradient(120% 90% at 30% 34%, #3d1a1e 0%, #301417 44%, #1d0809 100%)',
+      css: 'linear-gradient(157deg, #431a1f 0%, #331216 44%, #1c0809 100%)',
     }),
   };
 

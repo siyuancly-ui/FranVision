@@ -32,9 +32,7 @@
 
   // ---- which modules apply -----------------------------------------
   function pickLeftVariant(project) {
-    var hasDesc = nonEmpty(get(project, 'propertyInfo.description'));
-    if (!hasDesc) return 'collage6';
-    return project.topPhotoStyle === 'paired' ? 'pairDesc' : 'heroDesc';
+    return nonEmpty(get(project, 'propertyInfo.description')) ? 'stagger5' : 'collage6';
   }
   function pickAgentVariant(project) {
     return nonEmpty(get(project, 'agentInfo2.name')) ? 'dual' : 'single';
@@ -46,14 +44,17 @@
   }
 
   // ---- slot enumeration ------------------------------------------
-  function slotIds(project) {
-    var lv = pickLeftVariant(project);
-    var left = M.leftColumn[lv].bands.reduce(function (acc, b) {
+  function leftSlotIds(variant) {
+    var def = M.leftColumn[variant];
+    if (def.explicit) return def.photos.map(function (p) { return p.id; });
+    return def.bands.reduce(function (acc, b) {
       if (b.kind === 'photos') b.slots.forEach(function (s) { acc.push(s.id); });
       return acc;
     }, []);
+  }
+  function slotIds(project) {
     var p2 = G.page2.slots.map(function (s) { return s.id; });
-    return left.concat(['p1R-hero']).concat(p2);
+    return leftSlotIds(pickLeftVariant(project)).concat(['p1R-hero']).concat(p2);
   }
 
   // ---- compose ---------------------------------------------------
@@ -64,21 +65,28 @@
     var agentVariant = pickAgentVariant(project);
     var iconKeys = iconRowKeys(project);
 
-    // -- page 1 LEFT: solve the band stack --
+    // -- page 1 LEFT --
     var leftDef = M.leftColumn[leftVariant];
-    var leftSolved = LAY.solveColumn(leftDef.column, leftDef.bands,
-      { slackToGaps: leftDef.slackToGaps !== false });
+    var leftSolved, leftDesc = null;
+    if (leftDef.explicit) {
+      leftSolved = { bands: leftDef.photos.map(function (p) {
+        return { id: p.id, kind: 'photos', slots: [{ id: p.id, rect: p.rect }], rect: p.rect };
+      }), overflow: 0 };
+      leftDesc = { rect: leftDef.desc.rect, type: leftDef.desc.type,
+        field: 'propertyInfo.description',
+        value: get(project, 'propertyInfo.description') || '' };
+    } else {
+      leftSolved = LAY.solveColumn(leftDef.column, leftDef.bands,
+        { slackToGaps: leftDef.slackToGaps !== false });
+    }
 
     // -- page 1 RIGHT: address / hero fixed; then a "lower zone" that the
     //    optional icon row + the agent block share. The agent block just
     //    gets whatever height is left -> no overflow, reflows its content.
     var R = M.RIGHT;
     var pr = G.page1Right;
-    // master (3361 / layout A == description present) sits address+hero
-    // lower than the collage files.
-    var lowerA = leftVariant !== 'collage6';
-    var addrRect = lowerA ? [0.542, 0.055, 0.414, 0.110] : pr.address.rect;
-    var heroRect = lowerA ? [0.504, 0.190, 0.492, 0.470] : pr.hero.rect;
+    var addrRect = pr.address.rect;
+    var heroRect = pr.hero.rect;
 
     var GAP = 0.018;
     var COL_BOTTOM = 0.977;
@@ -97,7 +105,7 @@
       geometry: G,
       flags: { leftVariant: leftVariant, agentVariant: agentVariant, iconRow: iconKeys },
       page1: {
-        left: { variant: leftVariant, column: leftDef.column, solved: leftSolved },
+        left: { variant: leftVariant, column: leftDef.column, solved: leftSolved, desc: leftDesc },
         right: {
           address: { rect: addrRect, spec: pr.address, value: {
             address: get(project, 'propertyInfo.address') || '',

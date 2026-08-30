@@ -42,33 +42,27 @@
 
   // ================================================================
   //  LEFT COLUMN VARIANTS
-  //  chosen by:  description filled?  ->  hero/pair (topPhotoStyle) | collage6
+  //  chosen by:  description filled?  ->  stagger5 (+desc) | collage6
   // ================================================================
   var leftColumn = {
-    // has description + one wide photo on top
-    heroDesc: {
-      id: 'left-heroDesc',
+    // HAS description -> 5-photo staggered collage + justified description.
+    // Explicit rects (compose() places them directly, not via the band
+    // solver): 2 across the top, then 2 stacked (left) + 1 large (right).
+    stagger5: {
+      id: 'left-stagger5',
       column: LEFT,
-      bands: [
-        { id: 'p1L-top', kind: 'photos', slots: row(['p1L-1'], { aspect: 2.15 }),
-          growWeight: 0, gapAfter: 0.024 },
-        { id: 'p1L-desc', kind: 'text', field: 'propertyInfo.description',
-          minHFrac: 0.26, growWeight: 1,
-          type: { font: 'serif', sizePt: 16, leadingPt: 22, align: 'left' } },
+      explicit: true,
+      photos: [
+        { id: 'p1L-1', rect: [0.009, 0.026, 0.230, 0.232] }, // top-left
+        { id: 'p1L-2', rect: [0.253, 0.026, 0.237, 0.232] }, // top-right
+        { id: 'p1L-3', rect: [0.009, 0.276, 0.150, 0.150] }, // bottom-left upper
+        { id: 'p1L-4', rect: [0.009, 0.440, 0.150, 0.150] }, // bottom-left lower
+        { id: 'p1L-5', rect: [0.171, 0.276, 0.319, 0.314] }, // bottom-right large
       ],
-    },
-
-    // has description + two photos side by side on top
-    pairDesc: {
-      id: 'left-pairDesc',
-      column: LEFT,
-      bands: [
-        { id: 'p1L-top', kind: 'photos', slots: row(['p1L-1', 'p1L-2'], { aspect: 1.10, gap: 0.016 }),
-          growWeight: 0, gapAfter: 0.024 },
-        { id: 'p1L-desc', kind: 'text', field: 'propertyInfo.description',
-          minHFrac: 0.24, growWeight: 1,
-          type: { font: 'serif', sizePt: 16, leadingPt: 22, align: 'left' } },
-      ],
+      desc: {
+        rect: [0.009, 0.612, 0.481, 0.360],
+        type: { font: 'serif', sizePt: 16, leadingPt: 22, align: 'justify' },
+      },
     },
 
     // no description -> 6-photo collage filling the column (1 + 2 + 3)
@@ -95,23 +89,28 @@
   //  single shared copy in both.
   // ================================================================
   var agentBlock = {
+    // Kevin-9 layout: LEFT = logo (top) + brokerage name + office address
+    // + QR;  MIDDLE = agent name + credentials + phones/email;
+    // RIGHT = headshot, tall portrait, full height.
     single: {
       id: 'agent-single',
-      // business-card style: logo (left) | name+title+phones (mid) | headshot (right)
       cols: [
-        { id: 'logo', wFrac: 0.30, kind: 'logo' },
-        { id: 'detail', wFrac: 0.44, kind: 'stack', lines: [
-          { field: 'agentInfo.name', type: { font: 'serif', sizePt: 17, weight: 700, token: 'gold', tracking: 0.04 } },
+        { id: 'brand', wFrac: 0.36, kind: 'stack', lines: [
+          { img: 'agentInfo.brokerageLogoPhotoId', placeholder: 'Logo', hFrac: 0.34 },
+          { field: 'agentInfo.brokerage', type: { font: 'sans', sizePt: 8.5, weight: 600, token: 'inkMuted' } },
+          { field: 'agentInfo.brokerageAddress', type: { font: 'sans', sizePt: 8, token: 'inkMuted' } },
+          { qr: 'propertyInfo.onlineTourUrl' },
+        ] },
+        { id: 'detail', wFrac: 0.40, kind: 'stack', lines: [
+          { field: 'agentInfo.name', type: { font: 'serif', sizePt: 17, weight: 700, token: 'gold', tracking: 0.03 } },
           { field: 'agentInfo.credentials', type: { font: 'sans', sizePt: 9, token: 'inkMuted' } },
-          { field: 'agentInfo.brokerage', type: { font: 'sans', sizePt: 9, token: 'inkMuted' } },
-          { field: 'agentInfo.brokerageAddress', type: { font: 'sans', sizePt: 8.5, token: 'inkMuted' } },
+          { spacer: 0.02 },
           { compose: ['Mobile: ', 'agentInfo.cellPhone'], type: { font: 'sans', sizePt: 9 } },
           { compose: ['Office: ', 'agentInfo.busPhone'], type: { font: 'sans', sizePt: 9 } },
           { compose: ['Email: ', 'agentInfo.email'], type: { font: 'sans', sizePt: 9 } },
         ] },
-        { id: 'headshot', wFrac: 0.26, kind: 'headshot', aspect: 0.78 },
+        { id: 'headshot', wFrac: 0.24, kind: 'headshot', aspect: 0.62, ref: 'agentInfo', fullHeight: true },
       ],
-      qr: { anchor: 'detail-bottom', sizeFrac: 0.05, count: [0, 2], source: 'propertyInfo.onlineTourUrl' },
     },
 
     dual: {
@@ -124,12 +123,11 @@
           { compose: ['agentInfo.name', ' & ', 'agentInfo2.name'], type: { font: 'serif', sizePt: 15, weight: 700 } },
           { field: 'agentInfo.brokerage', type: { font: 'sans', sizePt: 9, token: 'inkMuted' } },
           { field: 'agentInfo.brokerageAddress', type: { font: 'sans', sizePt: 8.5, token: 'inkMuted' } },
-        ], logoBelow: true },
+          { img: 'agentInfo.brokerageLogoPhotoId', placeholder: 'Logo', hFrac: 0.24 },
+          { qr: 'propertyInfo.onlineTourUrl' },
+        ] },
         { id: 'headshot2', wFrac: 0.20, kind: 'headshot', aspect: 0.62, ref: 'agentInfo2' },
       ],
-      // per-agent phone shown as a gold chip on each headshot's lower edge
-      headshotChip: { fields: ['cellPhone'], type: { font: 'sans', sizePt: 8.5, weight: 600 } },
-      qr: { anchor: 'center-bottom', sizeFrac: 0.045, count: [0, 2], source: 'propertyInfo.onlineTourUrl' },
     },
   };
 

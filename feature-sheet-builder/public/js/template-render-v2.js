@@ -216,7 +216,7 @@
     setBox(box, info.rect, pw, ph);
     var boxH = info.rect[3] * ph;
     var pad = Math.max(6, 12 * scale);
-    box.style.cssText += ';display:flex;align-items:stretch;box-sizing:border-box;' +
+    box.style.cssText += ';display:flex;align-items:stretch;box-sizing:border-box;overflow:hidden;' +
       'gap:' + (info.rect[2] * pw * 0.025) + 'px;padding:' + pad + 'px;' +
       'color:' + tokenColor(theme, 'ink') + ';border:1px solid ' + tokenColor(theme, 'goldLine') +
       ';border-radius:' + (3 * scale) + 'px;';
@@ -227,52 +227,54 @@
         'justify-content:center;gap:' + (2 * scale) + 'px;' +
         ((info.spec.align === 'center' || col.align === 'center') ? 'align-items:center;text-align:center;' : '');
 
-      if (col.kind === 'logo') {
-        c.appendChild(imgBox(theme, scale, val(project, 'agentInfo.brokerageLogoPhotoId') &&
-          fullUrl(project, val(project, 'agentInfo.brokerageLogoPhotoId')), 'Logo', boxH * 0.42));
-        var bn = val(project, 'agentInfo.brokerage');
-        if (bn) c.appendChild(textLine(theme, scale, bn, { font: 'sans', sizePt: 8, token: 'inkMuted' }));
-      } else if (col.kind === 'headshot') {
+      if (col.kind === 'headshot') {
         var hpid = val(project, (col.ref || 'agentInfo') + '.headshotPhotoId');
-        c.appendChild(imgBox(theme, scale, hpid && fullUrl(project, hpid), 'Headshot', boxH * 0.66));
+        var hb = imgBox(theme, scale, hpid && fullUrl(project, hpid), 'Headshot',
+          col.fullHeight ? boxH - pad * 2 : boxH * 0.66);
+        hb.style.flex = '1 1 auto';
+        c.appendChild(hb);
       } else if (col.kind === 'stack') {
         (col.lines || []).forEach(function (ln) {
+          if (ln.spacer) {
+            var sp = el('div'); sp.style.height = (ln.spacer * ph) + 'px'; c.appendChild(sp); return;
+          }
+          if (ln.img) {
+            var pid = val(project, ln.img);
+            var im = imgBox(theme, scale, pid && fullUrl(project, pid), ln.placeholder || '',
+              (ln.hFrac || 0.3) * boxH);
+            im.style.flex = '0 0 auto'; im.style.alignSelf = 'stretch';
+            c.appendChild(im); return;
+          }
+          if (ln.qr) {
+            var url = val(project, ln.qr);
+            if (!url) return;
+            var qpx = Math.max(28, Math.round(boxH * 0.30));
+            var qb = el('div', { class: 'fsb-agent-qr' });
+            qb.style.cssText = 'width:' + qpx + 'px;height:' + qpx + 'px;background:#fff;padding:' +
+              (2 * scale) + 'px;box-sizing:border-box;flex:0 0 auto;margin-top:' + (3 * scale) + 'px;';
+            if (window.FSB.qr) window.FSB.qr.render(qb, url, { size: qpx, dark: '#141414', light: '#ffffff' });
+            c.appendChild(qb); return;
+          }
           var t = ln.text != null ? ln.text
             : ln.compose ? composeLine(project, ln.compose)
             : val(project, ln.field);
           if (t == null || String(t).trim() === '' || /^[\s|&]*$/.test(String(t))) return;
           c.appendChild(textLine(theme, scale, t, ln.type));
         });
-        if (col.logoBelow) {
-          var lpid = val(project, 'agentInfo.brokerageLogoPhotoId');
-          var lb = imgBox(theme, scale, lpid && fullUrl(project, lpid), 'Logo', boxH * 0.26);
-          lb.style.flex = '0 0 auto'; lb.style.width = '55%'; lb.style.marginTop = (5 * scale) + 'px';
-          c.appendChild(lb);
-        }
       }
       box.appendChild(c);
     });
     return box;
   }
 
-  // ---- flourish + panel border (page 2) -----------------------
-  // Symmetric filigree: central palmette + two mirrored scrolling tendrils.
-  function flourishSvg(color) {
-    var half =
-      '<path d="M100 26 C100 26 92 14 78 12 C64 10 58 20 62 27 C65 32 74 32 76 26 ' +
-      'C77 22 72 19 68 21 C72 20 75 24 72 28 C68 33 58 31 56 24 C54 16 63 8 78 9 ' +
-      'C90 10 100 20 100 26 Z" fill="' + color + '"/>' +
-      '<path d="M60 26 C48 26 40 24 30 26 C22 27.5 16 26 12 26" fill="none" ' +
-      'stroke="' + color + '" stroke-width="1.6" stroke-linecap="round"/>' +
-      '<circle cx="10" cy="26" r="2.4" fill="' + color + '"/>' +
-      '<path d="M44 22 C40 16 32 16 30 22 C29 26 34 28 36 24" fill="none" ' +
-      'stroke="' + color + '" stroke-width="1.4" stroke-linecap="round"/>';
-    return '<svg viewBox="0 0 200 40" preserveAspectRatio="xMidYMid meet">' +
-      '<g>' + half + '</g>' +
-      '<g transform="translate(200,0) scale(-1,1)">' + half + '</g>' +
-      '<path d="M100 12 C104 6 108 6 110 10 M100 12 C96 6 92 6 90 10" fill="none" ' +
-      'stroke="' + color + '" stroke-width="1.4" stroke-linecap="round"/>' +
-      '<circle cx="100" cy="30" r="2.6" fill="' + color + '"/></svg>';
+  // ---- flourish (page 2): the exact original filigree, extracted from
+  //      the InDesign source to templates/fsb-v2/assets/flourish.svg and
+  //      recoloured per theme via CSS mask.
+  var FLOURISH_URL = '/shared/v2/assets/flourish.svg';
+  function styleFlourish(node, color) {
+    node.style.cssText += ';background-color:' + color +
+      ';-webkit-mask:url(' + FLOURISH_URL + ') center/contain no-repeat' +
+      ';mask:url(' + FLOURISH_URL + ') center/contain no-repeat;';
   }
 
   // ================================================================
@@ -292,25 +294,27 @@
     page.style.background = theme.bg.css || tokenColor(theme, 'bg');
 
     if (pageNum === 1) {
-      // LEFT column
+      // LEFT column -- photo slots
       spec.page1.left.solved.bands.forEach(function (band) {
         if (band.kind === 'photos') {
           band.slots.forEach(function (s) {
             page.appendChild(buildSlot(project, s.id, s.rect, pw, ph, interactive));
           });
-        } else if (band.kind === 'text') {
-          page.appendChild(buildText(band.rect, pw, ph, scale, {
-            family: famFor(theme, (band.type && band.type.font) || 'serif'),
-            sizePt: (band.type && band.type.sizePt) || 15,
-            leadingPt: (band.type && band.type.leadingPt) || 20,
-            align: (band.type && band.type.align) || 'left',
-            color: tokenColor(theme, 'ink'),
-            text: val(project, band.field) ||
-              (opts.placeholders ? '房源描述 Property description…' : ''),
-            cls: 'fsb-text--desc',
-          }));
         }
       });
+      // LEFT column -- description (only in the stagger5 variant)
+      var LD = spec.page1.left.desc;
+      if (LD) {
+        page.appendChild(buildText(LD.rect, pw, ph, scale, {
+          family: famFor(theme, (LD.type && LD.type.font) || 'serif'),
+          sizePt: (LD.type && LD.type.sizePt) || 16,
+          leadingPt: (LD.type && LD.type.leadingPt) || 22,
+          align: (LD.type && LD.type.align) || 'justify',
+          color: tokenColor(theme, 'ink'),
+          text: LD.value || (opts.placeholders ? '房源描述 Property description…' : ''),
+          cls: 'fsb-text--desc',
+        }));
+      }
 
       // RIGHT column
       var R = spec.page1.right;
@@ -344,7 +348,7 @@
       g2.flourish.forEach(function (fl) {
         var f = el('div', { class: 'fsb-flourish' });
         setBox(f, fl.rect, pw, ph);
-        f.innerHTML = flourishSvg(tokenColor(theme, 'gold'));
+        styleFlourish(f, tokenColor(theme, 'gold'));
         page.appendChild(f);
       });
       g2.panelBorder.forEach(function (pb) {
