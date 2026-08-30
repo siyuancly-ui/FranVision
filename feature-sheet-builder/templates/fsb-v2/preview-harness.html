@@ -1,0 +1,97 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>fsb-v2 render harness</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+  body { margin: 0; background: #2a2a2e; font-family: "Source Sans 3", sans-serif; padding: 24px; }
+  h2 { color: #ddd; font: 12px/1 "Source Sans 3"; letter-spacing: .1em; text-transform: uppercase; margin: 20px 0 8px; }
+  .rows { display: flex; flex-direction: column; gap: 28px; }
+  .variant { }
+  .pair { display: flex; gap: 14px; flex-wrap: wrap; }
+  .fsb-page { box-shadow: 0 8px 30px rgba(0,0,0,.5); }
+  .fsb-slot { outline: 1px dashed rgba(255,255,255,.25); background: rgba(255,255,255,.04); }
+  .fsb-slot--empty .fsb-slot-hint { color: rgba(255,255,255,.5); font-size: 10px; white-space: pre-line;
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; }
+  .fsb-slot-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+</style>
+</head>
+<body>
+<div class="rows" id="rows"></div>
+
+<script src="../../public/js/util.js"></script>
+<script src="geometry.js"></script>
+<script src="themes.js"></script>
+<script src="modules.js"></script>
+<script src="layout-engine.js"></script>
+<script src="registry.js"></script>
+<script>
+  // stub photo source
+  window.FSB.photoSource = {
+    fullUrl: function (project, id) {
+      var m = { a:'800x520/6b7f9e', b:'520x520/9e8b6b', c:'520x360/7f9e6b', d:'360x480/9e6b7f' };
+      var k = id && id.split(':')[0];
+      return 'https://placehold.co/' + (m[k] || '600x400/888') + '/fff?text=' + encodeURIComponent(id || '');
+    },
+  };
+</script>
+<script src="../../public/js/template-render-v2.js"></script>
+<script>
+  var V2 = window.FSB_V2;
+
+  function mock(over) {
+    var p = V2.blankProject(over.colorTheme || 'navy');
+    p.propertyInfo.address = '3361 Chief Mbulu Way';
+    p.propertyInfo.city = 'Mississauga';
+    p.agentInfo = { name: 'Mo Zhang', credentials: 'Broker', busPhone: '9053059929',
+      cellPhone: '6472876266', email: 'mo@example.com', brokerage: 'First Class Starlink Realty',
+      brokerageAddress: '95 Mural Street, Unit 400, Richmond Hill', headshotPhotoId: null,
+      brokerageLogoPhotoId: null };
+    Object.keys(over).forEach(function (k) {
+      if (k === 'colorTheme') return;
+      if (k === 'propertyInfo' || k === 'agentInfo') Object.assign(p[k], over[k]);
+      else p[k] = over[k];
+    });
+    // seed some slots with mock photos
+    ['p1L-1','p1L-2','p1L-3','p1L-4','p1L-5','p1L-6','p1R-hero'].forEach(function (id, i) {
+      p.pages.page1.slots[id] = { photoId: ['a','b','c','d'][i % 4], positionX: 0, positionY: 0, scale: 1 };
+    });
+    V2.slotIds(p).filter(function (id) { return id.indexOf('p2') === 0; }).forEach(function (id, i) {
+      p.pages.page2.slots[id] = { photoId: ['a','b','c','d'][i % 4], positionX: 0, positionY: 0, scale: 1 };
+    });
+    return p;
+  }
+
+  var SCALE = 0.52;
+  var cases = [
+    ['navy · collage6 (no desc) · single · no icons', mock({ colorTheme: 'navy' })],
+    ['navy · heroDesc (wide) · single · 3 icons', mock({ colorTheme: 'navy',
+      propertyInfo: { description: 'Stunning & immaculate detached home about 3200 sq ft in the desired neighbourhood of Churchill Meadows. Featuring 4 bedrooms with 2 ensuite and an extra bathroom on the 2nd floor. Two-storey open space, 9ft ceilings, hardwood throughout, finished basement with separate entrance. Steps to top-ranked schools, parks and transit.',
+        bedrooms: '4+1', bathrooms: '4', garage: '2+4' } })],
+    ['marble · pairDesc · dual · 2 icons', mock({ colorTheme: 'marble',
+      propertyInfo: { description: 'Bright and beautifully updated family home with an open-concept main floor, chef’s kitchen and walk-out deck. Primary suite with spa bath. Move-in ready.',
+        bedrooms: '4', bathrooms: '3' },
+      topPhotoStyle: 'paired',
+      agentInfo2: { name: 'June Liu', credentials: 'Sales Representative', cellPhone: '6478645060', email: 'june@example.com' } })],
+    ['burgundy · collage6 · dual · 3 icons', mock({ colorTheme: 'burgundy',
+      propertyInfo: { bedrooms: '4', bathrooms: '3', garage: '2' },
+      agentInfo2: { name: 'Michelle Zhao', credentials: 'Sales Representative', cellPhone: '4166662480' } })],
+  ];
+
+  var rows = document.getElementById('rows');
+  cases.forEach(function (c) {
+    var wrap = document.createElement('div');
+    wrap.className = 'variant';
+    wrap.innerHTML = '<h2>' + c[0] + '</h2>';
+    var pair = document.createElement('div');
+    pair.className = 'pair';
+    [1, 2].forEach(function (pg) {
+      pair.appendChild(window.FSB.render.renderPage(pg, c[1], { scale: SCALE, interactive: false, placeholders: true }));
+    });
+    wrap.appendChild(pair);
+    rows.appendChild(wrap);
+  });
+</script>
+</body>
+</html>
