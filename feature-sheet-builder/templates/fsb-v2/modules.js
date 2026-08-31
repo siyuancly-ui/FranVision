@@ -38,26 +38,32 @@
   // as fractions of the trim. No band solver -- the source files place
   // these by hand and the photo proportions are the whole point.
   var leftColumn = {
-    // HAS description -> ONE wide photo up top, then a tall justified
-    // description filling the column (3361: photo u153, desc frame u6a1).
-    // topPhotoStyle:'paired' swaps the single top photo for two half-width
-    // ones (registry picks `photosPaired`).
+    // HAS description -> 5-photo staggered collage across the top ~60% of
+    // the column (2 across, then 2 stacked left + 1 large right), then a
+    // justified description that AUTO-FITS (font 10-20pt + leading up to
+    // ~1.9x, done by fitTexts) to fill the rest -- so photos + copy end
+    // up evenly filling the whole left page.
     stagger5: {
-      id: 'left-hero-desc',
+      id: 'left-stagger5',
       column: LEFT,
       explicit: true,
       photos: [
-        { id: 'p1L-1', rect: [0.009, 0.016, 0.481, 0.384] },
+        { id: 'p1L-1', rect: [0.009, 0.026, 0.230, 0.232] }, // top-left
+        { id: 'p1L-2', rect: [0.253, 0.026, 0.237, 0.232] }, // top-right
+        { id: 'p1L-3', rect: [0.009, 0.276, 0.150, 0.150] }, // mid-left upper
+        { id: 'p1L-4', rect: [0.009, 0.440, 0.150, 0.150] }, // mid-left lower
+        { id: 'p1L-5', rect: [0.171, 0.276, 0.319, 0.314] }, // right large
       ],
-      // two side-by-side frames = the Kevin-9 mid-row pair geometry
-      // (uf5d / uf63: w 0.237, h 0.265, gap 0.007), moved to the top.
       photosPaired: [
-        { id: 'p1L-1', rect: [0.009, 0.016, 0.237, 0.265] },
-        { id: 'p1L-2', rect: [0.253, 0.016, 0.237, 0.265] },
+        { id: 'p1L-1', rect: [0.009, 0.026, 0.230, 0.232] },
+        { id: 'p1L-2', rect: [0.253, 0.026, 0.237, 0.232] },
+        { id: 'p1L-3', rect: [0.009, 0.276, 0.150, 0.150] },
+        { id: 'p1L-4', rect: [0.009, 0.440, 0.150, 0.150] },
+        { id: 'p1L-5', rect: [0.171, 0.276, 0.319, 0.314] },
       ],
       desc: {
-        rect: [0.008, 0.420, 0.484, 0.308],
-        type: { font: 'serif', sizePt: 16, leadingPt: 20, align: 'justify' },
+        rect: [0.009, 0.605, 0.481, 0.367],
+        type: { font: 'serif', sizePt: 16, leadingPt: 22, align: 'justify' },
       },
     },
 
