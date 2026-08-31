@@ -225,10 +225,18 @@
   function imgBox(theme, scale, url, label, minH) {
     var im = el('div', { class: 'fsb-agent-img' });
     im.style.cssText = 'flex:1 1 auto;min-height:' + minH + 'px;display:flex;align-items:center;' +
-      'justify-content:center;background:center/contain no-repeat;border-radius:2px;position:relative;' +
+      'justify-content:center;border-radius:2px;position:relative;overflow:hidden;' +
       'font-size:' + (8 * scale) + 'px;color:' + tokenColor(theme, 'inkMuted') + ';';
-    if (url) { im.style.backgroundImage = 'url(' + url + ')'; im.style.background += ',' + tokenColor(theme, 'bgDeep'); }
-    else { im.style.border = '1px dashed ' + tokenColor(theme, 'goldLine'); im.textContent = label; }
+    if (url) {
+      im.style.backgroundColor = tokenColor(theme, 'bgDeep');
+      im.style.backgroundImage = 'url("' + url + '")';
+      im.style.backgroundPosition = 'center';
+      im.style.backgroundSize = 'contain';
+      im.style.backgroundRepeat = 'no-repeat';
+    } else {
+      im.style.border = '1px dashed ' + tokenColor(theme, 'goldLine');
+      im.textContent = label;
+    }
     return im;
   }
 
@@ -253,18 +261,23 @@
         : 'align-items:center;text-align:center;';
     }
 
+    var totalW = (info.spec.cols || []).reduce(function (s, c) { return s + (c.wFrac || 0); }, 0) || 1;
     (info.spec.cols || []).forEach(function (col) {
       var c = el('div', { class: 'fsb-agent-col fsb-agent-col--' + col.kind });
-      c.style.cssText = 'flex:' + col.wFrac + ' 1 0;min-width:0;display:flex;flex-direction:column;' +
-        'justify-content:center;gap:' + (2.5 * scale) + 'px;' + alignFor(col);
+      // fixed proportional width -> predictable columns; long text clips.
+      c.style.cssText = 'flex:0 0 ' + (100 * col.wFrac / totalW) + '%;min-width:0;overflow:hidden;' +
+        'display:flex;flex-direction:column;justify-content:center;gap:' + (2.5 * scale) + 'px;' + alignFor(col);
 
       if (col.kind === 'headshot') {
         var hpid = val(project, (col.ref || 'agentInfo') + '.headshotPhotoId');
         var hmin = (col.fullHeight ? boxH - pad * 2 : boxH * 0.66) * imgMult(project, col.resizeKey);
         var hb = imgBox(theme, scale, hpid && fullUrl(project, hpid), 'Headshot', hmin);
         hb.style.flex = '1 1 auto';
+        hb.style.alignSelf = 'stretch';
+        hb.style.width = '100%';
         addResize(hb, project, col.resizeKey, interactive);
         c.appendChild(hb);
+        box.appendChild(c);
         return;
       }
       if (col.kind !== 'stack') { box.appendChild(c); return; }
