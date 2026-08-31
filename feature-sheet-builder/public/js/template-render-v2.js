@@ -260,7 +260,12 @@
       if (raw.trim() === '' || /^[\s|&]*$/.test(raw)) return;
       if (ln.fmt === 'phone') raw = formatPhone(raw);
       var mode = ln.nowrap ? 'nowrap' : ln.wrap ? 'wrap' : undefined;
-      cont.appendChild(textLine(theme, scale, (ln.label || '') + raw, ln.type, mode));
+      var node = textLine(theme, scale, (ln.label || '') + raw, ln.type, mode);
+      if (ln.fitShrink) {
+        node.setAttribute('data-fit-shrink', '1');
+        node.setAttribute('data-fit-shrink-base', String(((ln.type && ln.type.sizePt) || 9) * scale));
+      }
+      cont.appendChild(node);
     });
   }
 
@@ -545,6 +550,21 @@
         if (n.scrollHeight <= boxH + 1) { bestLead = lm; leadLo = lm; } else { leadHi = lm; }
       }
       n.style.lineHeight = (best * scale * bestLead) + 'px';
+    }
+
+    // long email lines: wrap first, then shrink the font (down to ~72%)
+    // until the line fits in at most two rows.
+    var shr = pageEl.querySelectorAll('[data-fit-shrink]');
+    for (var s = 0; s < shr.length; s++) {
+      var e = shr[s];
+      var base = parseFloat(e.getAttribute('data-fit-shrink-base')) || 12;
+      if (!e.clientWidth || !e.textContent.trim()) continue;
+      var size = base, floor = base * 0.72, guard = 0;
+      e.style.fontSize = size + 'px';
+      while (e.scrollHeight > 2.7 * size + 1 && size > floor && guard++ < 24) {
+        size = Math.max(floor, size - base * 0.04);
+        e.style.fontSize = size + 'px';
+      }
     }
   }
 

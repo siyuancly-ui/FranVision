@@ -19,15 +19,15 @@
 (function (root) {
   'use strict';
 
-  var SERIF = '"Libre Caslon Text", "Libre Caslon", Georgia, "Songti SC", "Noto Serif SC", serif';
+  var SERIF = '"Cormorant Garamond", "Libre Caslon Text", Georgia, "Songti SC", "Noto Serif SC", serif';
   var SANS = '"Source Sans 3", "Source Sans Pro", -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif';
   // the swashy calligraphic italic on the original cover ("20 Lord Melborne St")
-  var SCRIPT = '"TeX Gyre Chorus", "Cormorant", "Libre Caslon Text", Georgia, "Songti SC", serif';
+  var SCRIPT = '"TeX Gyre Chorus", "Cormorant Garamond", "Libre Caslon Text", Georgia, "Songti SC", serif';
 
   var fonts = {
     serif: {
       family: SERIF,
-      googleUrl: 'https://fonts.googleapis.com/css2?family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&display=swap',
+      googleUrl: 'https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600&display=swap',
       approxOf: 'Bell MT (original cover / display serif)',
     },
     sans: {
@@ -37,7 +37,7 @@
     },
     script: {
       family: SCRIPT,
-      googleUrl: 'https://fonts.googleapis.com/css2?family=Cormorant:ital,wght@0,500;0,600;1,500;1,600&display=swap',
+      googleUrl: 'https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500;1,600&display=swap',
       approxOf: 'Bell MT Italic swash (original property-address face)',
     },
   };

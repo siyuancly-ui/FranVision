@@ -44,9 +44,14 @@
   }
 
   // ---- slot enumeration ------------------------------------------
-  function leftSlotIds(variant) {
+  function leftPhotos(project, variant) {
     var def = M.leftColumn[variant];
-    if (def.explicit) return def.photos.map(function (p) { return p.id; });
+    if (def.photosPaired && get(project, 'topPhotoStyle') === 'paired') return def.photosPaired;
+    return def.photos;
+  }
+  function leftSlotIds(project, variant) {
+    var def = M.leftColumn[variant];
+    if (def.explicit) return leftPhotos(project, variant).map(function (p) { return p.id; });
     return def.bands.reduce(function (acc, b) {
       if (b.kind === 'photos') b.slots.forEach(function (s) { acc.push(s.id); });
       return acc;
@@ -54,7 +59,7 @@
   }
   function slotIds(project) {
     var p2 = G.page2.slots.map(function (s) { return s.id; });
-    return leftSlotIds(pickLeftVariant(project)).concat(['p1R-hero']).concat(p2);
+    return leftSlotIds(project, pickLeftVariant(project)).concat(['p1R-hero']).concat(p2);
   }
 
   // ---- compose ---------------------------------------------------
@@ -69,12 +74,14 @@
     var leftDef = M.leftColumn[leftVariant];
     var leftSolved, leftDesc = null;
     if (leftDef.explicit) {
-      leftSolved = { bands: leftDef.photos.map(function (p) {
+      leftSolved = { bands: leftPhotos(project, leftVariant).map(function (p) {
         return { id: p.id, kind: 'photos', slots: [{ id: p.id, rect: p.rect }], rect: p.rect };
       }), overflow: 0 };
-      leftDesc = { rect: leftDef.desc.rect, type: leftDef.desc.type,
-        field: 'propertyInfo.description',
-        value: get(project, 'propertyInfo.description') || '' };
+      if (leftDef.desc) {
+        leftDesc = { rect: leftDef.desc.rect, type: leftDef.desc.type,
+          field: 'propertyInfo.description',
+          value: get(project, 'propertyInfo.description') || '' };
+      }
     } else {
       leftSolved = LAY.solveColumn(leftDef.column, leftDef.bands,
         { slackToGaps: leftDef.slackToGaps !== false });
