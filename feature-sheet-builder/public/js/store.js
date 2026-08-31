@@ -31,7 +31,7 @@
   var MODE = (!FORCE_LOCAL && CFG.supabaseUrl && CFG.supabaseAnonKey) ? 'supabase' : 'local';
 
   var DATA_KEYS = ['templateSystem', 'colorTheme', 'topPhotoStyle', 'imageSizes', 'boxOffsets', 'boxSizes', 'templateId',
-    'propertyInfo', 'agentInfo', 'agentInfo2', 'photos', 'pages', 'confirmed', 'confirmedAt'];
+    'propertyInfo', 'agentInfo', 'agentInfo2', 'photos', 'pages', 'confirmed', 'confirmedAt', 'deletedAt'];
 
   function pickData(p) {
     var d = {};
@@ -157,8 +157,23 @@
           body: JSON.stringify({ confirmed: confirmed === undefined ? true : !!confirmed }),
         }).then(function (b) { return b.project; });
       },
-      deleteProject: function (id) {
+      deleteProject: function (id) {   // -> recycle bin (soft)
         return jsonFetch('/api/projects/' + encodeURIComponent(id), { method: 'DELETE' }).then(function () { return true; });
+      },
+      restoreProject: function (id) {
+        return jsonFetch('/api/projects/' + encodeURIComponent(id) + '/restore', { method: 'POST' })
+          .then(function (b) { return b.project; });
+      },
+      purgeProject: function (id) {
+        return jsonFetch('/api/projects/' + encodeURIComponent(id) + '/purge', { method: 'POST' }).then(function () { return true; });
+      },
+      emptyTrash: function (token) {
+        return jsonFetch('/api/admin/trash/empty', { method: 'POST', headers: { 'X-Admin-Token': token || '' } })
+          .then(function (b) { return b.purged || 0; });
+      },
+      listTrash: function (token) {
+        return jsonFetch('/api/admin/trash', { headers: { 'X-Admin-Token': token || '' } })
+          .then(function (b) { return b.projects || []; });
       },
       duplicateProject: function (id) {
         return jsonFetch('/api/projects/' + encodeURIComponent(id) + '/duplicate', { method: 'POST' })
@@ -269,7 +284,27 @@
         });
       },
 
-      deleteProject: function (id) {
+      deleteProject: function (id) {   // -> recycle bin (soft)
+        return fetchProject(id).then(function (p) {
+          p.deletedAt = nowIso();
+          return sb.from('projects').update({ data: pickData(p), updated_at: nowIso() })
+            .eq('id', id).select('*').single();
+        }).then(function (res) {
+          if (res.error) throw new Error(res.error.message);
+          return true;
+        });
+      },
+      restoreProject: function (id) {
+        return fetchProject(id).then(function (p) {
+          delete p.deletedAt;
+          return sb.from('projects').update({ data: pickData(p), updated_at: nowIso() })
+            .eq('id', id).select('*').single();
+        }).then(function (res) {
+          if (res.error) throw new Error(res.error.message);
+          return row2project(res.data);
+        });
+      },
+      purgeProject: function (id) {
         return sb.storage.from(BUCKET).list(id).then(function (res) {
           var files = ((res && res.data) || []).map(function (f) { return id + '/' + f.name; });
           return files.length ? sb.storage.from(BUCKET).remove(files) : Promise.resolve({});
@@ -278,6 +313,20 @@
         }).then(function (res) {
           if (res && res.error) throw new Error(res.error.message);
           return true;
+        });
+      },
+      emptyTrash: function (token) {
+        var self = this;
+        return this.listTrash(token).then(function (list) {
+          return list.reduce(function (chain, r) {
+            return chain.then(function (n) { return self.purgeProject(r.id).then(function () { return n + 1; }); });
+          }, Promise.resolve(0));
+        });
+      },
+      listTrash: function (token) {
+        return sb.functions.invoke('list-projects', { body: { token: token || '', view: 'trash' } }).then(function (res) {
+          if (res.error) throw new Error(res.error.message || 'unauthorized');
+          return (res.data && res.data.projects) || [];
         });
       },
 

@@ -24,10 +24,6 @@
     // upload button + dropzone + per-photo delete; a read-only source
     // (e.g. a Wix gallery) shows just the scrollable grid.
     var canUpload = !!(src.supportsUpload && src.supportsUpload());
-    // Agents don't see the uploaded-photo grid -- they upload here and
-    // then assign photos by clicking a slot (the picker modal). Only the
-    // admin view keeps the browsable thumbnail list.
-    var showGrid = !!(app && app.adminToken);
 
     var head = el('div', { class: 'fsb-lib-head' }, [
       el('div', { class: 'fsb-lib-title' }, [
@@ -45,9 +41,7 @@
     }
     var grid = el('div', { class: 'fsb-lib-grid', id: 'fsb-lib-grid' });
     root.appendChild(head);
-    if (showGrid) root.appendChild(grid);
-    else if (canUpload) head.appendChild(el('div', { class: 'fsb-lib-hint',
-      text: 'Uploaded photos are picked per-slot 上传后点击版面照片框选择' }));
+    root.appendChild(grid);
 
     // ---- drag files onto the library (upload sources only) ----------
     if (canUpload) {
@@ -100,7 +94,6 @@
             .then(function (meta) {
             app.addPhoto(meta);
             job.tile.remove();
-            if (!showGrid) toast('Photo added 照片已上传');
           }).catch(function (err) {
             job.tile.classList.remove('fsb-thumb--uploading');
             job.tile.classList.add('fsb-thumb--error');
@@ -119,9 +112,7 @@
     function render() {
       var project = app.project;
       var photos = src.list(project);
-      var cnt = document.getElementById('fsb-lib-count');
-      if (cnt) cnt.textContent = String(photos.length);
-      if (!showGrid) return;
+      document.getElementById('fsb-lib-count').textContent = String(photos.length);
 
       // keep any still-uploading tiles, replace the rest
       [].slice.call(grid.querySelectorAll('.fsb-thumb:not(.fsb-thumb--uploading):not(.fsb-thumb--error)'))

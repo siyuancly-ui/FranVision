@@ -161,13 +161,21 @@ async function handleApi(req, res, parts, urlPath) {
     return sendJson(res, 200, { defaultId: templates.DEFAULT_ID, ids: templates.ids() });
   }
 
-  // ---- admin: list every project (dev; Supabase uses the edge fn) ----
-  if (parts[1] === 'admin' && parts[2] === 'projects' && method === 'GET') {
+  // ---- admin (dev; Supabase uses the edge fn) ------------------------
+  if (parts[1] === 'admin') {
     const want = process.env.ADMIN_TOKEN || 'dev-admin';
     const got = req.headers['x-admin-token'] || '';
     if (got !== want) return sendJson(res, 401, { error: 'unauthorized' });
-    const projects = await storage.listProjects();
-    return sendJson(res, 200, { projects });
+
+    if (parts[2] === 'projects' && method === 'GET') {
+      return sendJson(res, 200, { projects: await storage.listProjects() });
+    }
+    if (parts[2] === 'trash' && parts.length === 3 && method === 'GET') {
+      return sendJson(res, 200, { projects: await storage.listProjects({ trashed: true }) });
+    }
+    if (parts[2] === 'trash' && parts[3] === 'empty' && method === 'POST') {
+      return sendJson(res, 200, { purged: await storage.emptyTrash() });
+    }
   }
 
   // ---- projects ---------------------------------------------------
@@ -191,8 +199,20 @@ async function handleApi(req, res, parts, urlPath) {
       const project = await storage.updateProject(id, patch);
       return project ? sendJson(res, 200, { project }) : sendJson(res, 404, { error: 'Project not found' });
     }
+    // DELETE = soft delete -> recycle bin
     if (parts.length === 3 && method === 'DELETE') {
       const ok = await storage.deleteProject(id);
+      return ok ? sendJson(res, 200, { ok: true }) : sendJson(res, 404, { error: 'Project not found' });
+    }
+
+    // POST /api/projects/:id/restore   (out of the recycle bin)
+    if (parts.length === 4 && parts[3] === 'restore' && method === 'POST') {
+      const project = await storage.restoreProject(id);
+      return project ? sendJson(res, 200, { project }) : sendJson(res, 404, { error: 'Project not found' });
+    }
+    // POST /api/projects/:id/purge     (permanent, single)
+    if (parts.length === 4 && parts[3] === 'purge' && method === 'POST') {
+      const ok = await storage.purgeProject(id);
       return ok ? sendJson(res, 200, { ok: true }) : sendJson(res, 404, { error: 'Project not found' });
     }
 

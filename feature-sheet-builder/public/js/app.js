@@ -310,8 +310,11 @@
       ]),
     ]);
 
+    // The photo library (upload + thumbnails) is admin-only. Agents get
+    // a link after Franky/Admin has uploaded the photos; they only pick
+    // photos into slots via the per-slot picker.
     var body = el('div', { class: 'fsb-body' }, [
-      el('aside', { class: 'fsb-panel fsb-panel--library', id: 'fsb-library' }),
+      app.adminToken ? el('aside', { class: 'fsb-panel fsb-panel--library', id: 'fsb-library' }) : null,
       el('main', { class: 'fsb-center' }, [
         el('nav', { class: 'fsb-pagenav', id: 'fsb-pagenav' }),
         el('div', { class: 'fsb-stage-wrap' }, [el('div', { class: 'fsb-stage', id: 'fsb-stage' })]),
@@ -502,7 +505,8 @@
       var ps = window.FSB.photoSource;
       return Promise.resolve(ps.ready ? ps.ready(project) : null).then(function () { return project; });
     }).then(function (project) {
-      window.FSB.library.mount(document.getElementById('fsb-library'), app);
+      var libEl = document.getElementById('fsb-library');
+      if (libEl) window.FSB.library.mount(libEl, app);
       window.FSB.infoForm.mount(document.getElementById('fsb-form'), app);
       renderStage();
       reflectSaveState();

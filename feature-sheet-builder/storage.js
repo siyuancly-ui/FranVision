@@ -290,11 +290,44 @@ class LocalDiskStorage {
     });
   }
 
+  // Soft delete -> recycle bin. Sets deletedAt; the project stays on
+  // disk and can be restored. purgeProject() / emptyTrash() do the real
+  // removal.
   async deleteProject(id) {
+    if (!safeId(id)) return false;
+    return this._withLock(id, () => {
+      const project = this._read(id);
+      if (!project) return false;
+      project.deletedAt = nowIso();
+      this._write(project);
+      return true;
+    });
+  }
+
+  async restoreProject(id) {
+    if (!safeId(id)) return null;
+    return this._withLock(id, () => {
+      const project = this._read(id);
+      if (!project) return null;
+      delete project.deletedAt;
+      return this._write(project);
+    });
+  }
+
+  async purgeProject(id) {
     if (!safeId(id)) return false;
     if (!fs.existsSync(this._projFile(id))) return false;
     try { fs.rmSync(this._projDir(id), { recursive: true, force: true }); return true; }
     catch (_e) { return false; }
+  }
+
+  async emptyTrash() {
+    let n = 0;
+    for (const id of this.listProjectIds()) {
+      const d = this._read(id);
+      if (d && d.deletedAt) { if (await this.purgeProject(id)) n++; }
+    }
+    return n;
   }
 
   // Clone an existing sheet into a fresh one: keep the agent block and
@@ -370,7 +403,9 @@ class LocalDiskStorage {
   }
 
   // Admin summary of every project (dev only; Supabase uses the edge fn).
-  async listProjects() {
+  // trashed=false -> active sheets; trashed=true -> the recycle bin.
+  async listProjects(opts) {
+    const wantTrashed = !!(opts && opts.trashed);
     return this.listProjectIds().map((id) => {
       let d = {};
       try { d = JSON.parse(fs.readFileSync(this._projFile(id), 'utf8')); } catch (_e) { d = {}; }
@@ -385,8 +420,11 @@ class LocalDiskStorage {
         confirmed: !!d.confirmed,
         createdAt: d.createdAt || null,
         updatedAt: d.updatedAt || null,
+        deletedAt: d.deletedAt || null,
       };
-    }).sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+    }).filter((r) => wantTrashed ? !!r.deletedAt : !r.deletedAt)
+      .sort((a, b) => String((wantTrashed ? b.deletedAt : b.updatedAt) || '')
+        .localeCompare(String((wantTrashed ? a.deletedAt : a.updatedAt) || '')));
   }
 }
 

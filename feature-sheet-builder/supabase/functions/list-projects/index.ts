@@ -4,9 +4,10 @@
  * Franky's admin view calls this to list EVERY feature sheet. Interim,
  * pre-auth: gated by a single shared secret. Not for agents.
  *
- * Request:  POST { "token": "<ADMIN_TOKEN>" }
+ * Request:  POST { "token": "<ADMIN_TOKEN>", "view"?: "trash" }
+ *           view omitted -> active sheets; view:"trash" -> recycle bin
  * Response: 200 { projects: [ { id, address, city, agents, theme,
- *                               confirmed, createdAt, updatedAt } ] }
+ *                       confirmed, createdAt, updatedAt, deletedAt } ] }
  *           401 { error } on a bad / missing token
  *
  * Env (Supabase dashboard -> Edge Functions -> Secrets):
@@ -47,8 +48,9 @@ Deno.serve(async (req: Request) => {
   if (!ADMIN_TOKEN) return json({ error: "ADMIN_TOKEN not configured" }, 500);
 
   let token = "";
+  let view = "";
   try {
-    ({ token } = await req.json());
+    ({ token, view = "" } = await req.json());
   } catch {
     return json({ error: "invalid JSON body" }, 400);
   }
@@ -68,21 +70,25 @@ Deno.serve(async (req: Request) => {
     .limit(1000);
   if (error) return json({ error: error.message }, 500);
 
-  const projects = (data ?? []).map((row: any) => {
-    const d = row.data ?? {};
-    const pi = d.propertyInfo ?? {};
-    const agents = [d.agentInfo?.name, d.agentInfo2?.name].filter(Boolean);
-    return {
-      id: row.id,
-      address: pi.address ?? "",
-      city: pi.city ?? "",
-      agents,
-      theme: d.colorTheme ?? "navy",
-      confirmed: !!d.confirmed,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    };
-  });
+  const wantTrash = view === "trash";
+  const projects = (data ?? [])
+    .filter((row: any) => wantTrash ? !!row.data?.deletedAt : !row.data?.deletedAt)
+    .map((row: any) => {
+      const d = row.data ?? {};
+      const pi = d.propertyInfo ?? {};
+      const agents = [d.agentInfo?.name, d.agentInfo2?.name].filter(Boolean);
+      return {
+        id: row.id,
+        address: pi.address ?? "",
+        city: pi.city ?? "",
+        agents,
+        theme: d.colorTheme ?? "navy",
+        confirmed: !!d.confirmed,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        deletedAt: d.deletedAt ?? null,
+      };
+    });
 
   return json({ projects });
 });
