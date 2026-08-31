@@ -141,7 +141,9 @@
   ] };
   var tourBox = { key: 'online-tour', kind: 'qr', qr: 'propertyInfo.onlineTourUrl',
     caption: 'ONLINE TOUR', captionType: QR_CAPTION };
-  function headshotBox(ref, key) { return { key: key, kind: 'headshot', ref: ref }; }
+  // aspect 1.5 = a true 3:2 portrait (height = 1.5 x width), independent
+  // of the agent band's height / whether the icon row is shown.
+  function headshotBox(ref, key) { return { key: key, kind: 'headshot', ref: ref, aspect: 1.5 }; }
 
   // --- dual layout: left-side rects + mirror helpers -----------------
   // mirror() flips a rect across x = 0.5; centred() places a rect of

@@ -313,6 +313,12 @@
       var off = boxOffset(project, b.key), sz = boxSize(project, b.key);
       var r = b.rect;
       var w = r[2] * bandW * sz, h = r[3] * bandH * sz;
+      // b.aspect (height / width) locks the box shape regardless of the
+      // band height -- headshots stay a true 3:2 portrait (h = 1.5 * w).
+      // An aspect-locked box is centred vertically in the band (the rect
+      // no longer dictates its height, so top-anchoring would float it).
+      var topFrac = r[1];
+      if (b.aspect) { h = w * b.aspect; topFrac = (bandH - h) / 2 / bandH; }
       var bx = el('div', { class: 'fsb-agent-box fsb-agent-box--' + b.kind, 'data-box-key': b.key });
       // stack + QR boxes don't clip -- the rect is a positioning anchor,
       // text (and the "ONLINE TOUR" caption) can spill a little. Only the
@@ -320,7 +326,7 @@
       bx.style.cssText = 'position:absolute;box-sizing:border-box;display:flex;flex-direction:column;' +
         'justify-content:center;gap:' + (2.5 * scale) + 'px;' +
         'overflow:' + (b.kind === 'stack' || b.kind === 'qr' ? 'visible' : 'hidden') + ';' +
-        'left:' + ((r[0] + off.dx) * bandW) + 'px;top:' + ((r[1] + off.dy) * bandH) + 'px;' +
+        'left:' + ((r[0] + off.dx) * bandW) + 'px;top:' + ((topFrac + off.dy) * bandH) + 'px;' +
         'width:' + w + 'px;height:' + h + 'px;' +
         (b.align === 'left' ? 'align-items:flex-start;text-align:left;'
           : b.align === 'right' ? 'align-items:flex-end;text-align:right;'
@@ -353,8 +359,9 @@
       }
 
       if (admin && interactive) {
-        addBoxDrag(bx, project, b.key, bandW, bandH, r);
-        addBoxResize(bx, project, b.key, r[2] * bandW, r[3] * bandH);
+        addBoxDrag(bx, project, b.key, bandW, bandH, [r[0], topFrac, r[2], r[3]]);
+        var baseH = b.aspect ? (r[2] * bandW * b.aspect) : (r[3] * bandH);
+        addBoxResize(bx, project, b.key, r[2] * bandW, baseH);
       }
       card.appendChild(bx);
     });
