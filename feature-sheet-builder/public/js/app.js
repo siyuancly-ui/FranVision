@@ -95,8 +95,8 @@
   app.mutateBoxOffset = function (key, dx, dy) {
     if (!app.project.boxOffsets) app.project.boxOffsets = {};
     app.project.boxOffsets[key] = {
-      dx: Math.max(-0.6, Math.min(0.6, dx || 0)),
-      dy: Math.max(-0.6, Math.min(0.6, dy || 0)),
+      dx: Math.max(-1.2, Math.min(1.2, dx || 0)),
+      dy: Math.max(-1.5, Math.min(1.5, dy || 0)),
     };
     app.emit('dynamic');
     scheduleSave();

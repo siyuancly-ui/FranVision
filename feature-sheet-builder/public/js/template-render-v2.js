@@ -310,8 +310,12 @@
             (2 * scale) + 'px;box-sizing:border-box;flex:0 0 auto;align-self:center;position:relative;';
           if (window.FSB.qr) window.FSB.qr.render(qb, url, { size: qpx, dark: '#141414', light: '#ffffff' });
           bx.appendChild(qb);
-          if (b.caption) bx.appendChild(textLine(theme, scale * (0.9 + 0.1 * sz), b.caption,
-            b.captionType || { font: 'serif', sizePt: 9, tracking: 0.1, token: 'ink' }, 'nowrap'));
+          if (b.caption) {
+            var cap = textLine(theme, scale * (0.9 + 0.1 * sz), b.caption,
+              b.captionType || { font: 'serif', sizePt: 9, tracking: 0.1, token: 'ink' }, 'nowrap');
+            cap.style.marginTop = (3 * scale) + 'px';
+            bx.appendChild(cap);
+          }
         }
       } else { // stack -- scale the type with the box
         fillStack(bx, project, theme, scale * sz, b);

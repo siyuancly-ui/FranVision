@@ -151,7 +151,7 @@
         assign(brokerAddrBox,  { rect: [0.034, 0.643, 0.308, 0.221] }),   // u692
         assign(nameBox('agentInfo', 'center'),      { rect: [0.364, 0.161, 0.365, 0.354] }), // u59a
         assign(contactBoxFull('agentInfo', 'left'), { rect: [0.364, 0.541, 0.419, 0.387] }), // u181
-        assign(tourBox,        { rect: [0.552, 0.006, 0.100, 0.235] }),   // u122d ("Wechat QR"): above the headshot
+        assign(tourBox,        { rect: [0.648, 0.640, 0.100, 0.330] }),   // low, right of the email; caption drops below the email line
         assign(headshotBox('agentInfo', 'headshot1'), { rect: [0.770, 0.003, 0.224, 0.959] }), // u178
       ],
     },
