@@ -283,11 +283,12 @@
       var r = b.rect;
       var w = r[2] * bandW * sz, h = r[3] * bandH * sz;
       var bx = el('div', { class: 'fsb-agent-box fsb-agent-box--' + b.kind, 'data-box-key': b.key });
-      // stack boxes don't clip -- the rect is a positioning anchor, text
-      // can spill a little; image / QR boxes DO clip.
+      // stack + QR boxes don't clip -- the rect is a positioning anchor,
+      // text (and the "ONLINE TOUR" caption) can spill a little. Only the
+      // image / headshot boxes clip.
       bx.style.cssText = 'position:absolute;box-sizing:border-box;display:flex;flex-direction:column;' +
         'justify-content:center;gap:' + (2.5 * scale) + 'px;' +
-        'overflow:' + (b.kind === 'stack' ? 'visible' : 'hidden') + ';' +
+        'overflow:' + (b.kind === 'stack' || b.kind === 'qr' ? 'visible' : 'hidden') + ';' +
         'left:' + ((r[0] + off.dx) * bandW) + 'px;top:' + ((r[1] + off.dy) * bandH) + 'px;' +
         'width:' + w + 'px;height:' + h + 'px;' +
         (b.align === 'left' ? 'align-items:flex-start;text-align:left;'
@@ -552,17 +553,17 @@
       n.style.lineHeight = (best * scale * bestLead) + 'px';
     }
 
-    // long email lines: wrap first, then shrink the font (down to ~72%)
-    // until the line fits in at most two rows.
+    // email line: never wrap, never clip -- shrink the font (down to ~55%)
+    // until the whole address fits on one line.
     var shr = pageEl.querySelectorAll('[data-fit-shrink]');
     for (var s = 0; s < shr.length; s++) {
       var e = shr[s];
       var base = parseFloat(e.getAttribute('data-fit-shrink-base')) || 12;
       if (!e.clientWidth || !e.textContent.trim()) continue;
-      var size = base, floor = base * 0.72, guard = 0;
+      var size = base, floor = base * 0.5, guard = 0;
       e.style.fontSize = size + 'px';
-      while (e.scrollHeight > 2.7 * size + 1 && size > floor && guard++ < 24) {
-        size = Math.max(floor, size - base * 0.04);
+      while (e.scrollWidth > e.clientWidth + 1 && size > floor && guard++ < 40) {
+        size = Math.max(floor, size - base * 0.03);
         e.style.fontSize = size + 'px';
       }
     }

@@ -109,14 +109,14 @@
     return { key: ref + '-contact', kind: 'stack', align: align || 'left', lines: [
       { label: 'Mobile: ', field: ref + '.cellPhone', fmt: 'phone', nowrap: true, type: AGENT_LINE },
       { label: 'Office: ', field: 'agentInfo.brokerageOffice', fmt: 'phone', nowrap: true, type: AGENT_LINE },
-      { label: 'Email: ', field: ref + '.email', wrap: true, fitShrink: true, type: AGENT_LINE },
+      { label: 'Email: ', field: ref + '.email', nowrap: true, fitShrink: true, type: AGENT_LINE },
     ] };
   }
   // dual (Starlink): Tel / Email only
   function contactBoxLite(ref, align) {
     return { key: ref + '-contact', kind: 'stack', align: align || 'left', lines: [
       { label: 'Tel: ', field: ref + '.cellPhone', fmt: 'phone', nowrap: true, type: AGENT_LINE },
-      { label: 'Email: ', field: ref + '.email', wrap: true, fitShrink: true, type: AGENT_LINE },
+      { label: 'Email: ', field: ref + '.email', nowrap: true, fitShrink: true, type: AGENT_LINE },
     ] };
   }
   var logoBox = { key: 'logo', kind: 'image', img: 'agentInfo.brokerageLogoPhotoId', placeholder: 'Logo' };
@@ -141,8 +141,8 @@
         assign(brokerNameBox,  { rect: [0.034, 0.410, 0.320, 0.130] }),
         assign(brokerAddrBox,  { rect: [0.034, 0.660, 0.320, 0.300] }),
         assign(nameBox('agentInfo', 'center'),      { rect: [0.360, 0.140, 0.380, 0.340] }),
-        assign(contactBoxFull('agentInfo', 'left'), { rect: [0.375, 0.510, 0.235, 0.430] }),
-        assign(tourBox,        { rect: [0.648, 0.560, 0.120, 0.380] }),
+        assign(contactBoxFull('agentInfo', 'left'), { rect: [0.362, 0.470, 0.330, 0.470] }),
+        assign(tourBox,        { rect: [0.695, 0.640, 0.078, 0.315] }),
         assign(headshotBox('agentInfo', 'headshot1'), { rect: [0.775, 0.004, 0.221, 0.960] }),
       ],
     },
@@ -153,13 +153,13 @@
       id: 'agent-dual',
       boxes: [
         assign(headshotBox('agentInfo', 'headshot1'),          { rect: [0.004, 0.033, 0.170, 0.898] }),
-        assign(nameBox('agentInfo', 'center', AGENT_NAME_DUAL), { rect: [0.180, 0.120, 0.250, 0.320] }),
-        assign(contactBoxLite('agentInfo', 'left'),            { rect: [0.180, 0.540, 0.235, 0.440] }),
+        assign(nameBox('agentInfo', 'center', AGENT_NAME_DUAL), { rect: [0.176, 0.120, 0.260, 0.320] }),
+        assign(contactBoxLite('agentInfo', 'left'),            { rect: [0.176, 0.520, 0.260, 0.460] }),
         assign(logoBox,                                        { rect: [0.400, 0.030, 0.200, 0.320] }),
         assign(brokerAddrBox,                                  { rect: [0.360, 0.360, 0.280, 0.170], align: 'center' }),
-        assign(tourBox,                                        { rect: [0.435, 0.560, 0.130, 0.380] }),
-        assign(nameBox('agentInfo2', 'center', AGENT_NAME_DUAL),{ rect: [0.640, 0.120, 0.250, 0.320] }),
-        assign(contactBoxLite('agentInfo2', 'left'),           { rect: [0.640, 0.540, 0.235, 0.440] }),
+        assign(tourBox,                                        { rect: [0.440, 0.575, 0.120, 0.360] }),
+        assign(nameBox('agentInfo2', 'center', AGENT_NAME_DUAL),{ rect: [0.575, 0.120, 0.260, 0.320] }),
+        assign(contactBoxLite('agentInfo2', 'left'),           { rect: [0.575, 0.520, 0.260, 0.460] }),
         assign(headshotBox('agentInfo2', 'headshot2'),         { rect: [0.836, 0.033, 0.170, 0.898] }),
       ],
     },
