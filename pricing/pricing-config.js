@@ -17,7 +17,8 @@
 //
 // service.requires: other service ids that must also be present in the order
 // whenever this service is selected. The engine auto-adds missing
-// requirements (currently only Site Plan -> Floor Plan).
+// requirements, chained if needed (e.g. Site Plan -> Floor Plan today; any
+// new service can use this the same way, no engine.js change needed).
 //
 // package.includes: which service ids this package covers. A package is only
 // considered "applicable" if every id in includes is present in the order.

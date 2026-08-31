@@ -388,5 +388,94 @@ test('Synthetic: engine returns "ambiguous" (never guesses) on a genuine tie, wi
   assert.deepStrictEqual(candidatePackageIds, ['synthetic_a', 'synthetic_b']);
 });
 
+// --- Post-refactor: prove the engine is now genuinely config-driven ---
+// (engine.js used to hardcode MATCHABLE_ADDON_IDS, a Site-Plan-only `requires`
+// check, and a fixed list of "always standalone" ids. All three were
+// genericized so a brand-new service/package needs zero engine.js changes.
+// These tests use ids the engine has never seen before, to prove that.)
+
+test('Synthetic: a brand-new service can be matched into a brand-new package via config alone', () => {
+  const syntheticConfig = JSON.parse(JSON.stringify(config));
+  syntheticConfig.services.home_tour = {
+    id: 'home_tour',
+    displayName: 'Home Tour',
+    category: 'addon',
+    standaloneAllowed: false,
+    restrictionMessage: 'Home Tour is only available as part of a package.',
+  };
+  syntheticConfig.packages.push({
+    id: 'luxury_hometour',
+    displayName: 'Luxury Photos + Home Tour',
+    includes: ['luxury_photo', 'home_tour'],
+    priceCents: 25000,
+  });
+  const r = calculatePrice(order({ photography: 'luxury', addons: { home_tour: true } }), syntheticConfig);
+  assert.strictEqual(r.status, 'ok');
+  assert.strictEqual(r.subtotalCents, 25000);
+  assert.strictEqual(r.lineItems.length, 1);
+  assert.strictEqual(r.lineItems[0].id, 'luxury_hometour');
+});
+
+test('Synthetic: `requires` auto-add works for any new service, not just Site Plan', () => {
+  const syntheticConfig = JSON.parse(JSON.stringify(config));
+  syntheticConfig.services.home_report = {
+    id: 'home_report',
+    displayName: 'Home Report',
+    category: 'addon',
+    standaloneAllowed: true,
+    requires: ['floor_plan'],
+    pricing: { type: 'flat', amountCents: 4000 },
+  };
+  const r = calculatePrice(order({ photography: 'standard', addons: { home_report: true } }), syntheticConfig);
+  assert.strictEqual(r.status, 'ok');
+  assert.ok(r.explanation.some((n) => /Floor Plan was auto-added because Home Report requires it/.test(n)));
+  const pkg = r.lineItems.find((li) => li.id === 'standard_floorplan');
+  const addon = r.lineItems.find((li) => li.id === 'home_report');
+  assert.ok(pkg, 'expected Standard+FloorPlan package to apply once Floor Plan is auto-added');
+  assert.strictEqual(addon.amountCents, 4000);
+  assert.strictEqual(r.subtotalCents, 16900 + 4000);
+});
+
+test('Synthetic: chained `requires` resolves fully (A requires B, B requires Floor Plan)', () => {
+  const syntheticConfig = JSON.parse(JSON.stringify(config));
+  syntheticConfig.services.service_b = {
+    id: 'service_b',
+    displayName: 'Service B',
+    category: 'addon',
+    standaloneAllowed: true,
+    requires: ['floor_plan'],
+    pricing: { type: 'flat', amountCents: 1000 },
+  };
+  syntheticConfig.services.service_a = {
+    id: 'service_a',
+    displayName: 'Service A',
+    category: 'addon',
+    standaloneAllowed: true,
+    requires: ['service_b'],
+    pricing: { type: 'flat', amountCents: 500 },
+  };
+  const r = calculatePrice(order({ photography: 'standard', addons: { service_a: true } }), syntheticConfig);
+  assert.strictEqual(r.status, 'ok');
+  assert.deepStrictEqual(r.lineItems.map((li) => li.id).sort(), ['service_a', 'service_b', 'standard_floorplan'].sort());
+});
+
+test('Synthetic: perUnit pricing works for any new requiresQuantity service, not just Virtual Staging', () => {
+  const syntheticConfig = JSON.parse(JSON.stringify(config));
+  syntheticConfig.services.print_copies = {
+    id: 'print_copies',
+    displayName: 'Extra Print Copies',
+    category: 'addon',
+    standaloneAllowed: true,
+    requiresQuantity: true,
+    pricing: { type: 'perUnit', unitAmountCents: 500 },
+  };
+  const r = calculatePrice(order({ photography: 'standard', addons: { print_copies_qty: 4 } }), syntheticConfig);
+  assert.strictEqual(r.status, 'ok');
+  const li = r.lineItems.find((l) => l.id === 'print_copies');
+  assert.ok(li, 'expected a print_copies line item');
+  assert.strictEqual(li.amountCents, 2000);
+  assert.ok(/×4/.test(li.label));
+});
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed > 0 ? 1 : 0);

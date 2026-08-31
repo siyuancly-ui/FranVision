@@ -14,16 +14,20 @@
 // summing standalone prices would be cheaper. Packages are never chosen
 // to minimize total cost.
 //
+// Fully config-driven: adding a new service or package to pricing-config.js
+// is enough to make it participate below -- nothing in this file hardcodes
+// a service's id ahead of time.
+//
 // 1. Build M = the set of "matchable" service ids on the order: the
 //    mandatory base photography service (standard_photo or luxury_photo)
-//    plus whichever of {floor_plan, site_plan, walkthrough_video,
-//    vlog_video} were selected. (Site Plan auto-adds Floor Plan if it's
-//    missing, since Site Plan can never be sold without it.)
+//    plus every other service selected via `order.addons` (a boolean flag
+//    for most services, or a `<id>_qty` count for services with
+//    `requiresQuantity: true`, e.g. Virtual Staging).
 //
-//    Everything else (3D Tour, Drone Photos, Virtual Staging, Feature
-//    Sheets) never appears inside a package in the current price list, so
-//    those are always priced standalone regardless of what else is on the
-//    order -- they don't participate in the matching below.
+//    Then, for anything now in M, auto-add whatever its `requires` list
+//    names (repeated until nothing changes, so chains resolve too) -- e.g.
+//    Site Plan requires Floor Plan, so selecting Site Plan alone pulls
+//    Floor Plan in too.
 //
 // 2. Find every package whose `includes` is fully contained in M. Try
 //    every combination of these packages that doesn't reuse a service id
@@ -34,7 +38,10 @@
 //    payable standalone (standaloneAllowed + a price). If any leftover
 //    item can't be sold standalone, that whole combination is invalid
 //    (e.g. picking the Luxury+FloorPlan package would leave Site Plan
-//    stranded with no price -- that combination is discarded).
+//    stranded with no price -- that combination is discarded). A service
+//    that never appears inside any package's `includes` (3D Tour, Drone
+//    Photos, Virtual Staging, Feature Sheets today) simply ends up in
+//    every combination's leftover set, priced standalone.
 //
 // 4. Rank the surviving combinations: prefer the one covering the most
 //    service ids via packages. If tied, prefer the one whose leftover
@@ -56,14 +63,17 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  const MATCHABLE_ADDON_IDS = ['floor_plan', 'site_plan', 'walkthrough_video', 'vlog_video'];
-
-  function standaloneCents(service, propertyType) {
+  function standaloneCents(service, propertyType, quantity) {
     if (!service.pricing) return null;
     if (service.pricing.type === 'flat') return service.pricing.amountCents;
     if (service.pricing.type === 'byPropertyType') {
       const v = service.pricing[propertyType];
       return typeof v === 'number' ? v : null;
+    }
+    if (service.pricing.type === 'perUnit') {
+      const qty = Number(quantity) || 0;
+      if (qty <= 0) return null;
+      return service.pricing.unitAmountCents * qty;
     }
     return null;
   }
@@ -104,12 +114,31 @@
 
     // ---- Step 1: build M ----
     const M = new Set([photographyId]);
-    for (const id of MATCHABLE_ADDON_IDS) {
-      if (addons[id]) M.add(id);
-    }
-    if (M.has('site_plan') && !M.has('floor_plan')) {
-      M.add('floor_plan');
-      notes.push('Floor Plan was auto-added because Site Plan requires it.');
+    Object.keys(services).forEach((id) => {
+      if (id === 'standard_photo' || id === 'luxury_photo') return;
+      const svc = services[id];
+      const selected = svc.requiresQuantity
+        ? (Number(addons[id + '_qty']) || 0) > 0
+        : !!addons[id];
+      if (selected) M.add(id);
+    });
+
+    // Auto-add whatever any selected service's `requires` names, repeating
+    // until nothing changes (so a chain of requirements resolves fully).
+    let changedM = true;
+    while (changedM) {
+      changedM = false;
+      for (const id of Array.from(M)) {
+        const svc = services[id];
+        if (!svc || !Array.isArray(svc.requires)) continue;
+        for (const reqId of svc.requires) {
+          if (M.has(reqId)) continue;
+          M.add(reqId);
+          const reqSvc = services[reqId];
+          notes.push((reqSvc ? reqSvc.displayName : reqId) + ' was auto-added because ' + svc.displayName + ' requires it.');
+          changedM = true;
+        }
+      }
     }
 
     // ---- Step 2: eligible packages + disjoint combinations ----
@@ -146,13 +175,14 @@
           valid = false;
           break;
         }
-        const priceCents = standaloneCents(svc, propertyType);
+        const qty = svc.requiresQuantity ? Number(addons[id + '_qty']) || 0 : undefined;
+        const priceCents = standaloneCents(svc, propertyType, qty);
         if (priceCents == null) {
           valid = false;
           break;
         }
         leftoverCostCents += priceCents;
-        leftoverItems.push({ id, priceCents });
+        leftoverItems.push({ id, priceCents, qty });
       }
       if (!valid) continue;
 
@@ -201,37 +231,14 @@
       candidate.leftoverItems.forEach((item) => {
         const svc = services[item.id];
         const isBasePhotography = item.id === photographyId;
+        const label = item.qty ? svc.displayName + ' ×' + item.qty : svc.displayName;
         lineItems.push({
           type: isBasePhotography ? 'base' : 'addon',
           id: item.id,
-          label: svc.displayName,
+          label,
           amountCents: item.priceCents,
         });
       });
-
-      // Always-standalone add-ons (never part of a package in this catalog).
-      if (addons.drone_photos) {
-        const svc = services.drone_photos;
-        lineItems.push({ type: 'addon', id: 'drone_photos', label: svc.displayName, amountCents: standaloneCents(svc, propertyType) });
-      }
-      if (addons.feature_sheets) {
-        const svc = services.feature_sheets;
-        lineItems.push({ type: 'addon', id: 'feature_sheets', label: svc.displayName, amountCents: standaloneCents(svc, propertyType) });
-      }
-      if (addons.three_d_tour) {
-        const svc = services.three_d_tour;
-        lineItems.push({ type: 'addon', id: 'three_d_tour', label: svc.displayName, amountCents: standaloneCents(svc, propertyType) });
-      }
-      const stagingQty = Number(addons.virtual_staging_qty) || 0;
-      if (stagingQty > 0) {
-        const svc = services.virtual_staging;
-        lineItems.push({
-          type: 'addon',
-          id: 'virtual_staging',
-          label: svc.displayName + ' ×' + stagingQty,
-          amountCents: svc.pricing.unitAmountCents * stagingQty,
-        });
-      }
 
       const subtotalCents = lineItems.reduce((sum, li) => sum + li.amountCents, 0);
       const manualAdjustmentCents = Math.round(Number(order.manualAdjustmentCents) || 0);
