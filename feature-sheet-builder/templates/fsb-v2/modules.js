@@ -138,9 +138,10 @@
   function headshotBox(ref, key) { return { key: key, kind: 'headshot', ref: ref }; }
 
   // Every rect below is the IDML text/graphic-frame bound converted to a
-  // fraction of the agent band. SINGLE = Kevin-9 (band 0.503,0.735 ..
-  // 0.493,0.236 -> right half). DUAL = 3361 bar (same right-half band;
-  // the 3361 file itself parks this bar bottom-LEFT -- see registry note).
+  // fraction of the agent band. SINGLE = Kevin-9, DUAL = the 3361 bar's
+  // internal arrangement. Both sit in the RIGHT-half band by design
+  // (like Michelle & Sue); the 3361 file parks its bar bottom-left, but
+  // we intentionally keep the agent card on the right in all cases.
   var agentBlock = {
     single: {
       id: 'agent-single',
