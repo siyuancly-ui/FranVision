@@ -261,7 +261,8 @@
         // "All sheets" only in Franky's admin context; agents get no list.
         app.adminToken
           ? el('a', { class: 'fsb-btn fsb-btn--ghost', id: 'fsb-btn-allsheets',
-              href: window.location.pathname + '?admin=' + encodeURIComponent(app.adminToken),
+              href: window.location.pathname + '?admin=' + encodeURIComponent(app.adminToken) +
+                (/[?&]local=1\b/.test(window.location.search) ? '&local=1' : ''),
               text: '← All sheets 全部' })
           : null,
         el('button', { class: 'fsb-btn fsb-btn--ghost', id: 'fsb-toggle-form', text: 'Info' }),

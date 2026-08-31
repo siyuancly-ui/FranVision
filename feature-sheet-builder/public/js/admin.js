@@ -22,8 +22,13 @@
     if (isNaN(d)) return '—';
     return d.toLocaleString(undefined, { year: '2-digit', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   }
-  function linkFor(id, token) {
-    return window.location.origin + window.location.pathname + '?p=' + encodeURIComponent(id);
+  // keep the dev ?local=1 flag on every internally-generated link
+  function devSuffix() {
+    return /[?&]local=1\b/.test(window.location.search) ? '&local=1' : '';
+  }
+  function linkFor(id) {
+    return window.location.origin + window.location.pathname +
+      '?p=' + encodeURIComponent(id) + devSuffix();
   }
   function adminLinkFor(id, token) {
     return linkFor(id) + '&admin=' + encodeURIComponent(token);
