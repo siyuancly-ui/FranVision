@@ -501,10 +501,12 @@
       });
       addr.textContent = '';
       addr.style.alignItems = 'stretch';
+      addr.style.overflow = 'visible';   // never clip the city's descenders
       var l1 = el('div', { text: R.address.value.address || (opts.placeholders ? '123 Example St' : '') });
-      l1.style.cssText = 'width:100%;text-align:' + aAlign + ';font-style:' + (aT.italic ? 'italic' : 'normal') + ';';
+      l1.style.cssText = 'width:100%;text-align:' + aAlign + ';line-height:1.05;font-style:' +
+        (aT.italic ? 'italic' : 'normal') + ';';
       var l2 = el('div', { text: R.address.value.city || (opts.placeholders ? 'City' : '') });
-      l2.style.cssText = 'width:100%;text-align:' + (cT.align || 'center') + ';font-family:' +
+      l2.style.cssText = 'width:100%;text-align:' + (cT.align || 'center') + ';line-height:1.15;font-family:' +
         famFor(theme, cT.font || 'script') + ';font-size:' + (cT.sizePt * scale) + 'px;font-weight:' +
         (cT.weight || 500) + ';font-style:' + (cT.italic ? 'italic' : 'normal') +
         ';letter-spacing:' + (cT.tracking || 0) + 'em;';
