@@ -305,6 +305,10 @@
           : null,
         el('button', { class: 'fsb-btn fsb-btn--ghost', id: 'fsb-toggle-form', text: 'Info' }),
         el('button', { class: 'fsb-btn', id: 'fsb-btn-preview', text: 'Preview 预览' }),
+        // print-ready PDF export -- admin only
+        app.adminToken
+          ? el('button', { class: 'fsb-btn', id: 'fsb-btn-export', text: 'Export PDF 导出' })
+          : null,
         el('button', { class: 'fsb-btn fsb-btn--save', id: 'fsb-btn-save', text: 'Save 保存' }),
         el('button', { class: 'fsb-btn fsb-btn--primary', id: 'fsb-btn-confirm', text: 'Confirm & Submit 确认提交' }),
       ]),
@@ -333,6 +337,12 @@
     rootApp.appendChild(toasts);
 
     document.getElementById('fsb-btn-preview').addEventListener('click', function () { window.FSB.preview.open(app); });
+    var exportBtn = document.getElementById('fsb-btn-export');
+    if (exportBtn) exportBtn.addEventListener('click', function () {
+      this.disabled = true;
+      var b = this;
+      window.FSB.exportPdf.run(app).catch(function () {}).then(function () { b.disabled = false; });
+    });
     document.getElementById('fsb-btn-save').addEventListener('click', function () { app.save().then(function () { util.toast('Saved 已保存'); }); });
     document.getElementById('fsb-btn-confirm').addEventListener('click', function () {
       if (app.isReadOnly()) app.unconfirm(); else app.confirmDesign();
