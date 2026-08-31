@@ -71,6 +71,9 @@ const MIME = {
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.svg': 'image/svg+xml',
+  '.otf': 'font/otf',
+  '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
 };
 
 function sendJson(res, status, body) {

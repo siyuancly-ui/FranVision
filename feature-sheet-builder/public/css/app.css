@@ -2,6 +2,16 @@
    The stage (.fsb-page and descendants) mimics the print piece; the
    surrounding chrome is a light, low-noise workspace. */
 
+/* Property-address display face: TeX Gyre Chorus (GUST e-foundry, free
+   LPPL) -- a chancery calligraphic italic, self-hosted. */
+@font-face {
+  font-family: "TeX Gyre Chorus";
+  src: url("/fonts/tex-gyre-chorus.otf") format("opentype");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --bg: #eef1f5;
   --panel: #ffffff;

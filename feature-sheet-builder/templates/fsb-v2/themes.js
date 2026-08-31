@@ -22,7 +22,7 @@
   var SERIF = '"Libre Caslon Text", "Libre Caslon", Georgia, "Songti SC", "Noto Serif SC", serif';
   var SANS = '"Source Sans 3", "Source Sans Pro", -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif';
   // the swashy calligraphic italic on the original cover ("20 Lord Melborne St")
-  var SCRIPT = '"Cormorant", "Libre Caslon Text", Georgia, "Songti SC", serif';
+  var SCRIPT = '"TeX Gyre Chorus", "Cormorant", "Libre Caslon Text", Georgia, "Songti SC", serif';
 
   var fonts = {
     serif: {

@@ -438,20 +438,21 @@
       // RIGHT column
       var R = spec.page1.right;
       var aT = R.address.spec.addressType, cT = R.address.spec.cityType;
+      var aAlign = aT.align || 'center';
       var addr = buildText(R.address.rect, pw, ph, scale, {
         family: famFor(theme, aT.font || 'script'),
-        sizePt: aT.sizePt, align: 'right', weight: aT.weight || 600,
+        sizePt: aT.sizePt, align: aAlign, weight: aT.weight || 500,
         italic: !!aT.italic, color: tokenColor(theme, 'ink'), vAlign: 'flex-start',
       });
       addr.textContent = '';
       addr.style.alignItems = 'stretch';
       var l1 = el('div', { text: R.address.value.address || (opts.placeholders ? '123 Example St' : '') });
-      l1.style.cssText = 'text-align:right;font-style:' + (aT.italic ? 'italic' : 'normal') + ';';
+      l1.style.cssText = 'width:100%;text-align:' + aAlign + ';font-style:' + (aT.italic ? 'italic' : 'normal') + ';';
       var l2 = el('div', { text: R.address.value.city || (opts.placeholders ? 'City' : '') });
-      // city line is CENTRED under the (right-aligned) street address
-      l2.style.cssText = 'width:100%;text-align:center;font-family:' + famFor(theme, cT.font || 'script') +
-        ';font-size:' + (cT.sizePt * scale) + 'px;font-weight:' + (cT.weight || 500) +
-        ';font-style:' + (cT.italic ? 'italic' : 'normal') + ';letter-spacing:' + (cT.tracking || 0) + 'em;';
+      l2.style.cssText = 'width:100%;text-align:' + (cT.align || 'center') + ';font-family:' +
+        famFor(theme, cT.font || 'script') + ';font-size:' + (cT.sizePt * scale) + 'px;font-weight:' +
+        (cT.weight || 500) + ';font-style:' + (cT.italic ? 'italic' : 'normal') +
+        ';letter-spacing:' + (cT.tracking || 0) + 'em;';
       addr.appendChild(l1); addr.appendChild(l2);
       page.appendChild(addr);
 

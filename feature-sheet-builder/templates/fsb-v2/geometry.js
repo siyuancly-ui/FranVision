@@ -62,8 +62,8 @@
         rect: [0.539, 0.016, 0.414, 0.110],
         // line 1 = street address (serif), line 2 = city (spaced)
         // swashy italic calligraphic serif (see "20 Lord Melborne St" ref)
-        addressType: { font: 'script', sizePt: 42, weight: 600, align: 'right', tracking: 0, italic: true },
-        cityType: { font: 'script', sizePt: 24, weight: 500, align: 'right', tracking: 0.06, italic: true },
+        addressType: { font: 'script', sizePt: 44, weight: 500, align: 'center', tracking: 0, italic: false },
+        cityType: { font: 'script', sizePt: 24, weight: 500, align: 'center', tracking: 0.04, italic: false },
       },
 
       hero: {
