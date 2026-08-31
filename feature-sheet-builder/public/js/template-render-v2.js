@@ -250,21 +250,26 @@
     return (typeof s === 'number' && s > 0) ? s : 1;
   }
 
-  // split a one-line street address into [street+unit, city/prov/postal].
-  // honours an explicit newline; otherwise breaks before a trailing
-  // "City, PROV A1A 1A1"; otherwise before the last two comma segments.
+  // Split a street address into EXACTLY two lines:
+  //   line 1 = street (+ unit),  line 2 = city onward (city, PROV, postal).
+  // Rule: line 2 starts at the "city" segment -- the one right before a
+  // segment that begins with a 2-letter province (optionally + postal).
+  // Falls back to "first segment on line 1, the rest on line 2".
+  // An explicit newline in the field always wins.
   function splitAddress(s) {
     s = String(s || '').trim();
     if (!s) return [];
     if (s.indexOf('\n') >= 0) {
       var p = s.split('\n');
-      return [p.shift().trim(), p.join(' ').trim()].filter(Boolean);
+      return [p.shift().trim(), p.join(', ').replace(/\s*,\s*/g, ', ').trim()].filter(Boolean);
     }
-    var m = s.match(/^(.*?),\s*([^,]+,\s*[A-Za-z]{2}\.?(?:\s+[A-Za-z]\d[A-Za-z]\s*\d[A-Za-z]\d)?)\s*$/);
-    if (m) return [m[1].trim(), m[2].trim()];
-    var seg = s.split(/,\s*/);
-    if (seg.length >= 3) return [seg.slice(0, seg.length - 2).join(', '), seg.slice(-2).join(', ')];
-    return [s];
+    var seg = s.split(/\s*,\s*/).filter(Boolean);
+    if (seg.length <= 1) return [s];
+    var provRe = /^[A-Za-z]{2}\b\.?(\s+[A-Za-z]\d[A-Za-z]\s*\d[A-Za-z]\d)?$/;
+    var provIdx = -1;
+    for (var i = 1; i < seg.length; i++) { if (provRe.test(seg[i])) { provIdx = i; break; } }
+    var cut = provIdx > 1 ? provIdx - 1 : 1;   // city is the segment before the province
+    return [seg.slice(0, cut).join(', '), seg.slice(cut).join(', ')];
   }
 
   function fillStack(cont, project, theme, scale, box) {
@@ -278,7 +283,10 @@
       if (ln.fmt === 'phone') raw = formatPhone(raw);
       if (ln.splitAddr) {
         splitAddress(raw).forEach(function (part) {
-          cont.appendChild(textLine(theme, scale, part, ln.type, 'wrap'));
+          var an = textLine(theme, scale, part, ln.type, 'nowrap');
+          an.setAttribute('data-fit-shrink', '1');
+          an.setAttribute('data-fit-shrink-base', String(((ln.type && ln.type.sizePt) || 9) * scale));
+          cont.appendChild(an);
         });
         return;
       }
@@ -347,22 +355,17 @@
       if (admin && interactive) {
         addBoxDrag(bx, project, b.key, bandW, bandH, r);
         addBoxResize(bx, project, b.key, r[2] * bandW, r[3] * bandH);
-        (function (key) {
-          bx.addEventListener('dblclick', function (e) {
-            e.preventDefault();
-            if (window.FSB.app && window.FSB.app.resetBox) window.FSB.app.resetBox(key);
-          });
-        })(b.key);
       }
       card.appendChild(bx);
     });
     return card;
   }
 
-  // ---- Franky (admin): drag a box to move it -----------------------
+  // ---- Franky (admin): drag a box to move it, double-click to reset --
   function addBoxDrag(bx, project, key, bandW, bandH, baseRect) {
     if (!window.FSB.app || !window.FSB.app.mutateBoxOffset) return;
     bx.classList.add('fsb-agent-box--draggable');
+    bx.title = '拖动移动 · 双击复位';
     bx.addEventListener('pointerdown', function (e) {
       if (e.target.closest('.fsb-box-resize')) return;
       e.preventDefault();
@@ -377,8 +380,21 @@
         bx.removeEventListener('pointermove', move);
         bx.removeEventListener('pointerup', up);
         bx.classList.remove('is-dragging');
-        window.FSB.app.mutateBoxOffset(key,
-          o0.dx + (ev.clientX - sx) / bandW, o0.dy + (ev.clientY - sy) / bandH);
+        var dxp = ev.clientX - sx, dyp = ev.clientY - sy;
+        if (Math.abs(dxp) < 4 && Math.abs(dyp) < 4) {
+          // no movement -> a click. Two within 350ms = reset. (We must NOT
+          // re-render on the first click or renderStage would replace this
+          // element before the second click lands.)
+          var now = Date.now();
+          if (bx._clickT && now - bx._clickT < 350) {
+            bx._clickT = 0;
+            if (window.FSB.app.resetBox) window.FSB.app.resetBox(key);
+          } else {
+            bx._clickT = now;
+          }
+          return;
+        }
+        window.FSB.app.mutateBoxOffset(key, o0.dx + dxp / bandW, o0.dy + dyp / bandH);
       }
       bx.addEventListener('pointermove', move);
       bx.addEventListener('pointerup', up);
