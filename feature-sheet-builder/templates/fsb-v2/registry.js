@@ -140,8 +140,8 @@
       topPhotoStyle: 'wide', // wide | paired  (only when description present)
       propertyInfo: { address: '', city: '', description: '',
         bedrooms: '', bathrooms: '', garage: '', onlineTourUrl: '' },
-      agentInfo: { name: '', credentials: '', busPhone: '', cellPhone: '', email: '',
-        brokerage: '', brokerageAddress: '', website: '',
+      agentInfo: { name: '', credentials: '', cellPhone: '', email: '',
+        brokerage: '', brokerageOffice: '', brokerageAddress: '',
         headshotPhotoId: null, brokerageLogoPhotoId: null },
       agentInfo2: null,
       photos: [],

@@ -81,6 +81,15 @@
     scheduleSave();
   };
 
+  // agent-card image sizes (logo / headshot1 / headshot2 / qr) -- a
+  // multiplier the user sets by dragging the box edge.
+  app.mutateImageSize = function (key, mult) {
+    if (!app.project.imageSizes) app.project.imageSizes = {};
+    app.project.imageSizes[key] = Math.max(0.4, Math.min(2.5, mult));
+    app.emit('dynamic');
+    scheduleSave();
+  };
+
   // Resolve once the project row exists (lazy creation). Photo uploads and
   // image fields need a real projectId before they can POST.
   app.ensureCreated = function () {
@@ -354,6 +363,8 @@
       wrap.appendChild(pageEl);
       stage.appendChild(wrap);
     }
+    // now in the DOM -> size the auto-fit text blocks
+    if (render.fitTexts) [1, 2].forEach(function (p) { if (app._pageEls[p]) render.fitTexts(app._pageEls[p]); });
     stage.classList.toggle('fsb-stage--locked', app.isReadOnly());
   }
 

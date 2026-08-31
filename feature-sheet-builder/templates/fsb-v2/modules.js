@@ -88,56 +88,69 @@
   //  Rendered inside geometry.page1Right.agentBandRect. Logo + QR are a
   //  single shared copy in both.
   // ================================================================
+  // Colour rule: BROKERAGE block (logo / name / office / address / the
+  // "ONLINE TOUR" caption) is white (token 'ink'); AGENT lines (name /
+  // title / phone / email) are gold (token 'gold').
+  var BROKER_NAME = { font: 'sans', sizePt: 10, weight: 700, token: 'ink' };
+  var BROKER_LINE = { font: 'sans', sizePt: 9, token: 'ink' };
+  var AGENT_NAME = { font: 'serif', sizePt: 16, weight: 700, token: 'gold' };
+  var AGENT_TITLE = { font: 'sans', sizePt: 10.5, token: 'gold' };
+  var AGENT_LINE = { font: 'sans', sizePt: 10, token: 'gold' };
+  var QR_CAPTION = { font: 'serif', sizePt: 9, tracking: 0.14, token: 'ink' };
+
+  function brokerCenter(withOffice) {
+    return [
+      { img: 'agentInfo.brokerageLogoPhotoId', placeholder: 'Logo', hFrac: 0.30, resizeKey: 'logo' },
+      { field: 'agentInfo.brokerage', type: BROKER_NAME },
+      { label: 'Office: ', field: 'agentInfo.brokerageOffice', fmt: 'phone', type: BROKER_LINE },
+      { field: 'agentInfo.brokerageAddress', wrap: true, type: BROKER_LINE },
+      { qr: 'propertyInfo.onlineTourUrl', caption: 'ONLINE TOUR', captionType: QR_CAPTION, resizeKey: 'qr' },
+    ];
+  }
+
   var agentBlock = {
-    // Kevin-9 layout: LEFT = logo (top) + brokerage name + office address
-    // + QR;  MIDDLE = agent name + credentials + phones/email;
-    // RIGHT = headshot, tall portrait, full height.
+    // single agent: [ brokerage centre-left | agent detail | headshot ]
     single: {
       id: 'agent-single',
       cols: [
-        { id: 'brand', wFrac: 0.36, kind: 'stack', lines: [
-          { img: 'agentInfo.brokerageLogoPhotoId', placeholder: 'Logo', hFrac: 0.34 },
-          { field: 'agentInfo.brokerage', type: { font: 'sans', sizePt: 8.5, weight: 600, token: 'inkMuted' } },
-          { field: 'agentInfo.brokerageAddress', type: { font: 'sans', sizePt: 8, token: 'inkMuted' } },
-          { qr: 'propertyInfo.onlineTourUrl' },
-        ] },
+        { id: 'brand', wFrac: 0.36, kind: 'stack', align: 'center', lines: brokerCenter() },
         { id: 'detail', wFrac: 0.40, kind: 'stack', lines: [
-          { field: 'agentInfo.name', type: { font: 'serif', sizePt: 17, weight: 700, token: 'gold', tracking: 0.03 } },
-          { field: 'agentInfo.credentials', type: { font: 'sans', sizePt: 9, token: 'inkMuted' } },
-          { spacer: 0.02 },
-          { compose: ['Mobile: ', 'agentInfo.cellPhone'], type: { font: 'sans', sizePt: 9 } },
-          { compose: ['Office: ', 'agentInfo.busPhone'], type: { font: 'sans', sizePt: 9 } },
-          { compose: ['Email: ', 'agentInfo.email'], type: { font: 'sans', sizePt: 9 } },
+          { field: 'agentInfo.name', type: AGENT_NAME },
+          { field: 'agentInfo.credentials', type: AGENT_TITLE },
+          { spacer: 0.015 },
+          { label: 'Tel: ', field: 'agentInfo.cellPhone', fmt: 'phone', type: AGENT_LINE },
+          { label: 'Email: ', field: 'agentInfo.email', type: AGENT_LINE },
         ] },
-        { id: 'headshot', wFrac: 0.24, kind: 'headshot', aspect: 0.62, ref: 'agentInfo', fullHeight: true },
+        { id: 'headshot', wFrac: 0.24, kind: 'headshot', aspect: 0.62, ref: 'agentInfo',
+          fullHeight: true, resizeKey: 'headshot1' },
       ],
     },
 
-    // co-listing layout (see the "Mo Zhang / June Liu" reference):
-    //   [headshot1] [name1+title1] [logo + address + 2x contact + QR] [name2+title2] [headshot2]
+    // co-listing (the "Mo Zhang / June Liu" reference):
+    //   [headshot1] [name+title+contact, hugging h1] [brokerage centre]
+    //   [name+title+contact, hugging h2] [headshot2]
     dual: {
       id: 'agent-dual',
       cols: [
-        { id: 'headshot1', wFrac: 0.15, kind: 'headshot', aspect: 0.78, ref: 'agentInfo', fullHeight: true },
-        { id: 'label1', wFrac: 0.19, kind: 'stack', align: 'center', lines: [
-          { field: 'agentInfo.name', wrap: true, type: { font: 'serif', sizePt: 15, weight: 700, token: 'gold' } },
-          { field: 'agentInfo.credentials', wrap: true, type: { font: 'sans', sizePt: 8.5, token: 'inkMuted' } },
+        { id: 'headshot1', wFrac: 0.15, kind: 'headshot', aspect: 0.78, ref: 'agentInfo',
+          fullHeight: true, resizeKey: 'headshot1' },
+        { id: 'label1', wFrac: 0.19, kind: 'stack', align: 'left', lines: [
+          { field: 'agentInfo.name', nowrap: true, type: AGENT_NAME },
+          { field: 'agentInfo.credentials', type: AGENT_TITLE },
+          { spacer: 0.012 },
+          { label: 'Tel: ', field: 'agentInfo.cellPhone', fmt: 'phone', type: { font: 'sans', sizePt: 8.5, token: 'gold' } },
+          { label: 'Email: ', field: 'agentInfo.email', wrap: true, type: { font: 'sans', sizePt: 8.5, token: 'gold' } },
         ] },
-        { id: 'center', wFrac: 0.32, kind: 'stack', align: 'center', lines: [
-          { img: 'agentInfo.brokerageLogoPhotoId', placeholder: 'Logo', hFrac: 0.20 },
-          { field: 'agentInfo.brokerage', type: { font: 'sans', sizePt: 8, weight: 600, token: 'inkMuted' } },
-          { field: 'agentInfo.brokerageAddress', wrap: true, type: { font: 'sans', sizePt: 7.5, token: 'inkMuted' } },
-          { contactRow: [
-            { tel: 'agentInfo.cellPhone', email: 'agentInfo.email' },
-            { tel: 'agentInfo2.cellPhone', email: 'agentInfo2.email' },
-          ], type: { font: 'sans', sizePt: 7, token: 'inkMuted' } },
-          { qr: 'propertyInfo.onlineTourUrl' },
+        { id: 'center', wFrac: 0.32, kind: 'stack', align: 'center', lines: brokerCenter() },
+        { id: 'label2', wFrac: 0.19, kind: 'stack', align: 'right', lines: [
+          { field: 'agentInfo2.name', nowrap: true, type: AGENT_NAME },
+          { field: 'agentInfo2.credentials', type: AGENT_TITLE },
+          { spacer: 0.012 },
+          { label: 'Tel: ', field: 'agentInfo2.cellPhone', fmt: 'phone', type: { font: 'sans', sizePt: 8.5, token: 'gold' } },
+          { label: 'Email: ', field: 'agentInfo2.email', wrap: true, type: { font: 'sans', sizePt: 8.5, token: 'gold' } },
         ] },
-        { id: 'label2', wFrac: 0.19, kind: 'stack', align: 'center', lines: [
-          { field: 'agentInfo2.name', wrap: true, type: { font: 'serif', sizePt: 15, weight: 700, token: 'gold' } },
-          { field: 'agentInfo2.credentials', wrap: true, type: { font: 'sans', sizePt: 8.5, token: 'inkMuted' } },
-        ] },
-        { id: 'headshot2', wFrac: 0.15, kind: 'headshot', aspect: 0.78, ref: 'agentInfo2', fullHeight: true },
+        { id: 'headshot2', wFrac: 0.15, kind: 'headshot', aspect: 0.78, ref: 'agentInfo2',
+          fullHeight: true, resizeKey: 'headshot2' },
       ],
     },
   };

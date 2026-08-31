@@ -195,7 +195,14 @@
     return im;
   }
 
-  function textLine(theme, scale, t, ty, wrap) {
+  function formatPhone(raw) {
+    var d = String(raw || '').replace(/\D/g, '');
+    if (d.length === 11 && d[0] === '1') d = d.slice(1);
+    if (d.length === 10) return d.slice(0, 3) + '-' + d.slice(3, 6) + '-' + d.slice(6);
+    return String(raw || '');
+  }
+
+  function textLine(theme, scale, t, ty, mode) {
     var p = el('div', { text: String(t) });
     ty = ty || {};
     p.style.fontFamily = famFor(theme, ty.font || 'sans');
@@ -205,101 +212,131 @@
     p.style.color = ty.token ? tokenColor(theme, ty.token) : tokenColor(theme, 'ink');
     p.style.lineHeight = 1.34;
     p.style.maxWidth = '100%';
-    if (wrap) {
-      p.style.whiteSpace = 'normal';
-      p.style.wordBreak = 'break-word';
+    if (mode === 'wrap') {
+      p.style.whiteSpace = 'normal'; p.style.wordBreak = 'break-word';
+    } else if (mode === 'nowrap') {
+      p.style.whiteSpace = 'nowrap';                 // never break; may overflow the col slightly
     } else {
-      p.style.whiteSpace = 'nowrap';
-      p.style.overflow = 'hidden';
-      p.style.textOverflow = 'ellipsis';
+      p.style.whiteSpace = 'nowrap'; p.style.overflow = 'hidden'; p.style.textOverflow = 'ellipsis';
     }
     return p;
   }
 
-  // two side-by-side per-agent contact stacks (Tel / Email), for the
-  // co-listing agent card centre column.
-  function contactRow(project, theme, scale, pairs, ty) {
-    var wrap = el('div');
-    wrap.style.cssText = 'display:flex;gap:' + (10 * scale) + 'px;width:100%;justify-content:center;' +
-      'margin-top:' + (3 * scale) + 'px;';
-    pairs.forEach(function (pr) {
-      var tel = val(project, pr.tel), email = val(project, pr.email);
-      if (!tel && !email) return;
-      var col = el('div');
-      col.style.cssText = 'flex:1;min-width:0;text-align:center;';
-      if (tel) col.appendChild(textLine(theme, scale, 'Tel: ' + formatPhone(tel), ty, false));
-      if (email) col.appendChild(textLine(theme, scale, 'Email: ' + email, ty, true));
-      wrap.appendChild(col);
-    });
-    return wrap.children.length ? wrap : null;
+  function imgBox(theme, scale, url, label, minH) {
+    var im = el('div', { class: 'fsb-agent-img' });
+    im.style.cssText = 'flex:1 1 auto;min-height:' + minH + 'px;display:flex;align-items:center;' +
+      'justify-content:center;background:center/contain no-repeat;border-radius:2px;position:relative;' +
+      'font-size:' + (8 * scale) + 'px;color:' + tokenColor(theme, 'inkMuted') + ';';
+    if (url) { im.style.backgroundImage = 'url(' + url + ')'; im.style.background += ',' + tokenColor(theme, 'bgDeep'); }
+    else { im.style.border = '1px dashed ' + tokenColor(theme, 'goldLine'); im.textContent = label; }
+    return im;
   }
 
-  function formatPhone(raw) {
-    var d = String(raw || '').replace(/\D/g, '');
-    if (d.length === 11 && d[0] === '1') d = d.slice(1);
-    if (d.length === 10) return d.slice(0, 3) + '-' + d.slice(3, 6) + '-' + d.slice(6);
-    return String(raw || '');
+  function imgMult(project, key) {
+    return (key && project.imageSizes && project.imageSizes[key]) || 1;
   }
 
-  function buildAgent(project, info, pw, ph, scale, theme) {
+  function buildAgent(project, info, pw, ph, scale, theme, interactive) {
     var box = el('div', { class: 'fsb-agent fsb-agent--' + info.variant });
     setBox(box, info.rect, pw, ph);
     var boxH = info.rect[3] * ph;
     var pad = Math.max(6, 12 * scale);
     box.style.cssText += ';display:flex;align-items:stretch;box-sizing:border-box;overflow:hidden;' +
-      'gap:' + (info.rect[2] * pw * 0.025) + 'px;padding:' + pad + 'px;' +
+      'gap:' + (info.rect[2] * pw * 0.02) + 'px;padding:' + pad + 'px;' +
       'color:' + tokenColor(theme, 'ink') + ';border:1px solid ' + tokenColor(theme, 'goldLine') +
       ';border-radius:' + (3 * scale) + 'px;';
+
+    function alignFor(col) {
+      var a = col.align || info.spec.align || 'center';
+      return a === 'left' ? 'align-items:flex-start;text-align:left;'
+        : a === 'right' ? 'align-items:flex-end;text-align:right;'
+        : 'align-items:center;text-align:center;';
+    }
 
     (info.spec.cols || []).forEach(function (col) {
       var c = el('div', { class: 'fsb-agent-col fsb-agent-col--' + col.kind });
       c.style.cssText = 'flex:' + col.wFrac + ' 1 0;min-width:0;display:flex;flex-direction:column;' +
-        'justify-content:center;gap:' + (2 * scale) + 'px;' +
-        ((info.spec.align === 'center' || col.align === 'center') ? 'align-items:center;text-align:center;' : '');
+        'justify-content:center;gap:' + (2.5 * scale) + 'px;' + alignFor(col);
 
       if (col.kind === 'headshot') {
         var hpid = val(project, (col.ref || 'agentInfo') + '.headshotPhotoId');
-        var hb = imgBox(theme, scale, hpid && fullUrl(project, hpid), 'Headshot',
-          col.fullHeight ? boxH - pad * 2 : boxH * 0.66);
+        var hmin = (col.fullHeight ? boxH - pad * 2 : boxH * 0.66) * imgMult(project, col.resizeKey);
+        var hb = imgBox(theme, scale, hpid && fullUrl(project, hpid), 'Headshot', hmin);
         hb.style.flex = '1 1 auto';
+        addResize(hb, project, col.resizeKey, interactive);
         c.appendChild(hb);
-      } else if (col.kind === 'stack') {
-        (col.lines || []).forEach(function (ln) {
-          if (ln.spacer) {
-            var sp = el('div'); sp.style.height = (ln.spacer * ph) + 'px'; c.appendChild(sp); return;
-          }
-          if (ln.img) {
-            var pid = val(project, ln.img);
-            var im = imgBox(theme, scale, pid && fullUrl(project, pid), ln.placeholder || '',
-              (ln.hFrac || 0.3) * boxH);
-            im.style.flex = '0 0 auto'; im.style.alignSelf = 'stretch';
-            c.appendChild(im); return;
-          }
-          if (ln.qr) {
-            var url = val(project, ln.qr);
-            if (!url) return;
-            var qpx = Math.max(22, Math.round(boxH * 0.20));
-            var qb = el('div', { class: 'fsb-agent-qr' });
-            qb.style.cssText = 'width:' + qpx + 'px;height:' + qpx + 'px;background:#fff;padding:' +
-              (2 * scale) + 'px;box-sizing:border-box;flex:0 0 auto;margin-top:' + (3 * scale) + 'px;align-self:center;';
-            if (window.FSB.qr) window.FSB.qr.render(qb, url, { size: qpx, dark: '#141414', light: '#ffffff' });
-            c.appendChild(qb); return;
-          }
-          if (ln.contactRow) {
-            var cr = contactRow(project, theme, scale, ln.contactRow, ln.type);
-            if (cr) c.appendChild(cr);
-            return;
-          }
-          var t = ln.text != null ? ln.text
-            : ln.compose ? composeLine(project, ln.compose)
-            : val(project, ln.field);
-          if (t == null || String(t).trim() === '' || /^[\s|&]*$/.test(String(t))) return;
-          c.appendChild(textLine(theme, scale, t, ln.type, ln.wrap));
-        });
+        return;
       }
+      if (col.kind !== 'stack') { box.appendChild(c); return; }
+
+      (col.lines || []).forEach(function (ln) {
+        if (ln.spacer) {
+          var sp = el('div'); sp.style.height = (ln.spacer * ph) + 'px'; c.appendChild(sp); return;
+        }
+        if (ln.img) {
+          var pid = val(project, ln.img);
+          var im = imgBox(theme, scale, pid && fullUrl(project, pid), ln.placeholder || '',
+            (ln.hFrac || 0.3) * boxH * imgMult(project, ln.resizeKey));
+          im.style.flex = '0 0 auto'; im.style.alignSelf = 'stretch';
+          addResize(im, project, ln.resizeKey, interactive);
+          c.appendChild(im); return;
+        }
+        if (ln.qr) {
+          var url = val(project, ln.qr);
+          if (!url) return;
+          var qpx = Math.max(20, Math.round(boxH * 0.19 * imgMult(project, ln.resizeKey)));
+          var qb = el('div', { class: 'fsb-agent-qr' });
+          qb.style.cssText = 'width:' + qpx + 'px;height:' + qpx + 'px;background:#fff;padding:' +
+            (2 * scale) + 'px;box-sizing:border-box;flex:0 0 auto;margin-top:' + (3 * scale) +
+            'px;align-self:center;position:relative;';
+          if (window.FSB.qr) window.FSB.qr.render(qb, url, { size: qpx, dark: '#141414', light: '#ffffff' });
+          addResize(qb, project, ln.resizeKey, interactive);
+          c.appendChild(qb);
+          if (ln.caption) {
+            c.appendChild(textLine(theme, scale, ln.caption, ln.captionType || { font: 'serif', sizePt: 9, tracking: 0.1, token: 'ink' }, 'nowrap'));
+          }
+          return;
+        }
+        // text line: optional "label" prefix + field/compose value, optional fmt
+        var raw = ln.text != null ? ln.text
+          : ln.compose ? composeLine(project, ln.compose)
+          : val(project, ln.field);
+        raw = raw == null ? '' : String(raw);
+        if (raw.trim() === '' || /^[\s|&]*$/.test(raw)) return;
+        if (ln.fmt === 'phone') raw = formatPhone(raw);
+        var text = (ln.label || '') + raw;
+        var mode = ln.nowrap ? 'nowrap' : ln.wrap ? 'wrap' : undefined;
+        c.appendChild(textLine(theme, scale, text, ln.type, mode));
+      });
       box.appendChild(c);
     });
     return box;
+  }
+
+  // ---- drag-resize on an agent image / QR box (interactive only) ----
+  function addResize(node, project, key, interactive) {
+    if (!interactive || !key || !window.FSB.app || !window.FSB.app.mutateImageSize) return;
+    var grip = el('div', { class: 'fsb-img-resize', title: '拖动调整大小' });
+    node.appendChild(grip);
+    grip.addEventListener('pointerdown', function (e) {
+      e.preventDefault(); e.stopPropagation();
+      var startY = e.clientY;
+      var h0 = node.getBoundingClientRect().height;
+      var m0 = imgMult(project, key);
+      grip.setPointerCapture(e.pointerId);
+      function move(ev) {
+        var f = Math.max(0.4, Math.min(2.5, m0 * (h0 + (ev.clientY - startY)) / h0));
+        node.style.minHeight = (h0 / m0 * f) + 'px';
+      }
+      function up(ev) {
+        grip.removeEventListener('pointermove', move);
+        grip.removeEventListener('pointerup', up);
+        var f = Math.max(0.4, Math.min(2.5, m0 * (ev.clientY - startY + h0) / h0));
+        window.FSB.app.mutateImageSize(key, f);
+      }
+      grip.addEventListener('pointermove', move);
+      grip.addEventListener('pointerup', up);
+    });
   }
 
   // ---- flourish (page 2): the exact original filigree, extracted from
@@ -337,18 +374,28 @@
           });
         }
       });
-      // LEFT column -- description (only in the stagger5 variant)
+      // LEFT column -- description (only in the stagger5 variant).
+      // Auto-fits: font size grows/shrinks (10–20pt) so the copy fills the
+      // box height, whatever its length. fitTexts() does the sizing once
+      // the node has layout.
       var LD = spec.page1.left.desc;
       if (LD) {
-        page.appendChild(buildText(LD.rect, pw, ph, scale, {
+        var descEl = buildText(LD.rect, pw, ph, scale, {
           family: famFor(theme, (LD.type && LD.type.font) || 'serif'),
-          sizePt: (LD.type && LD.type.sizePt) || 16,
-          leadingPt: (LD.type && LD.type.leadingPt) || 22,
+          sizePt: (LD.type && LD.type.sizePt) || 15,
+          leadingPt: (LD.type && LD.type.leadingPt) || 21,
           align: (LD.type && LD.type.align) || 'justify',
           color: tokenColor(theme, 'ink'),
           text: LD.value || (opts.placeholders ? '房源描述 Property description…' : ''),
           cls: 'fsb-text--desc',
-        }));
+        });
+        descEl.style.justifyContent = 'flex-start';
+        descEl.setAttribute('data-fit', '1');
+        descEl.setAttribute('data-fit-min', '10');
+        descEl.setAttribute('data-fit-max', '20');
+        descEl.setAttribute('data-fit-scale', String(scale));
+        descEl.setAttribute('data-fit-lead', '1.4');
+        page.appendChild(descEl);
       }
 
       // RIGHT column
@@ -378,7 +425,7 @@
       page.appendChild(hero);
 
       if (R.iconRow) page.appendChild(buildIconRow(R.iconRow, pw, ph, scale, theme));
-      page.appendChild(buildAgent(project, R.agent, pw, ph, scale, theme));
+      page.appendChild(buildAgent(project, R.agent, pw, ph, scale, theme, interactive));
 
     } else {
       // PAGE 2
@@ -414,16 +461,55 @@
   }
 
   function updateDynamic(pageEl, project) {
-    // simplest correct approach: rebuild the page in place
     var m = pageEl && pageEl._fsb;
     if (!m) return;
     var fresh = renderPage(m.pageNum, project, {
       scale: m.scale, interactive: m.interactive, placeholders: m.placeholders,
     });
-    pageEl.innerHTML = fresh.innerHTML;
+    // MOVE the real DOM nodes across (don't go via innerHTML -- that
+    // serialises the QR <canvas> to an empty element).
+    while (pageEl.firstChild) pageEl.removeChild(pageEl.firstChild);
+    while (fresh.firstChild) pageEl.appendChild(fresh.firstChild);
     pageEl.style.cssText = fresh.style.cssText;
     pageEl._fsb = fresh._fsb;
+    fitTexts(pageEl);
   }
 
-  window.FSB.render = { renderPage: renderPage, updateSlot: updateSlot, updateDynamic: updateDynamic };
+  // ---- auto-fit: size + leading so a text block fills its box evenly ----
+  function fitTexts(pageEl) {
+    var nodes = pageEl.querySelectorAll('[data-fit]');
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      var maxPt = parseFloat(n.getAttribute('data-fit-max')) || 20;
+      var minPt = parseFloat(n.getAttribute('data-fit-min')) || 9;
+      var scale = parseFloat(n.getAttribute('data-fit-scale')) || 1;
+      var lead = parseFloat(n.getAttribute('data-fit-lead')) || 1.4; // baseline leading / size
+      var boxH = n.clientHeight;
+      if (!boxH || !n.textContent.trim()) continue;
+
+      // 1. largest font size that still fits at the baseline leading
+      var lo = minPt, hi = maxPt, best = minPt;
+      for (var k = 0; k < 14; k++) {
+        var mid = (lo + hi) / 2;
+        n.style.fontSize = (mid * scale) + 'px';
+        n.style.lineHeight = (mid * scale * lead) + 'px';
+        if (n.scrollHeight <= boxH + 1) { best = mid; lo = mid; } else { hi = mid; }
+      }
+      n.style.fontSize = (best * scale) + 'px';
+
+      // 2. if the copy is short, open the leading up (to ~1.9x) so the
+      //    lines spread and fill the remaining height evenly.
+      var leadLo = lead, leadHi = 1.95, bestLead = lead;
+      for (var j = 0; j < 12; j++) {
+        var lm = (leadLo + leadHi) / 2;
+        n.style.lineHeight = (best * scale * lm) + 'px';
+        if (n.scrollHeight <= boxH + 1) { bestLead = lm; leadLo = lm; } else { leadHi = lm; }
+      }
+      n.style.lineHeight = (best * scale * bestLead) + 'px';
+    }
+  }
+
+  window.FSB.render = {
+    renderPage: renderPage, updateSlot: updateSlot, updateDynamic: updateDynamic, fitTexts: fitTexts,
+  };
 })();

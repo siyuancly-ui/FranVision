@@ -57,6 +57,9 @@ function applyPatch(project, patch) {
   if (patch.templateSystem) project.templateSystem = patch.templateSystem;
   if (patch.colorTheme) project.colorTheme = patch.colorTheme;
   if (patch.topPhotoStyle) project.topPhotoStyle = patch.topPhotoStyle;
+  if (patch.imageSizes && typeof patch.imageSizes === 'object') {
+    project.imageSizes = Object.assign({}, project.imageSizes, patch.imageSizes);
+  }
   if (patch.propertyInfo && typeof patch.propertyInfo === 'object') {
     project.propertyInfo = Object.assign({}, project.propertyInfo, patch.propertyInfo);
   }
@@ -168,8 +171,8 @@ class LocalDiskStorage {
         topPhotoStyle: initial.topPhotoStyle || 'wide',
         propertyInfo: { address: '', city: '', description: '',
           bedrooms: '', bathrooms: '', garage: '', onlineTourUrl: '' },
-        agentInfo: { name: '', credentials: '', busPhone: '', cellPhone: '', email: '',
-          brokerage: '', brokerageAddress: '', website: '',
+        agentInfo: { name: '', credentials: '', cellPhone: '', email: '',
+          brokerage: '', brokerageOffice: '', brokerageAddress: '',
           headshotPhotoId: null, brokerageLogoPhotoId: null },
         agentInfo2: null,
         photos: [],

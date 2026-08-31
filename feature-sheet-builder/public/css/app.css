@@ -379,3 +379,18 @@ body.fsb-modal-open { overflow: hidden; }
 .fsb-admin-status.is-submitted { background: #e4f4e8; color: #2e7d43; }
 .fsb-admin-rowact { display: flex; gap: 6px; white-space: nowrap; }
 .fsb-btn--sm { padding: 4px 10px; font-size: 12px; }
+
+/* ---- drag-resize grip on agent images / QR (v2 editor) ---- */
+.fsb-agent-img, .fsb-agent-qr { position: relative; }
+.fsb-img-resize {
+  position: absolute; right: -1px; bottom: -1px; width: 13px; height: 13px;
+  cursor: nwse-resize; z-index: 6; touch-action: none;
+  background:
+    linear-gradient(-45deg, transparent 0 4px, #f0b64a 4px 6px, transparent 6px 7px,
+                    #f0b64a 7px 9px, transparent 9px);
+  opacity: 0; transition: opacity .12s;
+}
+.fsb-agent-img:hover .fsb-img-resize,
+.fsb-agent-qr:hover .fsb-img-resize,
+.fsb-img-resize:active { opacity: 1; }
+.fsb-stage--locked .fsb-img-resize { display: none; }

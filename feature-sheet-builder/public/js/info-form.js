@@ -18,16 +18,25 @@
   var src = window.FSB.photoSource;
   var THEMES = window.FSB_V2_THEMES;
 
-  var AGENT_FIELDS = [
+  // Agent 1: personal fields + the shared brokerage block.
+  var AGENT1_FIELDS = [
     { key: 'name', label: 'Name 姓名' },
     { key: 'credentials', label: 'Title / credentials 职务' },
-    { key: 'busPhone', label: 'Office phone 办公电话' },
-    { key: 'cellPhone', label: 'Mobile phone 手机' },
+    { key: 'cellPhone', label: 'Phone 电话' },
     { key: 'email', label: 'Email 邮箱' },
-    { key: 'brokerage', label: 'Brokerage 经纪公司' },
-    { key: 'brokerageAddress', label: 'Brokerage address 公司地址' },
     { key: 'headshotPhotoId', label: 'Headshot 头像', type: 'image' },
+    { key: 'brokerage', label: 'Brokerage 经纪公司' },
+    { key: 'brokerageOffice', label: 'Brokerage office phone 公司电话', hint: '可留空;填了显示在公司地址上方' },
+    { key: 'brokerageAddress', label: 'Brokerage address 公司地址' },
     { key: 'brokerageLogoPhotoId', label: 'Brokerage logo 公司 Logo', type: 'image' },
+  ];
+  // Agent 2 (co-listing): same brokerage, so personal fields only.
+  var AGENT2_FIELDS = [
+    { key: 'name', label: 'Name 姓名' },
+    { key: 'credentials', label: 'Title / credentials 职务' },
+    { key: 'cellPhone', label: 'Phone 电话' },
+    { key: 'email', label: 'Email 邮箱' },
+    { key: 'headshotPhotoId', label: 'Headshot 头像', type: 'image' },
   ];
 
   var SCHEMA = {
@@ -52,8 +61,8 @@
         { key: 'onlineTourUrl', label: 'Online tour URL 看房链接', hint: '用于生成二维码' },
       ],
     },
-    agentInfo: { title: 'Agent 经纪', fields: AGENT_FIELDS },
-    agentInfo2: { title: 'Second agent 第二经纪 (co-listing，可选)', fields: AGENT_FIELDS, optionalGroup: true },
+    agentInfo: { title: 'Agent 经纪', fields: AGENT1_FIELDS },
+    agentInfo2: { title: 'Second agent 第二经纪 (co-listing，可选)', fields: AGENT2_FIELDS, optionalGroup: true },
   };
 
   function mount(root, app) {
