@@ -39,6 +39,7 @@
       pages.innerHTML = '';
       var avail = scroll.clientWidth - 48;
       var scale = Math.min(avail / PAGE_WIDTH_PT, MAX_PREVIEW_PAGE_PX / PAGE_WIDTH_PT);
+      var pageEls = [];
       for (var p = 1; p <= pageCount; p++) {
         var wrap = el('div', { class: 'fsb-modal-page' });
         wrap.appendChild(el('div', { class: 'fsb-modal-page-label', text: 'Page ' + p }));
@@ -46,7 +47,11 @@
         pageEl.appendChild(el('div', { class: 'fsb-preview-wm' })); // watermark overlay (CSS)
         wrap.appendChild(pageEl);
         pages.appendChild(wrap);
+        pageEls.push(pageEl);
       }
+      // same auto-fit pass the editor stage runs, so the description
+      // block fills its box identically in preview
+      if (render.fitTexts) pageEls.forEach(function (n) { render.fitTexts(n); });
     }
 
     function onKey(e) { if (e.key === 'Escape') close(); }
