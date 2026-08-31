@@ -62,7 +62,8 @@
         rect: [0.539, 0.016, 0.414, 0.110],
         // line 1 = street address (serif), line 2 = city (spaced)
         // swashy italic calligraphic serif (see "20 Lord Melborne St" ref)
-        addressType: { font: 'script', sizePt: 44, weight: 500, align: 'center', tracking: 0, italic: false },
+        // IDML: Kevin-9 "20 Lord Melborne St" 49pt / "Markham" 24pt.
+        addressType: { font: 'script', sizePt: 49, weight: 500, align: 'center', tracking: 0, italic: false },
         cityType: { font: 'script', sizePt: 24, weight: 500, align: 'center', tracking: 0.04, italic: false },
       },
 

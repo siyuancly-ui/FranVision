@@ -49,13 +49,15 @@
       photos: [
         { id: 'p1L-1', rect: [0.009, 0.016, 0.481, 0.384] },
       ],
+      // two side-by-side frames = the Kevin-9 mid-row pair geometry
+      // (uf5d / uf63: w 0.237, h 0.265, gap 0.007), moved to the top.
       photosPaired: [
-        { id: 'p1L-1', rect: [0.009, 0.016, 0.233, 0.300] },
-        { id: 'p1L-2', rect: [0.257, 0.016, 0.233, 0.300] },
+        { id: 'p1L-1', rect: [0.009, 0.016, 0.237, 0.265] },
+        { id: 'p1L-2', rect: [0.253, 0.016, 0.237, 0.265] },
       ],
       desc: {
-        rect: [0.008, 0.420, 0.484, 0.300],
-        type: { font: 'serif', sizePt: 15, leadingPt: 20, align: 'justify' },
+        rect: [0.008, 0.420, 0.484, 0.308],
+        type: { font: 'serif', sizePt: 16, leadingPt: 20, align: 'justify' },
       },
     },
 
@@ -89,15 +91,19 @@
   // 'ink' (white on navy/burgundy, dark on marble -- flips already);
   // agent lines use 'agentText' (gold on navy/burgundy, dark on marble,
   // per the LYF reference).
+  // Font sizes are the EXACT IDML point sizes (Kevin-9 single, 3361 dual).
   var SERIF = 'serif';
-  var BROKER_NAME  = { font: 'sans', sizePt: 16, weight: 600, token: 'ink' };   // "LYF Realty, Brokerage" 17pt 等线
-  var BROKER_LINE  = { font: SERIF, sizePt: 15, weight: 400, token: 'ink' };     // address 17pt
-  var AGENT_NAME   = { font: SERIF, sizePt: 28, weight: 600, token: 'agentText' }; // "Kevin Zhao" 30pt
-  var AGENT_TITLE  = { font: SERIF, sizePt: 12, weight: 400, token: 'agentText' }; // "Broker of Record" 11pt
-  var AGENT_LINE   = { font: SERIF, sizePt: 15, weight: 400, token: 'agentText' }; // contact 15-17pt
-  var QR_CAPTION   = { font: SERIF, sizePt: 8, weight: 400, tracking: 0.06, token: 'ink' };
+  var BROKER_NAME  = { font: 'sans', sizePt: 17, weight: 600, token: 'ink' };    // "LYF Realty, Brokerage" 17pt 等线
+  var BROKER_LINE  = { font: SERIF, sizePt: 17, weight: 400, token: 'ink' };     // "333 Denison St, Unit 2" 17pt
+  var AGENT_NAME   = { font: SERIF, sizePt: 30, weight: 600, token: 'agentText' }; // "Kevin Zhao" 30pt
+  var AGENT_TITLE  = { font: SERIF, sizePt: 11, weight: 400, token: 'agentText' }; // "Broker of Record" 11pt
+  var AGENT_LINE   = { font: SERIF, sizePt: 17, weight: 400, token: 'agentText' }; // "Mobile: / Office: / Email:" 17pt
+  var AGENT_EMAIL  = { font: SERIF, sizePt: 15, weight: 400, token: 'agentText' }; // "kevin@lyfrealty.com" value 15pt
+  var QR_CAPTION   = { font: SERIF, sizePt: 9,  weight: 400, tracking: 0.04, token: 'ink' }; // "Wechat QR" 9pt
 
-  var AGENT_NAME_DUAL = { font: SERIF, sizePt: 22, weight: 600, token: 'agentText' }; // 3361 bar: 2 names side-by-side, tighter
+  var AGENT_NAME_DUAL = { font: SERIF, sizePt: 17, weight: 600, token: 'agentText' }; // 3361: "Mo Zhang" / "June Liu" 17pt
+  var AGENT_LINE_DUAL = { font: SERIF, sizePt: 10, weight: 400, token: 'agentText' }; // 3361: "Tel: / Email:" 10pt
+
   function nameBox(ref, align, nameType) {
     return { key: ref + '-name', kind: 'stack', align: align || 'center', lines: [
       { field: ref + '.name', nowrap: true, type: nameType || AGENT_NAME },
@@ -109,19 +115,20 @@
     return { key: ref + '-contact', kind: 'stack', align: align || 'left', lines: [
       { label: 'Mobile: ', field: ref + '.cellPhone', fmt: 'phone', nowrap: true, type: AGENT_LINE },
       { label: 'Office: ', field: 'agentInfo.brokerageOffice', fmt: 'phone', nowrap: true, type: AGENT_LINE },
-      { label: 'Email: ', field: ref + '.email', nowrap: true, fitShrink: true, type: AGENT_LINE },
+      { label: 'Email: ', field: ref + '.email', nowrap: true, fitShrink: true, type: AGENT_EMAIL },
     ] };
   }
   // dual (Starlink): Tel / Email only
-  function contactBoxLite(ref, align) {
+  function contactBoxLite(ref, align, lineType) {
+    var LT = lineType || AGENT_LINE;
     return { key: ref + '-contact', kind: 'stack', align: align || 'left', lines: [
-      { label: 'Tel: ', field: ref + '.cellPhone', fmt: 'phone', nowrap: true, type: AGENT_LINE },
-      { label: 'Email: ', field: ref + '.email', nowrap: true, fitShrink: true, type: AGENT_LINE },
+      { label: 'Tel: ', field: ref + '.cellPhone', fmt: 'phone', nowrap: true, type: LT },
+      { label: 'Email: ', field: ref + '.email', nowrap: true, fitShrink: true, type: LT },
     ] };
   }
   var logoBox = { key: 'logo', kind: 'image', img: 'agentInfo.brokerageLogoPhotoId', placeholder: 'Logo' };
   var brokerNameBox = { key: 'broker-name', kind: 'stack', align: 'left', lines: [
-    { field: 'agentInfo.brokerage', type: BROKER_NAME },
+    { field: 'agentInfo.brokerage', wrap: true, type: BROKER_NAME },
   ] };
   var brokerAddrBox = { key: 'broker-address', kind: 'stack', align: 'left', lines: [
     { field: 'agentInfo.brokerageAddress', wrap: true, type: BROKER_LINE },
@@ -130,37 +137,35 @@
     caption: 'ONLINE TOUR', captionType: QR_CAPTION };
   function headshotBox(ref, key) { return { key: key, kind: 'headshot', ref: ref }; }
 
+  // Every rect below is the IDML text/graphic-frame bound converted to a
+  // fraction of the agent band. SINGLE = Kevin-9 (band 0.503,0.735 ..
+  // 0.493,0.236 -> right half). DUAL = 3361 bar (same right-half band;
+  // the 3361 file itself parks this bar bottom-LEFT -- see registry note).
   var agentBlock = {
-    // SINGLE = Kevin-9 / LYF card (measured): logo top-left, brokerage
-    // name under it, address bottom-left, agent name + Mobile/Office/Email
-    // centred vertically in the middle column, headshot far-right portrait.
     single: {
       id: 'agent-single',
       boxes: [
-        assign(logoBox,        { rect: [0.028, 0.010, 0.300, 0.380] }),
-        assign(brokerNameBox,  { rect: [0.034, 0.410, 0.320, 0.130] }),
-        assign(brokerAddrBox,  { rect: [0.034, 0.660, 0.320, 0.300] }),
-        assign(nameBox('agentInfo', 'center'),      { rect: [0.360, 0.140, 0.380, 0.340] }),
-        assign(contactBoxFull('agentInfo', 'left'), { rect: [0.362, 0.470, 0.330, 0.470] }),
-        assign(tourBox,        { rect: [0.695, 0.640, 0.078, 0.315] }),
-        assign(headshotBox('agentInfo', 'headshot1'), { rect: [0.775, 0.004, 0.221, 0.960] }),
+        assign(logoBox,        { rect: [0.028, 0.003, 0.336, 0.479] }),   // u20e
+        assign(brokerNameBox,  { rect: [0.071, 0.413, 0.262, 0.128] }),   // u1291
+        assign(brokerAddrBox,  { rect: [0.034, 0.643, 0.308, 0.221] }),   // u692
+        assign(nameBox('agentInfo', 'center'),      { rect: [0.364, 0.161, 0.365, 0.354] }), // u59a
+        assign(contactBoxFull('agentInfo', 'left'), { rect: [0.364, 0.541, 0.419, 0.387] }), // u181
+        assign(tourBox,        { rect: [0.552, 0.006, 0.100, 0.235] }),   // u122d ("Wechat QR"): above the headshot
+        assign(headshotBox('agentInfo', 'headshot1'), { rect: [0.770, 0.003, 0.224, 0.959] }), // u178
       ],
     },
-    // DUAL = 3361 bar (measured): [h1] [Mo name] [logo] [June name] [h2],
-    // address centred under the logo, each agent's Tel/Email below their
-    // name. Headshots inset (not bleeding).
     dual: {
       id: 'agent-dual',
       boxes: [
-        assign(headshotBox('agentInfo', 'headshot1'),          { rect: [0.004, 0.033, 0.170, 0.898] }),
-        assign(nameBox('agentInfo', 'center', AGENT_NAME_DUAL), { rect: [0.176, 0.120, 0.260, 0.320] }),
-        assign(contactBoxLite('agentInfo', 'left'),            { rect: [0.176, 0.520, 0.260, 0.460] }),
-        assign(logoBox,                                        { rect: [0.400, 0.030, 0.200, 0.320] }),
-        assign(brokerAddrBox,                                  { rect: [0.360, 0.360, 0.280, 0.170], align: 'center' }),
-        assign(tourBox,                                        { rect: [0.440, 0.575, 0.120, 0.360] }),
-        assign(nameBox('agentInfo2', 'center', AGENT_NAME_DUAL),{ rect: [0.575, 0.120, 0.260, 0.320] }),
-        assign(contactBoxLite('agentInfo2', 'left'),           { rect: [0.575, 0.520, 0.260, 0.460] }),
-        assign(headshotBox('agentInfo2', 'headshot2'),         { rect: [0.836, 0.033, 0.170, 0.898] }),
+        assign(headshotBox('agentInfo', 'headshot1'),                 { rect: [0.003, 0.031, 0.182, 0.898] }), // u178
+        assign(nameBox('agentInfo', 'center', AGENT_NAME_DUAL),        { rect: [0.106, 0.317, 0.372, 0.278] }), // u59a
+        assign(logoBox,                                               { rect: [0.369, 0.037, 0.267, 0.419] }), // u20e
+        assign(brokerAddrBox,                                         { rect: [0.357, 0.469, 0.285, 0.223], align: 'center' }), // u692
+        assign(nameBox('agentInfo2', 'center', AGENT_NAME_DUAL),       { rect: [0.547, 0.317, 0.372, 0.278] }), // u966
+        assign(contactBoxLite('agentInfo', 'left', AGENT_LINE_DUAL),   { rect: [0.202, 0.669, 0.267, 0.223] }), // u181
+        assign(contactBoxLite('agentInfo2', 'left', AGENT_LINE_DUAL),  { rect: [0.567, 0.669, 0.283, 0.223] }), // u94e
+        assign(tourBox,                                               { rect: [0.470, 0.660, 0.095, 0.330] }), // no QR in 3361; centred under the address
+        assign(headshotBox('agentInfo2', 'headshot2'),                { rect: [0.814, 0.131, 0.182, 0.705] }), // u909
       ],
     },
   };
