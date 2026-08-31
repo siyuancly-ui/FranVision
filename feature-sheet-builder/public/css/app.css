@@ -394,3 +394,15 @@ body.fsb-modal-open { overflow: hidden; }
 .fsb-agent-qr:hover .fsb-img-resize,
 .fsb-img-resize:active { opacity: 1; }
 .fsb-stage--locked .fsb-img-resize { display: none; }
+
+/* ---- draggable agent info boxes (admin only, v2) ---- */
+.fsb-agent-box--draggable { cursor: move; }
+.fsb-agent--admin .fsb-agent-box--draggable {
+  outline: 1px dashed rgba(240,182,74,.35); outline-offset: -1px;
+}
+.fsb-agent--admin .fsb-agent-box--draggable:hover {
+  outline-color: rgba(240,182,74,.9); background: rgba(240,182,74,.06);
+}
+.fsb-agent-box--draggable.is-dragging {
+  outline: 1px solid #f0b64a; background: rgba(240,182,74,.12); z-index: 20;
+}

@@ -98,62 +98,67 @@
   var AGENT_LINE = { font: 'sans', sizePt: 10, token: 'gold' };
   var QR_CAPTION = { font: 'serif', sizePt: 9, tracking: 0.14, token: 'ink' };
 
-  function brokerCenter(withOffice) {
-    return [
-      { img: 'agentInfo.brokerageLogoPhotoId', placeholder: 'Logo', hFrac: 0.30, resizeKey: 'logo' },
-      { field: 'agentInfo.brokerage', type: BROKER_NAME },
-      { label: 'Office: ', field: 'agentInfo.brokerageOffice', fmt: 'phone', type: BROKER_LINE },
-      { field: 'agentInfo.brokerageAddress', wrap: true, type: BROKER_LINE },
-      { qr: 'propertyInfo.onlineTourUrl', caption: 'ONLINE TOUR', captionType: QR_CAPTION, resizeKey: 'qr' },
-    ];
+  // ---------------------------------------------------------------
+  //  The agent + brokerage area is a set of INDEPENDENT boxes, each
+  //  positioned by a rect that is a fraction of the agent band, plus a
+  //  per-box {dx,dy} offset the admin (Franky) can drag. Boxes:
+  //    logo · broker-info (name/office/address) · online-tour (QR+caption)
+  //    agentN-name (name+title) · agentN-contact (phone+email) · headshotN
+  // ---------------------------------------------------------------
+  function nameBox(ref, align) {
+    return { key: ref + '-name', kind: 'stack', align: align || 'center', lines: [
+      { field: ref + '.name', nowrap: true, type: AGENT_NAME },
+      { field: ref + '.credentials', type: AGENT_TITLE },
+    ] };
+  }
+  function contactBox(ref, align) {
+    return { key: ref + '-contact', kind: 'stack', align: align || 'center', lines: [
+      { label: 'Tel: ', field: ref + '.cellPhone', fmt: 'phone', type: AGENT_LINE },
+      { label: 'Email: ', field: ref + '.email', wrap: true, type: AGENT_LINE },
+    ] };
+  }
+  var logoBox = { key: 'logo', kind: 'image', img: 'agentInfo.brokerageLogoPhotoId',
+    placeholder: 'Logo', resizeKey: 'logo' };
+  var brokerInfoBox = { key: 'broker-info', kind: 'stack', align: 'center', lines: [
+    { field: 'agentInfo.brokerage', type: BROKER_NAME },
+    { label: 'Office: ', field: 'agentInfo.brokerageOffice', fmt: 'phone', type: BROKER_LINE },
+    { field: 'agentInfo.brokerageAddress', wrap: true, type: BROKER_LINE },
+  ] };
+  var tourBox = { key: 'online-tour', kind: 'qr', qr: 'propertyInfo.onlineTourUrl',
+    caption: 'ONLINE TOUR', captionType: QR_CAPTION, resizeKey: 'qr' };
+  function headshotBox(ref, key) {
+    return { key: key, kind: 'headshot', ref: ref, resizeKey: key };
   }
 
   var agentBlock = {
-    // single agent: [ brokerage centre-left | agent detail | headshot ]
     single: {
       id: 'agent-single',
-      cols: [
-        { id: 'brand', wFrac: 0.36, kind: 'stack', align: 'center', lines: brokerCenter() },
-        { id: 'detail', wFrac: 0.40, kind: 'stack', lines: [
-          { field: 'agentInfo.name', type: AGENT_NAME },
-          { field: 'agentInfo.credentials', type: AGENT_TITLE },
-          { spacer: 0.015 },
-          { label: 'Tel: ', field: 'agentInfo.cellPhone', fmt: 'phone', type: AGENT_LINE },
-          { label: 'Email: ', field: 'agentInfo.email', type: AGENT_LINE },
-        ] },
-        { id: 'headshot', wFrac: 0.24, kind: 'headshot', aspect: 0.62, ref: 'agentInfo',
-          fullHeight: true, resizeKey: 'headshot1' },
+      boxes: [
+        assign(logoBox,        { rect: [0.02, 0.05, 0.30, 0.34] }),
+        assign(brokerInfoBox,  { rect: [0.00, 0.42, 0.35, 0.30] }),
+        assign(tourBox,        { rect: [0.05, 0.66, 0.24, 0.34] }),
+        assign(nameBox('agentInfo', 'center'),    { rect: [0.37, 0.12, 0.38, 0.26] }),
+        assign(contactBox('agentInfo', 'center'), { rect: [0.37, 0.44, 0.40, 0.26] }),
+        assign(headshotBox('agentInfo', 'headshot1'), { rect: [0.77, 0.04, 0.22, 0.92] }),
       ],
     },
-
-    // co-listing (the "Mo Zhang / June Liu" reference):
-    //   [headshot1] [name+title+contact, hugging h1] [brokerage centre]
-    //   [name+title+contact, hugging h2] [headshot2]
     dual: {
       id: 'agent-dual',
-      cols: [
-        { id: 'headshot1', wFrac: 0.15, kind: 'headshot', aspect: 0.78, ref: 'agentInfo',
-          fullHeight: true, resizeKey: 'headshot1' },
-        { id: 'label1', wFrac: 0.19, kind: 'stack', align: 'left', lines: [
-          { field: 'agentInfo.name', nowrap: true, type: AGENT_NAME },
-          { field: 'agentInfo.credentials', type: AGENT_TITLE },
-          { spacer: 0.012 },
-          { label: 'Tel: ', field: 'agentInfo.cellPhone', fmt: 'phone', type: { font: 'sans', sizePt: 8.5, token: 'gold' } },
-          { label: 'Email: ', field: 'agentInfo.email', wrap: true, type: { font: 'sans', sizePt: 8.5, token: 'gold' } },
-        ] },
-        { id: 'center', wFrac: 0.32, kind: 'stack', align: 'center', lines: brokerCenter() },
-        { id: 'label2', wFrac: 0.19, kind: 'stack', align: 'right', lines: [
-          { field: 'agentInfo2.name', nowrap: true, type: AGENT_NAME },
-          { field: 'agentInfo2.credentials', type: AGENT_TITLE },
-          { spacer: 0.012 },
-          { label: 'Tel: ', field: 'agentInfo2.cellPhone', fmt: 'phone', type: { font: 'sans', sizePt: 8.5, token: 'gold' } },
-          { label: 'Email: ', field: 'agentInfo2.email', wrap: true, type: { font: 'sans', sizePt: 8.5, token: 'gold' } },
-        ] },
-        { id: 'headshot2', wFrac: 0.15, kind: 'headshot', aspect: 0.78, ref: 'agentInfo2',
-          fullHeight: true, resizeKey: 'headshot2' },
+      boxes: [
+        assign(headshotBox('agentInfo', 'headshot1'),  { rect: [0.005, 0.05, 0.135, 0.90] }),
+        assign(nameBox('agentInfo', 'left'),           { rect: [0.15, 0.16, 0.20, 0.26] }),
+        assign(contactBox('agentInfo', 'left'),        { rect: [0.15, 0.46, 0.20, 0.30] }),
+        assign(logoBox,        { rect: [0.38, 0.02, 0.24, 0.28] }),
+        assign(brokerInfoBox,  { rect: [0.35, 0.30, 0.30, 0.28] }),
+        assign(tourBox,        { rect: [0.40, 0.58, 0.20, 0.42] }),
+        assign(nameBox('agentInfo2', 'right'),         { rect: [0.63, 0.16, 0.22, 0.26] }),
+        assign(contactBox('agentInfo2', 'right'),      { rect: [0.63, 0.46, 0.22, 0.30] }),
+        assign(headshotBox('agentInfo2', 'headshot2'), { rect: [0.86, 0.05, 0.135, 0.90] }),
       ],
     },
   };
+
+  function assign(a, b) { return Object.assign({}, a, b); }
 
   var MODULES = { LEFT: LEFT, RIGHT: RIGHT, leftColumn: leftColumn, agentBlock: agentBlock };
 

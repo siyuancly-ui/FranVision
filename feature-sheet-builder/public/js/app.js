@@ -90,6 +90,18 @@
     scheduleSave();
   };
 
+  // agent-card box positions -- {dx,dy} offset (fraction of the agent
+  // band) set by Franky dragging a box in the admin view.
+  app.mutateBoxOffset = function (key, dx, dy) {
+    if (!app.project.boxOffsets) app.project.boxOffsets = {};
+    app.project.boxOffsets[key] = {
+      dx: Math.max(-0.6, Math.min(0.6, dx || 0)),
+      dy: Math.max(-0.6, Math.min(0.6, dy || 0)),
+    };
+    app.emit('dynamic');
+    scheduleSave();
+  };
+
   // Resolve once the project row exists (lazy creation). Photo uploads and
   // image fields need a real projectId before they can POST.
   app.ensureCreated = function () {
@@ -357,7 +369,7 @@
       var wrap = el('div', { class: 'fsb-stage-page', id: 'fsb-stage-page-' + p });
       wrap.appendChild(el('div', { class: 'fsb-stage-page-label', text: 'Page ' + p }));
       var pageEl = render.renderPage(p, app.project, {
-        scale: app._scale, interactive: true, placeholders: true,
+        scale: app._scale, interactive: true, placeholders: true, admin: !!app.adminToken,
       });
       app._pageEls[p] = pageEl;
       wrap.appendChild(pageEl);

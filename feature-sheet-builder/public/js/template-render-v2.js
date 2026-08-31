@@ -244,86 +244,110 @@
     return (key && project.imageSizes && project.imageSizes[key]) || 1;
   }
 
-  function buildAgent(project, info, pw, ph, scale, theme, interactive) {
-    var box = el('div', { class: 'fsb-agent fsb-agent--' + info.variant });
-    setBox(box, info.rect, pw, ph);
-    var boxH = info.rect[3] * ph;
-    var pad = Math.max(6, 12 * scale);
-    box.style.cssText += ';display:flex;align-items:stretch;box-sizing:border-box;overflow:hidden;' +
-      'gap:' + (info.rect[2] * pw * 0.02) + 'px;padding:' + pad + 'px;' +
-      'color:' + tokenColor(theme, 'ink') + ';border:1px solid ' + tokenColor(theme, 'goldLine') +
-      ';border-radius:' + (3 * scale) + 'px;';
+  function boxOffset(project, key) {
+    var o = project.boxOffsets && project.boxOffsets[key];
+    return o ? { dx: o.dx || 0, dy: o.dy || 0 } : { dx: 0, dy: 0 };
+  }
 
-    function alignFor(col) {
-      var a = col.align || info.spec.align || 'center';
-      return a === 'left' ? 'align-items:flex-start;text-align:left;'
-        : a === 'right' ? 'align-items:flex-end;text-align:right;'
-        : 'align-items:center;text-align:center;';
-    }
+  function fillStack(cont, project, theme, scale, box, bandH) {
+    (box.lines || []).forEach(function (ln) {
+      if (ln.spacer) { var sp = el('div'); sp.style.height = (ln.spacer * bandH) + 'px'; cont.appendChild(sp); return; }
+      var raw = ln.text != null ? ln.text
+        : ln.compose ? composeLine(project, ln.compose)
+        : val(project, ln.field);
+      raw = raw == null ? '' : String(raw);
+      if (raw.trim() === '' || /^[\s|&]*$/.test(raw)) return;
+      if (ln.fmt === 'phone') raw = formatPhone(raw);
+      var mode = ln.nowrap ? 'nowrap' : ln.wrap ? 'wrap' : undefined;
+      cont.appendChild(textLine(theme, scale, (ln.label || '') + raw, ln.type, mode));
+    });
+  }
 
-    var totalW = (info.spec.cols || []).reduce(function (s, c) { return s + (c.wFrac || 0); }, 0) || 1;
-    (info.spec.cols || []).forEach(function (col) {
-      var c = el('div', { class: 'fsb-agent-col fsb-agent-col--' + col.kind });
-      // fixed proportional width -> predictable columns; long text clips.
-      c.style.cssText = 'flex:0 0 ' + (100 * col.wFrac / totalW) + '%;min-width:0;overflow:hidden;' +
-        'display:flex;flex-direction:column;justify-content:center;gap:' + (2.5 * scale) + 'px;' + alignFor(col);
+  function buildAgent(project, info, pw, ph, scale, theme, interactive, admin) {
+    var card = el('div', { class: 'fsb-agent fsb-agent--' + info.variant });
+    setBox(card, info.rect, pw, ph);
+    card.style.cssText += ';box-sizing:border-box;overflow:hidden;color:' + tokenColor(theme, 'ink') +
+      ';border:1px solid ' + tokenColor(theme, 'goldLine') + ';border-radius:' + (3 * scale) + 'px;';
+    if (admin) card.classList.add('fsb-agent--admin');
 
-      if (col.kind === 'headshot') {
-        var hpid = val(project, (col.ref || 'agentInfo') + '.headshotPhotoId');
-        var hmin = (col.fullHeight ? boxH - pad * 2 : boxH * 0.66) * imgMult(project, col.resizeKey);
-        var hb = imgBox(theme, scale, hpid && fullUrl(project, hpid), 'Headshot', hmin);
-        hb.style.flex = '1 1 auto';
-        hb.style.alignSelf = 'stretch';
-        hb.style.width = '100%';
-        addResize(hb, project, col.resizeKey, interactive);
-        c.appendChild(hb);
-        box.appendChild(c);
-        return;
-      }
-      if (col.kind !== 'stack') { box.appendChild(c); return; }
+    var bandW = info.rect[2] * pw, bandH = info.rect[3] * ph;
+    var boxes = info.spec.boxes || [];
 
-      (col.lines || []).forEach(function (ln) {
-        if (ln.spacer) {
-          var sp = el('div'); sp.style.height = (ln.spacer * ph) + 'px'; c.appendChild(sp); return;
-        }
-        if (ln.img) {
-          var pid = val(project, ln.img);
-          var im = imgBox(theme, scale, pid && fullUrl(project, pid), ln.placeholder || '',
-            (ln.hFrac || 0.3) * boxH * imgMult(project, ln.resizeKey));
-          im.style.flex = '0 0 auto'; im.style.alignSelf = 'stretch';
-          addResize(im, project, ln.resizeKey, interactive);
-          c.appendChild(im); return;
-        }
-        if (ln.qr) {
-          var url = val(project, ln.qr);
-          if (!url) return;
-          var qpx = Math.max(20, Math.round(boxH * 0.19 * imgMult(project, ln.resizeKey)));
+    boxes.forEach(function (b) {
+      var off = boxOffset(project, b.key);
+      var r = b.rect;
+      var bx = el('div', { class: 'fsb-agent-box fsb-agent-box--' + b.kind, 'data-box-key': b.key });
+      bx.style.cssText = 'position:absolute;box-sizing:border-box;display:flex;flex-direction:column;' +
+        'justify-content:center;overflow:hidden;gap:' + (2.5 * scale) + 'px;' +
+        'left:' + ((r[0] + off.dx) * bandW) + 'px;top:' + ((r[1] + off.dy) * bandH) + 'px;' +
+        'width:' + (r[2] * bandW) + 'px;height:' + (r[3] * bandH) + 'px;' +
+        (b.align === 'left' ? 'align-items:flex-start;text-align:left;'
+          : b.align === 'right' ? 'align-items:flex-end;text-align:right;'
+          : 'align-items:center;text-align:center;');
+
+      if (b.kind === 'headshot') {
+        var hpid = val(project, (b.ref || 'agentInfo') + '.headshotPhotoId');
+        var hb = imgBox(theme, scale, hpid && fullUrl(project, hpid), 'Headshot', 10);
+        hb.style.cssText += ';flex:1 1 auto;align-self:stretch;width:100%;';
+        addResize(hb, project, b.resizeKey, interactive);
+        bx.appendChild(hb);
+      } else if (b.kind === 'image') {
+        var pid = val(project, b.img);
+        var im = imgBox(theme, scale, pid && fullUrl(project, pid), b.placeholder || '', 10);
+        im.style.cssText += ';flex:1 1 auto;align-self:stretch;width:100%;';
+        addResize(im, project, b.resizeKey, interactive);
+        bx.appendChild(im);
+      } else if (b.kind === 'qr') {
+        var url = val(project, b.qr);
+        if (url) {
+          var qpx = Math.max(20, Math.round(r[3] * bandH * 0.66 * imgMult(project, b.resizeKey)));
           var qb = el('div', { class: 'fsb-agent-qr' });
           qb.style.cssText = 'width:' + qpx + 'px;height:' + qpx + 'px;background:#fff;padding:' +
-            (2 * scale) + 'px;box-sizing:border-box;flex:0 0 auto;margin-top:' + (3 * scale) +
-            'px;align-self:center;position:relative;';
+            (2 * scale) + 'px;box-sizing:border-box;flex:0 0 auto;align-self:center;position:relative;';
           if (window.FSB.qr) window.FSB.qr.render(qb, url, { size: qpx, dark: '#141414', light: '#ffffff' });
-          addResize(qb, project, ln.resizeKey, interactive);
-          c.appendChild(qb);
-          if (ln.caption) {
-            c.appendChild(textLine(theme, scale, ln.caption, ln.captionType || { font: 'serif', sizePt: 9, tracking: 0.1, token: 'ink' }, 'nowrap'));
-          }
-          return;
+          addResize(qb, project, b.resizeKey, interactive);
+          bx.appendChild(qb);
+          if (b.caption) bx.appendChild(textLine(theme, scale, b.caption,
+            b.captionType || { font: 'serif', sizePt: 9, tracking: 0.1, token: 'ink' }, 'nowrap'));
         }
-        // text line: optional "label" prefix + field/compose value, optional fmt
-        var raw = ln.text != null ? ln.text
-          : ln.compose ? composeLine(project, ln.compose)
-          : val(project, ln.field);
-        raw = raw == null ? '' : String(raw);
-        if (raw.trim() === '' || /^[\s|&]*$/.test(raw)) return;
-        if (ln.fmt === 'phone') raw = formatPhone(raw);
-        var text = (ln.label || '') + raw;
-        var mode = ln.nowrap ? 'nowrap' : ln.wrap ? 'wrap' : undefined;
-        c.appendChild(textLine(theme, scale, text, ln.type, mode));
-      });
-      box.appendChild(c);
+      } else { // stack
+        fillStack(bx, project, theme, scale, b, bandH);
+      }
+
+      if (admin && interactive) addBoxDrag(bx, project, b.key, bandW, bandH, r);
+      card.appendChild(bx);
     });
-    return box;
+    return card;
+  }
+
+  // ---- drag a whole info box to reposition it (admin only) ----------
+  function addBoxDrag(bx, project, key, bandW, bandH, baseRect) {
+    if (!window.FSB.app || !window.FSB.app.mutateBoxOffset) return;
+    bx.classList.add('fsb-agent-box--draggable');
+    bx.addEventListener('pointerdown', function (e) {
+      if (e.target.closest('.fsb-img-resize')) return; // let the resize grip win
+      e.preventDefault();
+      var sx = e.clientX, sy = e.clientY;
+      var o0 = boxOffset(project, key);
+      bx.setPointerCapture(e.pointerId);
+      bx.classList.add('is-dragging');
+      function move(ev) {
+        var dx = o0.dx + (ev.clientX - sx) / bandW;
+        var dy = o0.dy + (ev.clientY - sy) / bandH;
+        bx.style.left = ((baseRect[0] + dx) * bandW) + 'px';
+        bx.style.top = ((baseRect[1] + dy) * bandH) + 'px';
+      }
+      function up(ev) {
+        bx.removeEventListener('pointermove', move);
+        bx.removeEventListener('pointerup', up);
+        bx.classList.remove('is-dragging');
+        var dx = o0.dx + (ev.clientX - sx) / bandW;
+        var dy = o0.dy + (ev.clientY - sy) / bandH;
+        window.FSB.app.mutateBoxOffset(key, dx, dy);
+      }
+      bx.addEventListener('pointermove', move);
+      bx.addEventListener('pointerup', up);
+    });
   }
 
   // ---- drag-resize on an agent image / QR box (interactive only) ----
@@ -369,6 +393,7 @@
     opts = opts || {};
     var scale = opts.scale || 0.6;
     var interactive = !!opts.interactive;
+    var admin = !!opts.admin;
     var pw = TRIM_W * scale, ph = TRIM_H * scale;
     var spec = V2.compose(project);
     var theme = spec.theme;
@@ -438,7 +463,7 @@
       page.appendChild(hero);
 
       if (R.iconRow) page.appendChild(buildIconRow(R.iconRow, pw, ph, scale, theme));
-      page.appendChild(buildAgent(project, R.agent, pw, ph, scale, theme, interactive));
+      page.appendChild(buildAgent(project, R.agent, pw, ph, scale, theme, interactive, admin));
 
     } else {
       // PAGE 2
@@ -462,7 +487,7 @@
     }
 
     page._fsb = { pageNum: pageNum, scale: scale, pw: pw, ph: ph,
-      interactive: interactive, placeholders: !!opts.placeholders };
+      interactive: interactive, admin: admin, placeholders: !!opts.placeholders };
     return page;
   }
 
@@ -477,7 +502,7 @@
     var m = pageEl && pageEl._fsb;
     if (!m) return;
     var fresh = renderPage(m.pageNum, project, {
-      scale: m.scale, interactive: m.interactive, placeholders: m.placeholders,
+      scale: m.scale, interactive: m.interactive, admin: m.admin, placeholders: m.placeholders,
     });
     // MOVE the real DOM nodes across (don't go via innerHTML -- that
     // serialises the QR <canvas> to an empty element).

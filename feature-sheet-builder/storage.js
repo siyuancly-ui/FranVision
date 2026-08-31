@@ -60,6 +60,9 @@ function applyPatch(project, patch) {
   if (patch.imageSizes && typeof patch.imageSizes === 'object') {
     project.imageSizes = Object.assign({}, project.imageSizes, patch.imageSizes);
   }
+  if (patch.boxOffsets && typeof patch.boxOffsets === 'object') {
+    project.boxOffsets = Object.assign({}, project.boxOffsets, patch.boxOffsets);
+  }
   if (patch.propertyInfo && typeof patch.propertyInfo === 'object') {
     project.propertyInfo = Object.assign({}, project.propertyInfo, patch.propertyInfo);
   }

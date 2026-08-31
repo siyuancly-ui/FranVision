@@ -30,7 +30,7 @@
   var FORCE_LOCAL = /[?&]local=1\b/.test(window.location.search);
   var MODE = (!FORCE_LOCAL && CFG.supabaseUrl && CFG.supabaseAnonKey) ? 'supabase' : 'local';
 
-  var DATA_KEYS = ['templateSystem', 'colorTheme', 'topPhotoStyle', 'imageSizes', 'templateId',
+  var DATA_KEYS = ['templateSystem', 'colorTheme', 'topPhotoStyle', 'imageSizes', 'boxOffsets', 'templateId',
     'propertyInfo', 'agentInfo', 'agentInfo2', 'photos', 'pages', 'confirmed', 'confirmedAt'];
 
   function pickData(p) {
@@ -138,6 +138,7 @@
           colorTheme: project.colorTheme,
           topPhotoStyle: project.topPhotoStyle,
           imageSizes: project.imageSizes,
+          boxOffsets: project.boxOffsets,
           templateId: project.templateId,
           propertyInfo: project.propertyInfo,
           agentInfo: project.agentInfo,
