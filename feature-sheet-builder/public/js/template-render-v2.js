@@ -33,7 +33,9 @@
     return ps && id ? ps.fullUrl(project, id) : '';
   }
   function famFor(theme, which) {
-    return which === 'serif' ? theme.fonts.serif.family : theme.fonts.sans.family;
+    if (which === 'script') return (theme.fonts.script || theme.fonts.serif).family;
+    if (which === 'sans') return theme.fonts.sans.family;
+    return theme.fonts.serif.family;
   }
   function tokenColor(theme, name) {
     return (theme.tokens && theme.tokens[name]) || name || 'inherit';
@@ -222,16 +224,15 @@
     return p;
   }
 
-  function imgBox(theme, scale, url, label, minH) {
+  function imgBox(theme, scale, url, label, fit) {
     var im = el('div', { class: 'fsb-agent-img' });
-    im.style.cssText = 'flex:1 1 auto;min-height:' + minH + 'px;display:flex;align-items:center;' +
-      'justify-content:center;border-radius:2px;position:relative;overflow:hidden;' +
+    im.style.cssText = 'flex:1 1 auto;align-self:stretch;width:100%;height:100%;display:flex;' +
+      'align-items:center;justify-content:center;border-radius:2px;position:relative;overflow:hidden;' +
       'font-size:' + (8 * scale) + 'px;color:' + tokenColor(theme, 'inkMuted') + ';';
     if (url) {
-      im.style.backgroundColor = tokenColor(theme, 'bgDeep');
       im.style.backgroundImage = 'url("' + url + '")';
       im.style.backgroundPosition = 'center';
-      im.style.backgroundSize = 'contain';
+      im.style.backgroundSize = fit || 'cover';   // headshots fill; logos pass 'contain'
       im.style.backgroundRepeat = 'no-repeat';
     } else {
       im.style.border = '1px dashed ' + tokenColor(theme, 'goldLine');
@@ -240,18 +241,18 @@
     return im;
   }
 
-  function imgMult(project, key) {
-    return (key && project.imageSizes && project.imageSizes[key]) || 1;
-  }
-
   function boxOffset(project, key) {
     var o = project.boxOffsets && project.boxOffsets[key];
     return o ? { dx: o.dx || 0, dy: o.dy || 0 } : { dx: 0, dy: 0 };
   }
+  function boxSize(project, key) {
+    var s = project.boxSizes && project.boxSizes[key];
+    return (typeof s === 'number' && s > 0) ? s : 1;
+  }
 
-  function fillStack(cont, project, theme, scale, box, bandH) {
+  function fillStack(cont, project, theme, scale, box) {
     (box.lines || []).forEach(function (ln) {
-      if (ln.spacer) { var sp = el('div'); sp.style.height = (ln.spacer * bandH) + 'px'; cont.appendChild(sp); return; }
+      if (ln.spacer) { var sp = el('div'); sp.style.height = (ln.spacer * 100) + '%'; sp.style.maxHeight = '14px'; cont.appendChild(sp); return; }
       var raw = ln.text != null ? ln.text
         : ln.compose ? composeLine(project, ln.compose)
         : val(project, ln.field);
@@ -271,105 +272,103 @@
     if (admin) card.classList.add('fsb-agent--admin');
 
     var bandW = info.rect[2] * pw, bandH = info.rect[3] * ph;
-    var boxes = info.spec.boxes || [];
 
-    boxes.forEach(function (b) {
-      var off = boxOffset(project, b.key);
+    (info.spec.boxes || []).forEach(function (b) {
+      var off = boxOffset(project, b.key), sz = boxSize(project, b.key);
       var r = b.rect;
+      var w = r[2] * bandW * sz, h = r[3] * bandH * sz;
       var bx = el('div', { class: 'fsb-agent-box fsb-agent-box--' + b.kind, 'data-box-key': b.key });
+      // stack boxes don't clip -- the rect is a positioning anchor, text
+      // can spill a little; image / QR boxes DO clip.
       bx.style.cssText = 'position:absolute;box-sizing:border-box;display:flex;flex-direction:column;' +
-        'justify-content:center;overflow:hidden;gap:' + (2.5 * scale) + 'px;' +
+        'justify-content:center;gap:' + (2.5 * scale) + 'px;' +
+        'overflow:' + (b.kind === 'stack' ? 'visible' : 'hidden') + ';' +
         'left:' + ((r[0] + off.dx) * bandW) + 'px;top:' + ((r[1] + off.dy) * bandH) + 'px;' +
-        'width:' + (r[2] * bandW) + 'px;height:' + (r[3] * bandH) + 'px;' +
+        'width:' + w + 'px;height:' + h + 'px;' +
         (b.align === 'left' ? 'align-items:flex-start;text-align:left;'
           : b.align === 'right' ? 'align-items:flex-end;text-align:right;'
           : 'align-items:center;text-align:center;');
 
       if (b.kind === 'headshot') {
         var hpid = val(project, (b.ref || 'agentInfo') + '.headshotPhotoId');
-        var hb = imgBox(theme, scale, hpid && fullUrl(project, hpid), 'Headshot', 10);
-        hb.style.cssText += ';flex:1 1 auto;align-self:stretch;width:100%;';
-        addResize(hb, project, b.resizeKey, interactive);
-        bx.appendChild(hb);
+        bx.appendChild(imgBox(theme, scale, hpid && fullUrl(project, hpid), 'Headshot', 'cover'));
       } else if (b.kind === 'image') {
         var pid = val(project, b.img);
-        var im = imgBox(theme, scale, pid && fullUrl(project, pid), b.placeholder || '', 10);
-        im.style.cssText += ';flex:1 1 auto;align-self:stretch;width:100%;';
-        addResize(im, project, b.resizeKey, interactive);
-        bx.appendChild(im);
+        bx.appendChild(imgBox(theme, scale, pid && fullUrl(project, pid), b.placeholder || '', 'contain'));
       } else if (b.kind === 'qr') {
         var url = val(project, b.qr);
         if (url) {
-          var qpx = Math.max(20, Math.round(r[3] * bandH * 0.66 * imgMult(project, b.resizeKey)));
+          var qpx = Math.max(20, Math.round(Math.min(w, h * 0.8) * sz));
           var qb = el('div', { class: 'fsb-agent-qr' });
           qb.style.cssText = 'width:' + qpx + 'px;height:' + qpx + 'px;background:#fff;padding:' +
             (2 * scale) + 'px;box-sizing:border-box;flex:0 0 auto;align-self:center;position:relative;';
           if (window.FSB.qr) window.FSB.qr.render(qb, url, { size: qpx, dark: '#141414', light: '#ffffff' });
-          addResize(qb, project, b.resizeKey, interactive);
           bx.appendChild(qb);
-          if (b.caption) bx.appendChild(textLine(theme, scale, b.caption,
+          if (b.caption) bx.appendChild(textLine(theme, scale * (0.9 + 0.1 * sz), b.caption,
             b.captionType || { font: 'serif', sizePt: 9, tracking: 0.1, token: 'ink' }, 'nowrap'));
         }
-      } else { // stack
-        fillStack(bx, project, theme, scale, b, bandH);
+      } else { // stack -- scale the type with the box
+        fillStack(bx, project, theme, scale * sz, b);
       }
 
-      if (admin && interactive) addBoxDrag(bx, project, b.key, bandW, bandH, r);
+      if (admin && interactive) {
+        addBoxDrag(bx, project, b.key, bandW, bandH, r);
+        addBoxResize(bx, project, b.key, r[2] * bandW, r[3] * bandH);
+      }
       card.appendChild(bx);
     });
     return card;
   }
 
-  // ---- drag a whole info box to reposition it (admin only) ----------
+  // ---- Franky (admin): drag a box to move it -----------------------
   function addBoxDrag(bx, project, key, bandW, bandH, baseRect) {
     if (!window.FSB.app || !window.FSB.app.mutateBoxOffset) return;
     bx.classList.add('fsb-agent-box--draggable');
     bx.addEventListener('pointerdown', function (e) {
-      if (e.target.closest('.fsb-img-resize')) return; // let the resize grip win
+      if (e.target.closest('.fsb-box-resize')) return;
       e.preventDefault();
-      var sx = e.clientX, sy = e.clientY;
-      var o0 = boxOffset(project, key);
-      bx.setPointerCapture(e.pointerId);
+      var sx = e.clientX, sy = e.clientY, o0 = boxOffset(project, key);
+      try { bx.setPointerCapture(e.pointerId); } catch (_e) {}
       bx.classList.add('is-dragging');
       function move(ev) {
-        var dx = o0.dx + (ev.clientX - sx) / bandW;
-        var dy = o0.dy + (ev.clientY - sy) / bandH;
-        bx.style.left = ((baseRect[0] + dx) * bandW) + 'px';
-        bx.style.top = ((baseRect[1] + dy) * bandH) + 'px';
+        bx.style.left = ((baseRect[0] + o0.dx + (ev.clientX - sx) / bandW) * bandW) + 'px';
+        bx.style.top = ((baseRect[1] + o0.dy + (ev.clientY - sy) / bandH) * bandH) + 'px';
       }
       function up(ev) {
         bx.removeEventListener('pointermove', move);
         bx.removeEventListener('pointerup', up);
         bx.classList.remove('is-dragging');
-        var dx = o0.dx + (ev.clientX - sx) / bandW;
-        var dy = o0.dy + (ev.clientY - sy) / bandH;
-        window.FSB.app.mutateBoxOffset(key, dx, dy);
+        window.FSB.app.mutateBoxOffset(key,
+          o0.dx + (ev.clientX - sx) / bandW, o0.dy + (ev.clientY - sy) / bandH);
       }
       bx.addEventListener('pointermove', move);
       bx.addEventListener('pointerup', up);
     });
   }
 
-  // ---- drag-resize on an agent image / QR box (interactive only) ----
-  function addResize(node, project, key, interactive) {
-    if (!interactive || !key || !window.FSB.app || !window.FSB.app.mutateImageSize) return;
-    var grip = el('div', { class: 'fsb-img-resize', title: '拖动调整大小' });
-    node.appendChild(grip);
+  // ---- Franky (admin): corner grip to scale a box (0.4-2.5x) -------
+  function addBoxResize(bx, project, key, baseW, baseH) {
+    if (!window.FSB.app || !window.FSB.app.mutateBoxSize) return;
+    var grip = el('div', { class: 'fsb-box-resize', title: '拖动缩放' });
+    bx.appendChild(grip);
     grip.addEventListener('pointerdown', function (e) {
       e.preventDefault(); e.stopPropagation();
-      var startY = e.clientY;
-      var h0 = node.getBoundingClientRect().height;
-      var m0 = imgMult(project, key);
-      grip.setPointerCapture(e.pointerId);
+      var sx = e.clientX, sy = e.clientY, s0 = boxSize(project, key);
+      var w0 = baseW * s0, h0 = baseH * s0;
+      try { grip.setPointerCapture(e.pointerId); } catch (_e) {}
+      function clampF(ev) {
+        var fw = (w0 + (ev.clientX - sx)) / w0, fh = (h0 + (ev.clientY - sy)) / h0;
+        return Math.max(0.4, Math.min(2.5, s0 * Math.max(fw, fh)));
+      }
       function move(ev) {
-        var f = Math.max(0.4, Math.min(2.5, m0 * (h0 + (ev.clientY - startY)) / h0));
-        node.style.minHeight = (h0 / m0 * f) + 'px';
+        var f = clampF(ev);
+        bx.style.width = (baseW * f) + 'px';
+        bx.style.height = (baseH * f) + 'px';
       }
       function up(ev) {
         grip.removeEventListener('pointermove', move);
         grip.removeEventListener('pointerup', up);
-        var f = Math.max(0.4, Math.min(2.5, m0 * (ev.clientY - startY + h0) / h0));
-        window.FSB.app.mutateImageSize(key, f);
+        window.FSB.app.mutateBoxSize(key, clampF(ev));
       }
       grip.addEventListener('pointermove', move);
       grip.addEventListener('pointerup', up);
@@ -438,20 +437,21 @@
 
       // RIGHT column
       var R = spec.page1.right;
+      var aT = R.address.spec.addressType, cT = R.address.spec.cityType;
       var addr = buildText(R.address.rect, pw, ph, scale, {
-        family: famFor(theme, 'serif'),
-        sizePt: R.address.spec.addressType.sizePt,
-        align: 'right', weight: 700, color: tokenColor(theme, 'ink'),
-        vAlign: 'flex-start',
+        family: famFor(theme, aT.font || 'script'),
+        sizePt: aT.sizePt, align: 'right', weight: aT.weight || 600,
+        italic: !!aT.italic, color: tokenColor(theme, 'ink'), vAlign: 'flex-start',
       });
       addr.textContent = '';
       addr.style.alignItems = 'stretch';
       var l1 = el('div', { text: R.address.value.address || (opts.placeholders ? '123 Example St' : '') });
-      l1.style.textAlign = 'right';
+      l1.style.cssText = 'text-align:right;font-style:' + (aT.italic ? 'italic' : 'normal') + ';';
       var l2 = el('div', { text: R.address.value.city || (opts.placeholders ? 'City' : '') });
       // city line is CENTRED under the (right-aligned) street address
-      l2.style.cssText = 'width:100%;text-align:center;font-size:' + (R.address.spec.cityType.sizePt * scale) +
-        'px;font-style:italic;letter-spacing:' + R.address.spec.cityType.tracking + 'em;';
+      l2.style.cssText = 'width:100%;text-align:center;font-family:' + famFor(theme, cT.font || 'script') +
+        ';font-size:' + (cT.sizePt * scale) + 'px;font-weight:' + (cT.weight || 500) +
+        ';font-style:' + (cT.italic ? 'italic' : 'normal') + ';letter-spacing:' + (cT.tracking || 0) + 'em;';
       addr.appendChild(l1); addr.appendChild(l2);
       page.appendChild(addr);
 

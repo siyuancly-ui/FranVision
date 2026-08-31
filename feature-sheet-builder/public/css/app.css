@@ -406,3 +406,13 @@ body.fsb-modal-open { overflow: hidden; }
 .fsb-agent-box--draggable.is-dragging {
   outline: 1px solid #f0b64a; background: rgba(240,182,74,.12); z-index: 20;
 }
+
+/* ---- box resize grip (admin, v2) ---- */
+.fsb-box-resize {
+  position: absolute; right: -1px; bottom: -1px; width: 13px; height: 13px;
+  cursor: nwse-resize; z-index: 8; touch-action: none;
+  background: linear-gradient(-45deg, transparent 0 4px, #f0b64a 4px 6px, transparent 6px 7px, #f0b64a 7px 9px, transparent 9px);
+  opacity: 0; transition: opacity .12s;
+}
+.fsb-agent--admin .fsb-agent-box:hover .fsb-box-resize,
+.fsb-box-resize:active { opacity: 1; }

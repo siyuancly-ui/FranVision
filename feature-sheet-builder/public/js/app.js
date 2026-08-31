@@ -102,6 +102,15 @@
     scheduleSave();
   };
 
+  // agent-card box scale -- a 0.4..2.5 multiplier on a box's w/h (and its
+  // type), set by Franky dragging the box's corner grip.
+  app.mutateBoxSize = function (key, mult) {
+    if (!app.project.boxSizes) app.project.boxSizes = {};
+    app.project.boxSizes[key] = Math.max(0.4, Math.min(2.5, mult || 1));
+    app.emit('dynamic');
+    scheduleSave();
+  };
+
   // Resolve once the project row exists (lazy creation). Photo uploads and
   // image fields need a real projectId before they can POST.
   app.ensureCreated = function () {

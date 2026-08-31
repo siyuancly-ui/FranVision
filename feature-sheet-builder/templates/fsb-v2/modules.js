@@ -88,72 +88,88 @@
   //  Rendered inside geometry.page1Right.agentBandRect. Logo + QR are a
   //  single shared copy in both.
   // ================================================================
-  // Colour rule: BROKERAGE block (logo / name / office / address / the
-  // "ONLINE TOUR" caption) is white (token 'ink'); AGENT lines (name /
-  // title / phone / email) are gold (token 'gold').
-  var BROKER_NAME = { font: 'sans', sizePt: 10, weight: 700, token: 'ink' };
-  var BROKER_LINE = { font: 'sans', sizePt: 9, token: 'ink' };
-  var AGENT_NAME = { font: 'serif', sizePt: 16, weight: 700, token: 'gold' };
-  var AGENT_TITLE = { font: 'sans', sizePt: 10.5, token: 'gold' };
-  var AGENT_LINE = { font: 'sans', sizePt: 10, token: 'gold' };
-  var QR_CAPTION = { font: 'serif', sizePt: 9, tracking: 0.14, token: 'ink' };
+  // Colour rule (from the LYF / Starlink references): BROKERAGE lines
+  // (brokerage name, address, "ONLINE TOUR") are white (token 'ink');
+  // AGENT lines (name / title / phone / email) are gold (token 'gold').
+  // On the light "marble" theme the renderer's tokens already flip.
+  var SERIF = 'serif';
+  var BROKER_NAME  = { font: SERIF, sizePt: 15, weight: 400, token: 'ink' };
+  var BROKER_LINE  = { font: SERIF, sizePt: 12, weight: 400, token: 'ink' };
+  var AGENT_NAME   = { font: SERIF, sizePt: 23, weight: 700, token: 'gold' };
+  var AGENT_TITLE  = { font: SERIF, sizePt: 13, weight: 400, token: 'gold' };
+  var AGENT_LINE   = { font: SERIF, sizePt: 13, weight: 400, token: 'gold' };
+  var QR_CAPTION   = { font: SERIF, sizePt: 11, weight: 400, tracking: 0.12, token: 'ink' };
 
   // ---------------------------------------------------------------
-  //  The agent + brokerage area is a set of INDEPENDENT boxes, each
-  //  positioned by a rect that is a fraction of the agent band, plus a
-  //  per-box {dx,dy} offset the admin (Franky) can drag. Boxes:
-  //    logo · broker-info (name/office/address) · online-tour (QR+caption)
-  //    agentN-name (name+title) · agentN-contact (phone+email) · headshotN
+  //  The agent + brokerage area is a set of INDEPENDENT boxes. Each has
+  //  a default rect (fraction of the agent band); Franky can drag it
+  //  (project.boxOffsets[key]) and scale it (project.boxSizes[key]) in
+  //  the ?admin= view. Agents just see the final positions.
   // ---------------------------------------------------------------
   function nameBox(ref, align) {
     return { key: ref + '-name', kind: 'stack', align: align || 'center', lines: [
       { field: ref + '.name', nowrap: true, type: AGENT_NAME },
-      { field: ref + '.credentials', type: AGENT_TITLE },
+      { field: ref + '.credentials', wrap: true, type: AGENT_TITLE },
     ] };
   }
-  function contactBox(ref, align) {
-    return { key: ref + '-contact', kind: 'stack', align: align || 'center', lines: [
+  // single: Mobile / Office / Email (Office = the brokerage number, shown
+  // with the agent's details as in the LYF reference).
+  function contactBoxFull(ref, align) {
+    return { key: ref + '-contact', kind: 'stack', align: align || 'left', lines: [
+      { label: 'Mobile: ', field: ref + '.cellPhone', fmt: 'phone', type: AGENT_LINE },
+      { label: 'Office: ', field: 'agentInfo.brokerageOffice', fmt: 'phone', type: AGENT_LINE },
+      { label: 'Email: ', field: ref + '.email', wrap: true, type: AGENT_LINE },
+    ] };
+  }
+  // dual: Tel / Email only (Starlink reference).
+  function contactBoxLite(ref, align) {
+    return { key: ref + '-contact', kind: 'stack', align: align || 'left', lines: [
       { label: 'Tel: ', field: ref + '.cellPhone', fmt: 'phone', type: AGENT_LINE },
       { label: 'Email: ', field: ref + '.email', wrap: true, type: AGENT_LINE },
     ] };
   }
-  var logoBox = { key: 'logo', kind: 'image', img: 'agentInfo.brokerageLogoPhotoId',
-    placeholder: 'Logo', resizeKey: 'logo' };
-  var brokerInfoBox = { key: 'broker-info', kind: 'stack', align: 'center', lines: [
+  var logoBox = { key: 'logo', kind: 'image', img: 'agentInfo.brokerageLogoPhotoId', placeholder: 'Logo' };
+  var brokerNameBox = { key: 'broker-name', kind: 'stack', align: 'center', lines: [
     { field: 'agentInfo.brokerage', type: BROKER_NAME },
-    { label: 'Office: ', field: 'agentInfo.brokerageOffice', fmt: 'phone', type: BROKER_LINE },
+  ] };
+  var brokerAddrBox = { key: 'broker-address', kind: 'stack', align: 'center', lines: [
     { field: 'agentInfo.brokerageAddress', wrap: true, type: BROKER_LINE },
   ] };
   var tourBox = { key: 'online-tour', kind: 'qr', qr: 'propertyInfo.onlineTourUrl',
-    caption: 'ONLINE TOUR', captionType: QR_CAPTION, resizeKey: 'qr' };
-  function headshotBox(ref, key) {
-    return { key: key, kind: 'headshot', ref: ref, resizeKey: key };
-  }
+    caption: 'ONLINE TOUR', captionType: QR_CAPTION };
+  function headshotBox(ref, key) { return { key: key, kind: 'headshot', ref: ref }; }
 
   var agentBlock = {
+    // LYF / Kevin Zhao reference: logo + brokerage + address (left) ·
+    // name + title + Mobile/Office/Email (centre) · QR bottom-left of the
+    // headshot · headshot full-height cover, bleeding off the right edge.
     single: {
       id: 'agent-single',
       boxes: [
-        assign(logoBox,        { rect: [0.02, 0.05, 0.30, 0.34] }),
-        assign(brokerInfoBox,  { rect: [0.00, 0.42, 0.35, 0.30] }),
-        assign(tourBox,        { rect: [0.05, 0.66, 0.24, 0.34] }),
-        assign(nameBox('agentInfo', 'center'),    { rect: [0.37, 0.12, 0.38, 0.26] }),
-        assign(contactBox('agentInfo', 'center'), { rect: [0.37, 0.44, 0.40, 0.26] }),
-        assign(headshotBox('agentInfo', 'headshot1'), { rect: [0.77, 0.04, 0.22, 0.92] }),
+        assign(logoBox,        { rect: [0.00, 0.02, 0.32, 0.34] }),
+        assign(brokerNameBox,  { rect: [0.00, 0.36, 0.34, 0.16] }),
+        assign(brokerAddrBox,  { rect: [0.00, 0.55, 0.34, 0.42] }),
+        assign(nameBox('agentInfo', 'center'),     { rect: [0.34, 0.03, 0.36, 0.36] }),
+        assign(contactBoxFull('agentInfo', 'left'), { rect: [0.36, 0.42, 0.35, 0.55] }),
+        assign(tourBox,        { rect: [0.65, 0.54, 0.15, 0.44] }),
+        assign(headshotBox('agentInfo', 'headshot1'), { rect: [0.80, 0.00, 0.20, 1.00] }),
       ],
     },
+    // Starlink / Mo Zhang + June Liu reference: headshots bleed off both
+    // edges · name+title just inside each · logo + address + QR stacked
+    // centre · each agent's Tel/Email under their name.
     dual: {
       id: 'agent-dual',
       boxes: [
-        assign(headshotBox('agentInfo', 'headshot1'),  { rect: [0.005, 0.05, 0.135, 0.90] }),
-        assign(nameBox('agentInfo', 'left'),           { rect: [0.15, 0.16, 0.20, 0.26] }),
-        assign(contactBox('agentInfo', 'left'),        { rect: [0.15, 0.46, 0.20, 0.30] }),
-        assign(logoBox,        { rect: [0.38, 0.02, 0.24, 0.28] }),
-        assign(brokerInfoBox,  { rect: [0.35, 0.30, 0.30, 0.28] }),
-        assign(tourBox,        { rect: [0.40, 0.58, 0.20, 0.42] }),
-        assign(nameBox('agentInfo2', 'right'),         { rect: [0.63, 0.16, 0.22, 0.26] }),
-        assign(contactBox('agentInfo2', 'right'),      { rect: [0.63, 0.46, 0.22, 0.30] }),
-        assign(headshotBox('agentInfo2', 'headshot2'), { rect: [0.86, 0.05, 0.135, 0.90] }),
+        assign(headshotBox('agentInfo', 'headshot1'),  { rect: [0.00, 0.02, 0.155, 0.96] }),
+        assign(nameBox('agentInfo', 'center'),          { rect: [0.155, 0.14, 0.22, 0.36] }),
+        assign(contactBoxLite('agentInfo', 'left'),     { rect: [0.155, 0.56, 0.24, 0.34] }),
+        assign(logoBox,        { rect: [0.39, 0.00, 0.22, 0.42] }),
+        assign(brokerAddrBox,  { rect: [0.35, 0.40, 0.30, 0.22] }),
+        assign(tourBox,        { rect: [0.44, 0.60, 0.12, 0.40] }),
+        assign(contactBoxLite('agentInfo2', 'right'),   { rect: [0.545, 0.56, 0.24, 0.34] }),
+        assign(nameBox('agentInfo2', 'center'),          { rect: [0.625, 0.14, 0.22, 0.36] }),
+        assign(headshotBox('agentInfo2', 'headshot2'),  { rect: [0.845, 0.02, 0.155, 0.96] }),
       ],
     },
   };
