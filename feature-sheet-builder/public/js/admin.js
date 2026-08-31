@@ -157,9 +157,9 @@
     function activeRowActions(r) {
       return [
         el('a', { class: 'fsb-btn fsb-btn--sm', href: adminLinkFor(r.id, token), text: 'Open 打开' }),
-        el('button', { class: 'fsb-btn fsb-btn--sm fsb-btn--ghost', text: 'Copy agent link 复制经纪链接',
+        el('button', { class: 'fsb-btn fsb-btn--sm fsb-btn--info', text: 'Copy agent link 复制经纪链接',
           onclick: function () { copy(linkFor(r.id)); } }),
-        el('button', { class: 'fsb-btn fsb-btn--sm fsb-btn--ghost', text: 'Duplicate 复制新建',
+        el('button', { class: 'fsb-btn fsb-btn--sm fsb-btn--ok', text: 'Duplicate 复制新建',
           onclick: function () { duplicate(r, this); } }),
         el('button', { class: 'fsb-btn fsb-btn--sm fsb-btn--danger', text: 'Delete 删除',
           onclick: function () {
@@ -172,7 +172,7 @@
 
     function trashRowActions(r) {
       return [
-        el('button', { class: 'fsb-btn fsb-btn--sm', text: 'Restore 恢复',
+        el('button', { class: 'fsb-btn fsb-btn--sm fsb-btn--ok', text: 'Restore 恢复',
           onclick: function () {
             var b = this; b.disabled = true;
             store.restoreProject(r.id).then(function () { drop(r.id); toast('Restored 已恢复'); })

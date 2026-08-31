@@ -71,8 +71,12 @@ h2, h3 { margin: 0 0 8px; }
 .fsb-btn--primary:hover { background: #1a54bd; }
 .fsb-btn--save { background: #eef3ff; border-color: #c7d8fb; color: var(--accent); }
 .fsb-btn--ghost { background: transparent; }
-.fsb-btn--danger { background: transparent; border-color: #e3b7b7; color: var(--danger); }
-.fsb-btn--danger:hover { background: #fbeaea; }
+.fsb-btn--danger { background: #fdf3f3; border-color: #e3b7b7; color: var(--danger); }
+.fsb-btn--danger:hover { background: #fbe4e4; }
+.fsb-btn--info { background: #eef4ff; border-color: #b9cdf2; color: var(--accent); }
+.fsb-btn--info:hover { background: #e0ebff; }
+.fsb-btn--ok { background: #ecf8f0; border-color: #b3ddc3; color: var(--ok); }
+.fsb-btn--ok:hover { background: #ddf1e4; }
 .fsb-btn--sm { padding: 5px 9px; font-size: 12px; }
 .fsb-btn[disabled] { opacity: .5; pointer-events: none; }
 
