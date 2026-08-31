@@ -144,7 +144,7 @@
   function centred(w, y, h) { return [0.5 - w / 2, y, w, h]; }
   var L_HEADSHOT = [0.003, 0.031, 0.182, 0.898];
   var L_NAME     = [0.106, 0.317, 0.372, 0.278];
-  var L_CONTACT  = [0.180, 0.669, 0.250, 0.223];
+  var L_CONTACT  = [0.195, 0.669, 0.245, 0.223];
 
   // Every rect below is the IDML text/graphic-frame bound converted to a
   // fraction of the agent band. SINGLE = Kevin-9, DUAL = the 3361 bar's

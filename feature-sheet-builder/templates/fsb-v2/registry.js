@@ -98,7 +98,7 @@
     var GAP = 0.018;
     var COL_BOTTOM = 0.977;
     var lowerTop = heroRect[1] + heroRect[3] + 0.026;
-    var iconH = 0.052;
+    var iconH = 0.040;
     var iconRect = null, agentRect;
     if (iconKeys.length) {
       iconRect = [R.x, lowerTop, R.w, iconH];
