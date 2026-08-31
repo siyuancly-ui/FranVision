@@ -61,6 +61,7 @@
       goldDeep: '#c0925f',
       goldLine: '#a97c4f',
       panelInk: '#F4EFE6',
+      agentText: '#D9B28D',   // navy: agent name/contact = gold
     }, {
       asset: null,
       css: 'linear-gradient(157deg, #1a2340 0%, #131a30 42%, #0c1120 100%)',
@@ -75,6 +76,7 @@
       goldDeep: '#7c6128',
       goldLine: '#b39a56',
       panelInk: '#26292F',
+      agentText: '#26292F',   // marble: everything is dark (LYF ref)
     }, {
       asset: null,
       css: 'linear-gradient(157deg, #FAF8F2 0%, #F0EDE4 46%, #E4DFD2 100%)',
@@ -89,6 +91,7 @@
       goldDeep: '#c0925f',
       goldLine: '#a97c4f',
       panelInk: '#F4EFE6',
+      agentText: '#D9B28D',
     }, {
       asset: null,
       css: 'linear-gradient(157deg, #431a1f 0%, #331216 44%, #1c0809 100%)',
