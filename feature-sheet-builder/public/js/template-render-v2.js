@@ -250,6 +250,23 @@
     return (typeof s === 'number' && s > 0) ? s : 1;
   }
 
+  // split a one-line street address into [street+unit, city/prov/postal].
+  // honours an explicit newline; otherwise breaks before a trailing
+  // "City, PROV A1A 1A1"; otherwise before the last two comma segments.
+  function splitAddress(s) {
+    s = String(s || '').trim();
+    if (!s) return [];
+    if (s.indexOf('\n') >= 0) {
+      var p = s.split('\n');
+      return [p.shift().trim(), p.join(' ').trim()].filter(Boolean);
+    }
+    var m = s.match(/^(.*?),\s*([^,]+,\s*[A-Za-z]{2}\.?(?:\s+[A-Za-z]\d[A-Za-z]\s*\d[A-Za-z]\d)?)\s*$/);
+    if (m) return [m[1].trim(), m[2].trim()];
+    var seg = s.split(/,\s*/);
+    if (seg.length >= 3) return [seg.slice(0, seg.length - 2).join(', '), seg.slice(-2).join(', ')];
+    return [s];
+  }
+
   function fillStack(cont, project, theme, scale, box) {
     (box.lines || []).forEach(function (ln) {
       if (ln.spacer) { var sp = el('div'); sp.style.height = (ln.spacer * 100) + '%'; sp.style.maxHeight = '14px'; cont.appendChild(sp); return; }
@@ -259,6 +276,12 @@
       raw = raw == null ? '' : String(raw);
       if (raw.trim() === '' || /^[\s|&]*$/.test(raw)) return;
       if (ln.fmt === 'phone') raw = formatPhone(raw);
+      if (ln.splitAddr) {
+        splitAddress(raw).forEach(function (part) {
+          cont.appendChild(textLine(theme, scale, part, ln.type, 'wrap'));
+        });
+        return;
+      }
       var mode = ln.nowrap ? 'nowrap' : ln.wrap ? 'wrap' : undefined;
       var node = textLine(theme, scale, (ln.label || '') + raw, ln.type, mode);
       if (ln.fitShrink) {
@@ -324,6 +347,12 @@
       if (admin && interactive) {
         addBoxDrag(bx, project, b.key, bandW, bandH, r);
         addBoxResize(bx, project, b.key, r[2] * bandW, r[3] * bandH);
+        (function (key) {
+          bx.addEventListener('dblclick', function (e) {
+            e.preventDefault();
+            if (window.FSB.app && window.FSB.app.resetBox) window.FSB.app.resetBox(key);
+          });
+        })(b.key);
       }
       card.appendChild(bx);
     });

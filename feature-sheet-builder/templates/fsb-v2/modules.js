@@ -131,17 +131,26 @@
     { field: 'agentInfo.brokerage', wrap: true, type: BROKER_NAME },
   ] };
   var brokerAddrBox = { key: 'broker-address', kind: 'stack', align: 'left', lines: [
-    { field: 'agentInfo.brokerageAddress', wrap: true, type: BROKER_LINE },
+    { field: 'agentInfo.brokerageAddress', splitAddr: true, type: BROKER_LINE },
   ] };
   var tourBox = { key: 'online-tour', kind: 'qr', qr: 'propertyInfo.onlineTourUrl',
     caption: 'ONLINE TOUR', captionType: QR_CAPTION };
   function headshotBox(ref, key) { return { key: key, kind: 'headshot', ref: ref }; }
 
+  // --- dual layout: left-side rects + mirror helpers -----------------
+  // mirror() flips a rect across x = 0.5; centred() places a rect of
+  // width w symmetrically on the centre line.
+  function mirror(r) { return [1 - r[0] - r[2], r[1], r[2], r[3]]; }
+  function centred(w, y, h) { return [0.5 - w / 2, y, w, h]; }
+  var L_HEADSHOT = [0.003, 0.031, 0.182, 0.898];
+  var L_NAME     = [0.106, 0.317, 0.372, 0.278];
+  var L_CONTACT  = [0.180, 0.669, 0.250, 0.223];
+
   // Every rect below is the IDML text/graphic-frame bound converted to a
   // fraction of the agent band. SINGLE = Kevin-9, DUAL = the 3361 bar's
-  // internal arrangement. Both sit in the RIGHT-half band by design
-  // (like Michelle & Sue); the 3361 file parks its bar bottom-left, but
-  // we intentionally keep the agent card on the right in all cases.
+  // internal arrangement, mirrored so the two agents are symmetric. Both
+  // sit in the RIGHT-half band by design (like Michelle & Sue); the 3361
+  // file parks its bar bottom-left, but we keep the card on the right.
   var agentBlock = {
     single: {
       id: 'agent-single',
@@ -155,18 +164,22 @@
         assign(headshotBox('agentInfo', 'headshot1'), { rect: [0.770, 0.003, 0.224, 0.959] }), // u178
       ],
     },
+    // DUAL is mirrored about the vertical centre line (x = 0.5): the
+    // right-side rects are `mirror()` of the left-side ones so the two
+    // agents' headshots / names / contacts are the same size and equally
+    // spaced from the centre; logo, address and QR are centred on 0.5.
     dual: {
       id: 'agent-dual',
       boxes: [
-        assign(headshotBox('agentInfo', 'headshot1'),                 { rect: [0.003, 0.031, 0.182, 0.898] }), // u178
-        assign(nameBox('agentInfo', 'center', AGENT_NAME_DUAL),        { rect: [0.106, 0.317, 0.372, 0.278] }), // u59a
-        assign(logoBox,                                               { rect: [0.369, 0.037, 0.267, 0.419] }), // u20e
-        assign(brokerAddrBox,                                         { rect: [0.357, 0.469, 0.285, 0.223], align: 'center' }), // u692
-        assign(nameBox('agentInfo2', 'center', AGENT_NAME_DUAL),       { rect: [0.547, 0.317, 0.372, 0.278] }), // u966
-        assign(contactBoxLite('agentInfo', 'left', AGENT_LINE_DUAL),   { rect: [0.202, 0.669, 0.267, 0.223] }), // u181
-        assign(contactBoxLite('agentInfo2', 'left', AGENT_LINE_DUAL),  { rect: [0.567, 0.669, 0.283, 0.223] }), // u94e
-        assign(tourBox,                                               { rect: [0.470, 0.660, 0.095, 0.330] }), // no QR in 3361; centred under the address
-        assign(headshotBox('agentInfo2', 'headshot2'),                { rect: [0.814, 0.131, 0.182, 0.705] }), // u909
+        assign(headshotBox('agentInfo', 'headshot1'),                { rect: L_HEADSHOT }),
+        assign(nameBox('agentInfo', 'center', AGENT_NAME_DUAL),       { rect: L_NAME }),
+        assign(contactBoxLite('agentInfo', 'left', AGENT_LINE_DUAL),  { rect: L_CONTACT }),
+        assign(logoBox,                                              { rect: centred(0.267, 0.037, 0.419) }),
+        assign(brokerAddrBox,                                        { rect: centred(0.285, 0.469, 0.223), align: 'center' }),
+        assign(tourBox,                                              { rect: centred(0.085, 0.660, 0.330) }),
+        assign(nameBox('agentInfo2', 'center', AGENT_NAME_DUAL),      { rect: mirror(L_NAME) }),
+        assign(contactBoxLite('agentInfo2', 'left', AGENT_LINE_DUAL), { rect: mirror(L_CONTACT) }),
+        assign(headshotBox('agentInfo2', 'headshot2'),               { rect: mirror(L_HEADSHOT) }),
       ],
     },
   };

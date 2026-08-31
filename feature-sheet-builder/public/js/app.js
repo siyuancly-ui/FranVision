@@ -111,6 +111,14 @@
     scheduleSave();
   };
 
+  // double-click a box -> back to its template position + size
+  app.resetBox = function (key) {
+    if (app.project.boxOffsets) delete app.project.boxOffsets[key];
+    if (app.project.boxSizes) delete app.project.boxSizes[key];
+    app.emit('dynamic');
+    scheduleSave();
+  };
+
   // Resolve once the project row exists (lazy creation). Photo uploads and
   // image fields need a real projectId before they can POST.
   app.ensureCreated = function () {
