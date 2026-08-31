@@ -71,6 +71,8 @@ h2, h3 { margin: 0 0 8px; }
 .fsb-btn--primary:hover { background: #1a54bd; }
 .fsb-btn--save { background: #eef3ff; border-color: #c7d8fb; color: var(--accent); }
 .fsb-btn--ghost { background: transparent; }
+.fsb-btn--danger { background: transparent; border-color: #e3b7b7; color: var(--danger); }
+.fsb-btn--danger:hover { background: #fbeaea; }
 .fsb-btn--sm { padding: 5px 9px; font-size: 12px; }
 .fsb-btn[disabled] { opacity: .5; pointer-events: none; }
 
@@ -208,6 +210,7 @@ h2, h3 { margin: 0 0 8px; }
 .fsb-lib-count { font-weight: 400; color: var(--ink-soft); background: #eef1f5; border-radius: 999px; padding: 1px 8px; font-size: 12px; }
 .fsb-upload-btn { display: block; width: 100%; text-align: center; }
 .fsb-lib-drop { margin: 10px 0 0; padding: 8px; border: 1px dashed var(--line); border-radius: 8px; text-align: center; color: var(--ink-soft); font-size: 11px; }
+.fsb-lib-hint { margin: 10px 0 0; font-size: 11px; line-height: 1.5; color: var(--ink-soft); }
 .fsb-lib--dragging { background: #f0f6ff; }
 .fsb-lib--dragging .fsb-lib-drop { border-color: var(--accent); color: var(--accent); }
 

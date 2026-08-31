@@ -103,12 +103,50 @@
           el('a', { class: 'fsb-btn fsb-btn--sm', href: adminLinkFor(r.id, token), text: 'Open 打开' }),
           el('button', { class: 'fsb-btn fsb-btn--sm fsb-btn--ghost', text: 'Copy agent link 复制经纪链接',
             onclick: function () { copy(linkFor(r.id)); } }),
+          el('button', { class: 'fsb-btn fsb-btn--sm fsb-btn--ghost', text: 'Duplicate 复制新建',
+            onclick: function () { duplicate(r, this); } }),
+          deleteButton(r),
         ]);
         tr.appendChild(actions);
         tb.appendChild(tr);
       });
       table.appendChild(tb);
       body.appendChild(table);
+    }
+
+    // duplicate a sheet -> jump straight into the new one
+    function duplicate(r, btn) {
+      btn.disabled = true;
+      store.duplicateProject(r.id).then(function (project) {
+        window.location.href = adminLinkFor(project.projectId, token);
+      }).catch(function (err) {
+        btn.disabled = false;
+        toast('Duplicate failed 复制失败: ' + (err.message || err), 'error');
+      });
+    }
+
+    // two-step delete (no browser modal): click arms it, second click within 3s does it
+    function deleteButton(r) {
+      var b = el('button', { class: 'fsb-btn fsb-btn--sm fsb-btn--danger', text: 'Delete 删除' });
+      var armed = false, t = null;
+      b.addEventListener('click', function () {
+        if (!armed) {
+          armed = true; b.textContent = 'Confirm? 确认删除';
+          t = setTimeout(function () { armed = false; b.textContent = 'Delete 删除'; }, 3000);
+          return;
+        }
+        clearTimeout(t);
+        b.disabled = true; b.textContent = 'Deleting… 删除中';
+        store.deleteProject(r.id).then(function () {
+          rows = rows.filter(function (x) { return x.id !== r.id; });
+          render(rows);
+          toast('Deleted 已删除');
+        }).catch(function (err) {
+          b.disabled = false; armed = false; b.textContent = 'Delete 删除';
+          toast('Delete failed 删除失败: ' + (err.message || err), 'error');
+        });
+      });
+      return b;
     }
 
     function load() {

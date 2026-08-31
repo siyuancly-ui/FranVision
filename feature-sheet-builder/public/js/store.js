@@ -157,6 +157,13 @@
           body: JSON.stringify({ confirmed: confirmed === undefined ? true : !!confirmed }),
         }).then(function (b) { return b.project; });
       },
+      deleteProject: function (id) {
+        return jsonFetch('/api/projects/' + encodeURIComponent(id), { method: 'DELETE' }).then(function () { return true; });
+      },
+      duplicateProject: function (id) {
+        return jsonFetch('/api/projects/' + encodeURIComponent(id) + '/duplicate', { method: 'POST' })
+          .then(function (b) { return b.project; });
+      },
       uploadPhoto: function (id, file) {
         return jsonFetch('/api/projects/' + encodeURIComponent(id) + '/photos', {
           method: 'POST',
@@ -259,6 +266,48 @@
               if (res.error) throw new Error(res.error.message);
               return row2project(res.data);
             });
+        });
+      },
+
+      deleteProject: function (id) {
+        return sb.storage.from(BUCKET).list(id).then(function (res) {
+          var files = ((res && res.data) || []).map(function (f) { return id + '/' + f.name; });
+          return files.length ? sb.storage.from(BUCKET).remove(files) : Promise.resolve({});
+        }).then(function () {
+          return sb.from('projects').delete().eq('id', id);
+        }).then(function (res) {
+          if (res && res.error) throw new Error(res.error.message);
+          return true;
+        });
+      },
+
+      duplicateProject: function (id) {
+        return fetchProject(id).then(function (src) {
+          var a1 = src.agentInfo || {};
+          var a2 = src.agentInfo2 || null;
+          var keep = [a1.headshotPhotoId, a1.brokerageLogoPhotoId, a2 && a2.headshotPhotoId].filter(Boolean);
+          var photos = (src.photos || []).filter(function (p) { return keep.indexOf(p.photoId) >= 0; });
+          var data = V2.blankProject(src.colorTheme);
+          data.topPhotoStyle = src.topPhotoStyle || data.topPhotoStyle;
+          data.agentInfo = Object.assign({}, a1);
+          data.agentInfo2 = a2 ? Object.assign({}, a2) : null;
+          data.photos = photos.map(function (p) { return Object.assign({}, p); });
+          if (src.boxOffsets) data.boxOffsets = JSON.parse(JSON.stringify(src.boxOffsets));
+          if (src.boxSizes) data.boxSizes = JSON.parse(JSON.stringify(src.boxSizes));
+          if (src.imageSizes) data.imageSizes = JSON.parse(JSON.stringify(src.imageSizes));
+          var nid = newId();
+          var copies = [];
+          photos.forEach(function (p) {
+            var ext = p.ext || 'jpg';
+            copies.push(sb.storage.from(BUCKET).copy(id + '/' + p.photoId + '.' + ext, nid + '/' + p.photoId + '.' + ext));
+            if (p.hasThumb) copies.push(sb.storage.from(BUCKET).copy(id + '/' + p.photoId + '_thumb.jpg', nid + '/' + p.photoId + '_thumb.jpg'));
+          });
+          return Promise.all(copies).then(function () {
+            return sb.from('projects').insert({ id: nid, data: data }).select('*').single();
+          }).then(function (res) {
+            if (res.error) throw new Error(res.error.message);
+            return row2project(res.data);
+          });
         });
       },
 

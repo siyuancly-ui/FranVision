@@ -191,6 +191,18 @@ async function handleApi(req, res, parts, urlPath) {
       const project = await storage.updateProject(id, patch);
       return project ? sendJson(res, 200, { project }) : sendJson(res, 404, { error: 'Project not found' });
     }
+    if (parts.length === 3 && method === 'DELETE') {
+      const ok = await storage.deleteProject(id);
+      return ok ? sendJson(res, 200, { ok: true }) : sendJson(res, 404, { error: 'Project not found' });
+    }
+
+    // POST /api/projects/:id/duplicate
+    if (parts.length === 4 && parts[3] === 'duplicate' && method === 'POST') {
+      const project = await storage.duplicateProject(id);
+      return project
+        ? sendJson(res, 201, { projectId: project.projectId, project })
+        : sendJson(res, 404, { error: 'Project not found' });
+    }
 
     // POST /api/projects/:id/confirm
     if (parts.length === 4 && parts[3] === 'confirm' && method === 'POST') {

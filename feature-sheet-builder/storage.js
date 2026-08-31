@@ -290,6 +290,62 @@ class LocalDiskStorage {
     });
   }
 
+  async deleteProject(id) {
+    if (!safeId(id)) return false;
+    if (!fs.existsSync(this._projFile(id))) return false;
+    try { fs.rmSync(this._projDir(id), { recursive: true, force: true }); return true; }
+    catch (_e) { return false; }
+  }
+
+  // Clone an existing sheet into a fresh one: keep the agent block and
+  // theme + the agent's headshot / brokerage-logo photos; drop the
+  // property info, the photo library and every slot assignment.
+  async duplicateProject(sourceId) {
+    if (!safeId(sourceId)) return null;
+    const src = this._read(sourceId);
+    if (!src) return null;
+    const id = newId();
+    const a1 = src.agentInfo || {};
+    const a2 = src.agentInfo2 || null;
+    const keep = [a1.headshotPhotoId, a1.brokerageLogoPhotoId, a2 && a2.headshotPhotoId].filter(Boolean);
+    const photos = (src.photos || [])
+      .filter((p) => keep.indexOf(p.photoId) >= 0)
+      .map((p) => Object.assign({}, p));
+    const project = {
+      projectId: id,
+      templateSystem: src.templateSystem || 'fsb-v2',
+      colorTheme: src.colorTheme || 'navy',
+      topPhotoStyle: src.topPhotoStyle || 'wide',
+      propertyInfo: { address: '', city: '', description: '',
+        bedrooms: '', bathrooms: '', garage: '', onlineTourUrl: '' },
+      agentInfo: Object.assign({}, a1),
+      agentInfo2: a2 ? Object.assign({}, a2) : null,
+      photos,
+      pages: { page1: { slots: {} }, page2: { slots: {} } },
+      confirmed: false, confirmedAt: null,
+      createdAt: nowIso(), updatedAt: nowIso(),
+    };
+    if (src.boxOffsets) project.boxOffsets = JSON.parse(JSON.stringify(src.boxOffsets));
+    if (src.boxSizes) project.boxSizes = JSON.parse(JSON.stringify(src.boxSizes));
+    if (src.imageSizes) project.imageSizes = JSON.parse(JSON.stringify(src.imageSizes));
+
+    fs.mkdirSync(this._photosDir(id), { recursive: true });
+    fs.mkdirSync(this._thumbsDir(id), { recursive: true });
+    for (const p of photos) {
+      try {
+        fs.copyFileSync(path.join(this._photosDir(sourceId), p.photoId + '.' + p.ext),
+          path.join(this._photosDir(id), p.photoId + '.' + p.ext));
+      } catch (_e) {}
+      if (p.hasThumb) {
+        try {
+          fs.copyFileSync(path.join(this._thumbsDir(sourceId), p.photoId + '.jpg'),
+            path.join(this._thumbsDir(id), p.photoId + '.jpg'));
+        } catch (_e) {}
+      }
+    }
+    return this._write(project);
+  }
+
   getPhotoPath(id, photoId, kind) {
     if (!safeId(id) || !safeId(photoId)) return null;
     const project = this._read(id);
