@@ -158,6 +158,7 @@
     box.style.justifyContent = 'center';
     box.style.gap = (info.rect[2] * pw * 0.06) + 'px';
     box.style.color = tokenColor(theme, 'gold');
+    box.style.fontVariantNumeric = 'lining-nums tabular-nums';
     var iconPx = Math.min(info.rect[3] * ph * 0.82, info.rect[2] * pw * info.spec.iconSizeFrac / 0.03 * 0.03);
     iconPx = info.rect[3] * ph * 0.78;
     info.keys.forEach(function (k) {
@@ -304,7 +305,8 @@
     var card = el('div', { class: 'fsb-agent fsb-agent--' + info.variant });
     setBox(card, info.rect, pw, ph);
     card.style.cssText += ';box-sizing:border-box;overflow:hidden;color:' + tokenColor(theme, 'ink') +
-      ';border:1px solid ' + tokenColor(theme, 'goldLine') + ';border-radius:' + (3 * scale) + 'px;';
+      ';border:1px solid ' + tokenColor(theme, 'goldLine') + ';border-radius:' + (3 * scale) + 'px;' +
+      'font-variant-numeric:lining-nums tabular-nums;';   // even, aligned phone/postal digits
     if (admin) card.classList.add('fsb-agent--admin');
 
     var bandW = info.rect[2] * pw, bandH = info.rect[3] * ph;
@@ -460,8 +462,11 @@
     var theme = spec.theme;
 
     var page = el('div', { class: 'fsb-page fsb-page--v2', 'data-page': pageNum });
+    // Cormorant Garamond ships old-style figures; force lining figures so
+    // digits (phone numbers, postal codes, bed/bath counts) are all
+    // cap-height and even.
     page.style.cssText = 'position:relative;overflow:hidden;width:' + pw + 'px;height:' + ph + 'px;color:' +
-      tokenColor(theme, 'ink') + ';';
+      tokenColor(theme, 'ink') + ';font-variant-numeric:lining-nums;';
     page.style.background = theme.bg.css || tokenColor(theme, 'bg');
 
     if (pageNum === 1) {
