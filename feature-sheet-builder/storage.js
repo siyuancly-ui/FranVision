@@ -57,14 +57,21 @@ function applyPatch(project, patch) {
   if (patch.templateSystem) project.templateSystem = patch.templateSystem;
   if (patch.colorTheme) project.colorTheme = patch.colorTheme;
   if (patch.topPhotoStyle) project.topPhotoStyle = patch.topPhotoStyle;
+  // The client holds the complete, current boxOffsets/boxSizes/imageSizes
+  // maps in memory and sends the whole object on every save (same as
+  // `photos` below) -- so these REPLACE wholesale. Merging them (as this
+  // used to) could never express "this key was removed": double-clicking
+  // a box to reset it deletes the key client-side, but a merge silently
+  // resurrected the old value from the stored copy on the next save,
+  // so the reset never actually stuck server-side.
   if (patch.imageSizes && typeof patch.imageSizes === 'object') {
-    project.imageSizes = Object.assign({}, project.imageSizes, patch.imageSizes);
+    project.imageSizes = patch.imageSizes;
   }
   if (patch.boxSizes && typeof patch.boxSizes === 'object') {
-    project.boxSizes = Object.assign({}, project.boxSizes, patch.boxSizes);
+    project.boxSizes = patch.boxSizes;
   }
   if (patch.boxOffsets && typeof patch.boxOffsets === 'object') {
-    project.boxOffsets = Object.assign({}, project.boxOffsets, patch.boxOffsets);
+    project.boxOffsets = patch.boxOffsets;
   }
   if (patch.propertyInfo && typeof patch.propertyInfo === 'object') {
     project.propertyInfo = Object.assign({}, project.propertyInfo, patch.propertyInfo);
