@@ -53,6 +53,14 @@ const SHARED_FILES = {
   '/shared/template-config.js': path.join(__dirname, 'templates', 'jason-fs-v1', 'template-config.js'),
   '/shared/registry.js': path.join(__dirname, 'templates', 'registry.js'),
   '/shared/crop-math.js': path.join(__dirname, 'crop-math.js'),
+  // fsb-v2 template system (geometry / themes / modules / engine / registry)
+  '/shared/v2/text-util.js': path.join(__dirname, 'templates', 'fsb-v2', 'text-util.js'),
+  '/shared/v2/geometry.js': path.join(__dirname, 'templates', 'fsb-v2', 'geometry.js'),
+  '/shared/v2/themes.js': path.join(__dirname, 'templates', 'fsb-v2', 'themes.js'),
+  '/shared/v2/modules.js': path.join(__dirname, 'templates', 'fsb-v2', 'modules.js'),
+  '/shared/v2/layout-engine.js': path.join(__dirname, 'templates', 'fsb-v2', 'layout-engine.js'),
+  '/shared/v2/registry.js': path.join(__dirname, 'templates', 'fsb-v2', 'registry.js'),
+  '/shared/v2/assets/flourish.svg': path.join(__dirname, 'templates', 'fsb-v2', 'assets', 'flourish.svg'),
 };
 
 const MIME = {
@@ -64,6 +72,9 @@ const MIME = {
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.svg': 'image/svg+xml',
+  '.otf': 'font/otf',
+  '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
 };
 
 function sendJson(res, status, body) {
@@ -151,6 +162,23 @@ async function handleApi(req, res, parts, urlPath) {
     return sendJson(res, 200, { defaultId: templates.DEFAULT_ID, ids: templates.ids() });
   }
 
+  // ---- admin (dev; Supabase uses the edge fn) ------------------------
+  if (parts[1] === 'admin') {
+    const want = process.env.ADMIN_TOKEN || 'dev-admin';
+    const got = req.headers['x-admin-token'] || '';
+    if (got !== want) return sendJson(res, 401, { error: 'unauthorized' });
+
+    if (parts[2] === 'projects' && method === 'GET') {
+      return sendJson(res, 200, { projects: await storage.listProjects() });
+    }
+    if (parts[2] === 'trash' && parts.length === 3 && method === 'GET') {
+      return sendJson(res, 200, { projects: await storage.listProjects({ trashed: true }) });
+    }
+    if (parts[2] === 'trash' && parts[3] === 'empty' && method === 'POST') {
+      return sendJson(res, 200, { purged: await storage.emptyTrash() });
+    }
+  }
+
   // ---- projects ---------------------------------------------------
   if (parts[1] === 'projects') {
     // POST /api/projects
@@ -172,6 +200,30 @@ async function handleApi(req, res, parts, urlPath) {
       const project = await storage.updateProject(id, patch);
       return project ? sendJson(res, 200, { project }) : sendJson(res, 404, { error: 'Project not found' });
     }
+    // DELETE = soft delete -> recycle bin
+    if (parts.length === 3 && method === 'DELETE') {
+      const ok = await storage.deleteProject(id);
+      return ok ? sendJson(res, 200, { ok: true }) : sendJson(res, 404, { error: 'Project not found' });
+    }
+
+    // POST /api/projects/:id/restore   (out of the recycle bin)
+    if (parts.length === 4 && parts[3] === 'restore' && method === 'POST') {
+      const project = await storage.restoreProject(id);
+      return project ? sendJson(res, 200, { project }) : sendJson(res, 404, { error: 'Project not found' });
+    }
+    // POST /api/projects/:id/purge     (permanent, single)
+    if (parts.length === 4 && parts[3] === 'purge' && method === 'POST') {
+      const ok = await storage.purgeProject(id);
+      return ok ? sendJson(res, 200, { ok: true }) : sendJson(res, 404, { error: 'Project not found' });
+    }
+
+    // POST /api/projects/:id/duplicate
+    if (parts.length === 4 && parts[3] === 'duplicate' && method === 'POST') {
+      const project = await storage.duplicateProject(id);
+      return project
+        ? sendJson(res, 201, { projectId: project.projectId, project })
+        : sendJson(res, 404, { error: 'Project not found' });
+    }
 
     // POST /api/projects/:id/confirm
     if (parts.length === 4 && parts[3] === 'confirm' && method === 'POST') {
@@ -188,6 +240,7 @@ async function handleApi(req, res, parts, urlPath) {
         buffer,
         filename: req.headers['x-filename'] ? decodeURIComponent(req.headers['x-filename']) : '',
         contentType: req.headers['content-type'] || '',
+        role: req.headers['x-photo-role'] || '',
       });
       return meta ? sendJson(res, 201, { photo: meta }) : sendJson(res, 400, { error: 'Could not save photo (project missing or empty body)' });
     }
@@ -196,6 +249,11 @@ async function handleApi(req, res, parts, urlPath) {
     if (parts.length === 5 && parts[3] === 'photos' && method === 'DELETE') {
       const project = await storage.deletePhoto(id, parts[4]);
       return project ? sendJson(res, 200, { project }) : sendJson(res, 404, { error: 'Project or photo not found' });
+    }
+    // DELETE /api/projects/:id/photos   -> clear the whole library
+    if (parts.length === 4 && parts[3] === 'photos' && method === 'DELETE') {
+      const project = await storage.clearPhotos(id);
+      return project ? sendJson(res, 200, { project }) : sendJson(res, 404, { error: 'Project not found' });
     }
   }
 

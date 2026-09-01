@@ -53,11 +53,36 @@ function applyPatch(project, patch) {
   if (!patch || typeof patch !== 'object') return project;
 
   if (patch.templateId && templates.has(patch.templateId)) project.templateId = patch.templateId;
+  // fsb-v2 top-level fields
+  if (patch.templateSystem) project.templateSystem = patch.templateSystem;
+  if (patch.colorTheme) project.colorTheme = patch.colorTheme;
+  if (patch.topPhotoStyle) project.topPhotoStyle = patch.topPhotoStyle;
+  // The client holds the complete, current boxOffsets/boxSizes/imageSizes
+  // maps in memory and sends the whole object on every save (same as
+  // `photos` below) -- so these REPLACE wholesale. Merging them (as this
+  // used to) could never express "this key was removed": double-clicking
+  // a box to reset it deletes the key client-side, but a merge silently
+  // resurrected the old value from the stored copy on the next save,
+  // so the reset never actually stuck server-side.
+  if (patch.imageSizes && typeof patch.imageSizes === 'object') {
+    project.imageSizes = patch.imageSizes;
+  }
+  if (patch.boxSizes && typeof patch.boxSizes === 'object') {
+    project.boxSizes = patch.boxSizes;
+  }
+  if (patch.boxOffsets && typeof patch.boxOffsets === 'object') {
+    project.boxOffsets = patch.boxOffsets;
+  }
   if (patch.propertyInfo && typeof patch.propertyInfo === 'object') {
     project.propertyInfo = Object.assign({}, project.propertyInfo, patch.propertyInfo);
   }
   if (patch.agentInfo && typeof patch.agentInfo === 'object') {
     project.agentInfo = Object.assign({}, project.agentInfo, patch.agentInfo);
+  }
+  if ('agentInfo2' in patch && patch.agentInfo2 !== undefined) {
+    project.agentInfo2 = patch.agentInfo2 && typeof patch.agentInfo2 === 'object'
+      ? Object.assign({}, project.agentInfo2 || {}, patch.agentInfo2)
+      : patch.agentInfo2; // null clears it
   }
   // The client is authoritative for the photo list (it holds every uploaded
   // photo's metadata in memory); a save replaces the stored array wholesale.
@@ -148,22 +173,43 @@ class LocalDiskStorage {
 
   async createProject(initial) {
     initial = initial || {};
-    const tplId = templates.has(initial.templateId) ? initial.templateId : templates.DEFAULT_ID;
-    const tpl = templates.get(tplId);
-    const base = tpl.blankProject();
     const id = newId();
-    const project = Object.assign(base, {
-      projectId: id,
-      templateId: tplId,
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-    });
+    let project;
+    if (initial.templateSystem === 'fsb-v2') {
+      // Minimal v2 scaffold; the client is authoritative for geometry.
+      project = {
+        projectId: id,
+        templateSystem: 'fsb-v2',
+        colorTheme: initial.colorTheme || 'navy',
+        topPhotoStyle: initial.topPhotoStyle || 'wide',
+        propertyInfo: { address: '', city: '', description: '',
+          bedrooms: '', bathrooms: '', garage: '', onlineTourUrl: '' },
+        agentInfo: { name: '', credentials: '', cellPhone: '', email: '',
+          brokerage: '', brokerageOffice: '', brokerageAddress: '',
+          headshotPhotoId: null, brokerageLogoPhotoId: null },
+        agentInfo2: null,
+        photos: [],
+        pages: { page1: { slots: {} }, page2: { slots: {} } },
+        confirmed: false, confirmedAt: null,
+        createdAt: nowIso(), updatedAt: nowIso(),
+      };
+    } else {
+      const tplId = templates.has(initial.templateId) ? initial.templateId : templates.DEFAULT_ID;
+      const tpl = templates.get(tplId);
+      project = Object.assign(tpl.blankProject(), {
+        projectId: id, templateId: tplId, createdAt: nowIso(), updatedAt: nowIso(),
+      });
+    }
     // Optional seed data (property/agent info, pre-attached photos) so the
     // wider FranVision platform can auto-create a filled project from a
     // delivery/job later.
     applyPatch(project, {
+      templateSystem: initial.templateSystem,
+      colorTheme: initial.colorTheme,
+      topPhotoStyle: initial.topPhotoStyle,
       propertyInfo: initial.propertyInfo,
       agentInfo: initial.agentInfo,
+      agentInfo2: initial.agentInfo2,
       pages: initial.pages,
     });
     if (Array.isArray(initial.photos)) project.photos = initial.photos;
@@ -219,6 +265,9 @@ class LocalDiskStorage {
       bytes: file.buffer.length,
       uploadedAt: nowIso(),
     };
+    // 'headshot' / 'logo' -> uploaded via the info form, an identity asset:
+    // hidden from the property photo library + kept by clearPhotos().
+    if (file.role === 'headshot' || file.role === 'logo') meta.role = file.role;
 
     // Only the project.json append is serialised.
     return this._withLock(id, () => {
@@ -251,6 +300,113 @@ class LocalDiskStorage {
     });
   }
 
+  // Wipe the property photo library (wrong batch uploaded). Keeps the
+  // info-form identity assets (headshot / brokerage logo).
+  async clearPhotos(id) {
+    if (!safeId(id)) return null;
+    return this._withLock(id, () => {
+      const project = this._read(id);
+      if (!project) return null;
+      (project.photos || []).forEach((meta) => {
+        if (meta.role) return;   // headshot / logo -> keep
+        try { fs.unlinkSync(path.join(this._photosDir(id), meta.photoId + '.' + meta.ext)); } catch (_e) {}
+        try { fs.unlinkSync(path.join(this._thumbsDir(id), meta.photoId + '.jpg')); } catch (_e) {}
+        clearPhotoRefs(project, meta.photoId);
+      });
+      project.photos = (project.photos || []).filter((p) => !!p.role);
+      return this._write(project);
+    });
+  }
+
+  // Soft delete -> recycle bin. Sets deletedAt; the project stays on
+  // disk and can be restored. purgeProject() / emptyTrash() do the real
+  // removal.
+  async deleteProject(id) {
+    if (!safeId(id)) return false;
+    return this._withLock(id, () => {
+      const project = this._read(id);
+      if (!project) return false;
+      project.deletedAt = nowIso();
+      this._write(project);
+      return true;
+    });
+  }
+
+  async restoreProject(id) {
+    if (!safeId(id)) return null;
+    return this._withLock(id, () => {
+      const project = this._read(id);
+      if (!project) return null;
+      delete project.deletedAt;
+      return this._write(project);
+    });
+  }
+
+  async purgeProject(id) {
+    if (!safeId(id)) return false;
+    if (!fs.existsSync(this._projFile(id))) return false;
+    try { fs.rmSync(this._projDir(id), { recursive: true, force: true }); return true; }
+    catch (_e) { return false; }
+  }
+
+  async emptyTrash() {
+    let n = 0;
+    for (const id of this.listProjectIds()) {
+      const d = this._read(id);
+      if (d && d.deletedAt) { if (await this.purgeProject(id)) n++; }
+    }
+    return n;
+  }
+
+  // Clone an existing sheet into a fresh one: keep the agent block and
+  // theme + the agent's headshot / brokerage-logo photos; drop the
+  // property info, the photo library and every slot assignment.
+  async duplicateProject(sourceId) {
+    if (!safeId(sourceId)) return null;
+    const src = this._read(sourceId);
+    if (!src) return null;
+    const id = newId();
+    const a1 = src.agentInfo || {};
+    const a2 = src.agentInfo2 || null;
+    const keep = [a1.headshotPhotoId, a1.brokerageLogoPhotoId, a2 && a2.headshotPhotoId].filter(Boolean);
+    const photos = (src.photos || [])
+      .filter((p) => keep.indexOf(p.photoId) >= 0)
+      .map((p) => Object.assign({}, p));
+    const project = {
+      projectId: id,
+      templateSystem: src.templateSystem || 'fsb-v2',
+      colorTheme: src.colorTheme || 'navy',
+      topPhotoStyle: src.topPhotoStyle || 'wide',
+      propertyInfo: { address: '', city: '', description: '',
+        bedrooms: '', bathrooms: '', garage: '', onlineTourUrl: '' },
+      agentInfo: Object.assign({}, a1),
+      agentInfo2: a2 ? Object.assign({}, a2) : null,
+      photos,
+      pages: { page1: { slots: {} }, page2: { slots: {} } },
+      confirmed: false, confirmedAt: null,
+      createdAt: nowIso(), updatedAt: nowIso(),
+    };
+    if (src.boxOffsets) project.boxOffsets = JSON.parse(JSON.stringify(src.boxOffsets));
+    if (src.boxSizes) project.boxSizes = JSON.parse(JSON.stringify(src.boxSizes));
+    if (src.imageSizes) project.imageSizes = JSON.parse(JSON.stringify(src.imageSizes));
+
+    fs.mkdirSync(this._photosDir(id), { recursive: true });
+    fs.mkdirSync(this._thumbsDir(id), { recursive: true });
+    for (const p of photos) {
+      try {
+        fs.copyFileSync(path.join(this._photosDir(sourceId), p.photoId + '.' + p.ext),
+          path.join(this._photosDir(id), p.photoId + '.' + p.ext));
+      } catch (_e) {}
+      if (p.hasThumb) {
+        try {
+          fs.copyFileSync(path.join(this._thumbsDir(sourceId), p.photoId + '.jpg'),
+            path.join(this._thumbsDir(id), p.photoId + '.jpg'));
+        } catch (_e) {}
+      }
+    }
+    return this._write(project);
+  }
+
   getPhotoPath(id, photoId, kind) {
     if (!safeId(id) || !safeId(photoId)) return null;
     const project = this._read(id);
@@ -272,6 +428,31 @@ class LocalDiskStorage {
     } catch (_e) {
       return [];
     }
+  }
+
+  // Admin summary of every project (dev only; Supabase uses the edge fn).
+  // trashed=false -> active sheets; trashed=true -> the recycle bin.
+  async listProjects(opts) {
+    const wantTrashed = !!(opts && opts.trashed);
+    return this.listProjectIds().map((id) => {
+      let d = {};
+      try { d = JSON.parse(fs.readFileSync(this._projFile(id), 'utf8')); } catch (_e) { d = {}; }
+      const pi = d.propertyInfo || {};
+      const agents = [d.agentInfo && d.agentInfo.name, d.agentInfo2 && d.agentInfo2.name].filter(Boolean);
+      return {
+        id,
+        address: pi.address || '',
+        city: pi.city || '',
+        agents,
+        theme: d.colorTheme || 'navy',
+        confirmed: !!d.confirmed,
+        createdAt: d.createdAt || null,
+        updatedAt: d.updatedAt || null,
+        deletedAt: d.deletedAt || null,
+      };
+    }).filter((r) => wantTrashed ? !!r.deletedAt : !r.deletedAt)
+      .sort((a, b) => String((wantTrashed ? b.deletedAt : b.updatedAt) || '')
+        .localeCompare(String((wantTrashed ? a.deletedAt : a.updatedAt) || '')));
   }
 }
 

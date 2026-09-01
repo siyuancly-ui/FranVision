@@ -2,6 +2,72 @@
    The stage (.fsb-page and descendants) mimics the print piece; the
    surrounding chrome is a light, low-noise workspace. */
 
+/* Fonts are all self-hosted so the PDF export (html-to-image) can embed
+   them -- a cross-origin Google Fonts <link> is unreadable to the
+   exporter and the raster then falls back to a system face, which
+   reflows/breaks the text. Keep these in sync with themes.js. */
+
+/* Property-address display face: TeX Gyre Chorus (GUST e-foundry, LPPL). */
+@font-face {
+  font-family: "TeX Gyre Chorus";
+  src: url("/fonts/tex-gyre-chorus.otf") format("opentype");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Cormorant Garamond (OFL) -- variable, weights 300-700. latin + latin-ext. */
+@font-face {
+  font-family: "Cormorant Garamond";
+  src: url("/fonts/cormorant-garamond-latin.woff2") format("woff2");
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Cormorant Garamond";
+  src: url("/fonts/cormorant-garamond-latin-ext.woff2") format("woff2");
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Cormorant Garamond";
+  src: url("/fonts/cormorant-garamond-italic-latin.woff2") format("woff2");
+  font-weight: 300 700;
+  font-style: italic;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Cormorant Garamond";
+  src: url("/fonts/cormorant-garamond-italic-latin-ext.woff2") format("woff2");
+  font-weight: 300 700;
+  font-style: italic;
+  font-display: swap;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* Source Sans 3 (OFL) -- variable. latin + latin-ext. */
+@font-face {
+  font-family: "Source Sans 3";
+  src: url("/fonts/source-sans-3-latin.woff2") format("woff2");
+  font-weight: 200 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Source Sans 3";
+  src: url("/fonts/source-sans-3-latin-ext.woff2") format("woff2");
+  font-weight: 200 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
 :root {
   --bg: #eef1f5;
   --panel: #ffffff;
@@ -61,6 +127,12 @@ h2, h3 { margin: 0 0 8px; }
 .fsb-btn--primary:hover { background: #1a54bd; }
 .fsb-btn--save { background: #eef3ff; border-color: #c7d8fb; color: var(--accent); }
 .fsb-btn--ghost { background: transparent; }
+.fsb-btn--danger { background: #fdf3f3; border-color: #e3b7b7; color: var(--danger); }
+.fsb-btn--danger:hover { background: #fbe4e4; }
+.fsb-btn--info { background: #eef4ff; border-color: #b9cdf2; color: var(--accent); }
+.fsb-btn--info:hover { background: #e0ebff; }
+.fsb-btn--ok { background: #ecf8f0; border-color: #b3ddc3; color: var(--ok); }
+.fsb-btn--ok:hover { background: #ddf1e4; }
 .fsb-btn--sm { padding: 5px 9px; font-size: 12px; }
 .fsb-btn[disabled] { opacity: .5; pointer-events: none; }
 
@@ -196,8 +268,10 @@ h2, h3 { margin: 0 0 8px; }
 .fsb-lib-head { position: sticky; top: 0; background: var(--panel); padding: 12px; border-bottom: 1px solid var(--line); z-index: 2; }
 .fsb-lib-title { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; margin-bottom: 10px; white-space: nowrap; }
 .fsb-lib-count { font-weight: 400; color: var(--ink-soft); background: #eef1f5; border-radius: 999px; padding: 1px 8px; font-size: 12px; }
+.fsb-lib-clear { margin-left: auto; }
 .fsb-upload-btn { display: block; width: 100%; text-align: center; }
 .fsb-lib-drop { margin: 10px 0 0; padding: 8px; border: 1px dashed var(--line); border-radius: 8px; text-align: center; color: var(--ink-soft); font-size: 11px; }
+.fsb-lib-hint { margin: 10px 0 0; font-size: 11px; line-height: 1.5; color: var(--ink-soft); }
 .fsb-lib--dragging { background: #f0f6ff; }
 .fsb-lib--dragging .fsb-lib-drop { border-color: var(--accent); color: var(--accent); }
 
@@ -294,7 +368,10 @@ body.fsb-modal-open { overflow: hidden; }
   background: #fff; border-radius: 12px; padding: 22px; max-width: 380px; width: 100%;
   box-shadow: 0 16px 50px rgba(0,0,0,.28);
 }
-.fsb-confirm-msg { margin: 0 0 18px; font-size: 14px; line-height: 1.5; color: var(--ink); }
+.fsb-confirm-msg { margin: 0 0 18px; font-size: 14px; line-height: 1.55; color: var(--ink); white-space: pre-line; }
+.fsb-confirm-msg p { margin: 0 0 14px; }
+.fsb-confirm-msg p:last-child { margin-bottom: 0; }
+.fsb-confirm-msg p + p { padding-top: 6px; border-top: 1px solid #e6e9ef; }
 .fsb-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
 #fsb-toasts { position: fixed; right: 16px; bottom: 16px; z-index: 1200; display: flex; flex-direction: column; gap: 8px; }
@@ -322,3 +399,94 @@ body.fsb-modal-open { overflow: hidden; }
   body { overflow: auto; }
   #fsb-app { height: auto; min-height: 100vh; }
 }
+
+/* ---- multi-sheet: "My sheets" menu (v2) ---- */
+.fsb-mysheets-wrap { position: relative; }
+.fsb-mysheets-menu {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 60;
+  width: 300px; max-height: 60vh; overflow-y: auto;
+  background: #fff; border: 1px solid #d8dde5; border-radius: 8px;
+  box-shadow: 0 12px 34px rgba(20,28,44,.18); padding: 4px;
+}
+.fsb-mysheets-empty { padding: 14px; color: #8a94a3; font-size: 13px; text-align: center; }
+.fsb-mysheets-item {
+  display: flex; align-items: baseline; gap: 8px; padding: 8px 10px;
+  border-radius: 6px; text-decoration: none; color: #1e2530;
+}
+.fsb-mysheets-item:hover { background: #f1f4f9; }
+.fsb-mysheets-item.is-current { background: #eef3ff; }
+.fsb-mysheets-addr { font-weight: 600; font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fsb-mysheets-meta { font-size: 11px; color: #8a94a3; white-space: nowrap; }
+.fsb-mysheets-del {
+  border: 0; background: none; color: #b7bfca; cursor: pointer; font-size: 16px;
+  line-height: 1; padding: 0 2px;
+}
+.fsb-mysheets-del:hover { color: #d64545; }
+
+/* ---- admin / "All feature sheets" view (v2) ---- */
+.fsb-admin { max-width: 1100px; margin: 0 auto; padding: 24px 20px 60px; }
+.fsb-admin-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap; padding-bottom: 16px; margin-bottom: 8px;
+  border-bottom: 2px solid #e4e0d6;
+}
+.fsb-admin-actions { display: flex; gap: 10px; align-items: center; }
+#fsb-admin-search {
+  width: 240px; padding: 7px 10px; border: 1px solid #d0d5dd; border-radius: 6px; font-size: 13px;
+}
+.fsb-admin-loading, .fsb-admin-empty, .fsb-admin-error {
+  padding: 40px 10px; text-align: center; color: #8a94a3; font-size: 14px;
+}
+.fsb-admin-error { color: #c0392b; }
+.fsb-admin-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.fsb-admin-table th {
+  text-align: left; padding: 8px 12px; border-bottom: 2px solid #e4e0d6;
+  font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: #667;
+}
+.fsb-admin-table td { padding: 10px 12px; border-bottom: 1px solid #eee; vertical-align: top; }
+.fsb-admin-addr { font-weight: 600; color: #1f5fd6; text-decoration: none; }
+.fsb-admin-addr:hover { text-decoration: underline; }
+.fsb-admin-sub { color: #8a94a3; font-size: 12px; margin-top: 2px; }
+.fsb-admin-time { white-space: nowrap; color: #667; }
+.fsb-admin-status { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+.fsb-admin-status.is-draft { background: #eef1f5; color: #667; }
+.fsb-admin-status.is-submitted { background: #e4f4e8; color: #2e7d43; }
+.fsb-admin-rowact { display: flex; gap: 6px; white-space: nowrap; }
+.fsb-btn--sm { padding: 4px 10px; font-size: 12px; }
+
+/* ---- drag-resize grip on agent images / QR (v2 editor) ---- */
+.fsb-agent-img, .fsb-agent-qr { position: relative; }
+.fsb-img-resize {
+  position: absolute; right: -1px; bottom: -1px; width: 13px; height: 13px;
+  cursor: nwse-resize; z-index: 6; touch-action: none;
+  background:
+    linear-gradient(-45deg, transparent 0 4px, #f0b64a 4px 6px, transparent 6px 7px,
+                    #f0b64a 7px 9px, transparent 9px);
+  opacity: 0; transition: opacity .12s;
+}
+.fsb-agent-img:hover .fsb-img-resize,
+.fsb-agent-qr:hover .fsb-img-resize,
+.fsb-img-resize:active { opacity: 1; }
+.fsb-stage--locked .fsb-img-resize { display: none; }
+
+/* ---- draggable agent info boxes (admin only, v2) ---- */
+.fsb-agent-box--draggable { cursor: move; }
+.fsb-agent--admin .fsb-agent-box--draggable {
+  outline: 1px dashed rgba(240,182,74,.35); outline-offset: -1px;
+}
+.fsb-agent--admin .fsb-agent-box--draggable:hover {
+  outline-color: rgba(240,182,74,.9); background: rgba(240,182,74,.06);
+}
+.fsb-agent-box--draggable.is-dragging {
+  outline: 1px solid #f0b64a; background: rgba(240,182,74,.12); z-index: 20;
+}
+
+/* ---- box resize grip (admin, v2) ---- */
+.fsb-box-resize {
+  position: absolute; right: -1px; bottom: -1px; width: 13px; height: 13px;
+  cursor: nwse-resize; z-index: 8; touch-action: none;
+  background: linear-gradient(-45deg, transparent 0 4px, #f0b64a 4px 6px, transparent 6px 7px, #f0b64a 7px 9px, transparent 9px);
+  opacity: 0; transition: opacity .12s;
+}
+.fsb-agent--admin .fsb-agent-box:hover .fsb-box-resize,
+.fsb-box-resize:active { opacity: 1; }

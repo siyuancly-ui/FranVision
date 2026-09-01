@@ -25,9 +25,13 @@
   window.FSB = window.FSB || {};
 
   var CFG = window.FSB_CONFIG || {};
-  var MODE = (CFG.supabaseUrl && CFG.supabaseAnonKey) ? 'supabase' : 'local';
+  // ?local=1 forces the Node-server backend even when Supabase creds are
+  // present -- for local testing without touching the live database.
+  var FORCE_LOCAL = /[?&]local=1\b/.test(window.location.search);
+  var MODE = (!FORCE_LOCAL && CFG.supabaseUrl && CFG.supabaseAnonKey) ? 'supabase' : 'local';
 
-  var DATA_KEYS = ['templateId', 'propertyInfo', 'agentInfo', 'photos', 'pages', 'confirmed', 'confirmedAt'];
+  var DATA_KEYS = ['templateSystem', 'colorTheme', 'topPhotoStyle', 'imageSizes', 'boxOffsets', 'boxSizes', 'templateId',
+    'propertyInfo', 'agentInfo', 'agentInfo2', 'photos', 'pages', 'confirmed', 'confirmedAt', 'deletedAt'];
 
   function pickData(p) {
     var d = {};
@@ -130,9 +134,16 @@
       },
       updateProject: function (id, project) {
         var patch = {
+          templateSystem: project.templateSystem,
+          colorTheme: project.colorTheme,
+          topPhotoStyle: project.topPhotoStyle,
+          imageSizes: project.imageSizes,
+          boxOffsets: project.boxOffsets,
+          boxSizes: project.boxSizes,
           templateId: project.templateId,
           propertyInfo: project.propertyInfo,
           agentInfo: project.agentInfo,
+          agentInfo2: project.agentInfo2,
           pages: project.pages,
           photos: project.photos,
         };
@@ -146,10 +157,36 @@
           body: JSON.stringify({ confirmed: confirmed === undefined ? true : !!confirmed }),
         }).then(function (b) { return b.project; });
       },
-      uploadPhoto: function (id, file) {
+      deleteProject: function (id) {   // -> recycle bin (soft)
+        return jsonFetch('/api/projects/' + encodeURIComponent(id), { method: 'DELETE' }).then(function () { return true; });
+      },
+      restoreProject: function (id) {
+        return jsonFetch('/api/projects/' + encodeURIComponent(id) + '/restore', { method: 'POST' })
+          .then(function (b) { return b.project; });
+      },
+      purgeProject: function (id) {
+        return jsonFetch('/api/projects/' + encodeURIComponent(id) + '/purge', { method: 'POST' }).then(function () { return true; });
+      },
+      emptyTrash: function (token) {
+        return jsonFetch('/api/admin/trash/empty', { method: 'POST', headers: { 'X-Admin-Token': token || '' } })
+          .then(function (b) { return b.purged || 0; });
+      },
+      listTrash: function (token) {
+        return jsonFetch('/api/admin/trash', { headers: { 'X-Admin-Token': token || '' } })
+          .then(function (b) { return b.projects || []; });
+      },
+      duplicateProject: function (id) {
+        return jsonFetch('/api/projects/' + encodeURIComponent(id) + '/duplicate', { method: 'POST' })
+          .then(function (b) { return b.project; });
+      },
+      uploadPhoto: function (id, file, role) {
         return jsonFetch('/api/projects/' + encodeURIComponent(id) + '/photos', {
           method: 'POST',
-          headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-Filename': encodeURIComponent(file.name || 'photo.jpg') },
+          headers: {
+            'Content-Type': file.type || 'application/octet-stream',
+            'X-Filename': encodeURIComponent(file.name || 'photo.jpg'),
+            'X-Photo-Role': role || '',
+          },
           body: file,
         }).then(function (b) { return b.photo; });
       },
@@ -157,6 +194,10 @@
         return jsonFetch('/api/projects/' + encodeURIComponent(id) + '/photos/' + encodeURIComponent(photoId), {
           method: 'DELETE',
         }).then(function (b) { return b.project; });
+      },
+      clearPhotos: function (id) {
+        return jsonFetch('/api/projects/' + encodeURIComponent(id) + '/photos', { method: 'DELETE' })
+          .then(function (b) { return b.project; });
       },
       photoUrls: function (id, meta) {
         return {
@@ -168,6 +209,12 @@
       // Submit-for-printing is a Supabase-only feature (edge function + email).
       uploadSubmission: function () { return Promise.reject(new Error('submission upload needs the Supabase backend')); },
       invokeFunction: function () { return Promise.reject(new Error('edge functions need the Supabase backend')); },
+
+      // Admin (Franky) -- list every project. Gated by the admin token.
+      listAllProjects: function (token) {
+        return jsonFetch('/api/admin/projects', { headers: { 'X-Admin-Token': token || '' } })
+          .then(function (b) { return b.projects || []; });
+      },
     };
   }
 
@@ -182,7 +229,7 @@
       auth: { persistSession: false },
     });
     var BUCKET = CFG.photosBucket || 'photos';
-    var T = window.FSB_TEMPLATE;
+    var V2 = window.FSB_V2;
 
     function pubUrl(path) {
       return sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
@@ -207,10 +254,11 @@
 
       createProject: function (seed) {
         seed = seed || {};
-        var data = T.blankProject();
-        if (seed.templateId) data.templateId = seed.templateId;
+        var data = V2.blankProject(seed.colorTheme);
+        if (seed.topPhotoStyle) data.topPhotoStyle = seed.topPhotoStyle;
         if (seed.propertyInfo) data.propertyInfo = Object.assign({}, data.propertyInfo, seed.propertyInfo);
         if (seed.agentInfo) data.agentInfo = Object.assign({}, data.agentInfo, seed.agentInfo);
+        if (seed.agentInfo2) data.agentInfo2 = Object.assign({}, seed.agentInfo2);
         if (Array.isArray(seed.photos)) data.photos = seed.photos;
         var id = newId();
         return sb.from('projects').insert({ id: id, data: data }).select('*').single().then(function (res) {
@@ -244,13 +292,90 @@
         });
       },
 
-      uploadPhoto: function (id, file) {
+      deleteProject: function (id) {   // -> recycle bin (soft)
+        return fetchProject(id).then(function (p) {
+          p.deletedAt = nowIso();
+          return sb.from('projects').update({ data: pickData(p), updated_at: nowIso() })
+            .eq('id', id).select('*').single();
+        }).then(function (res) {
+          if (res.error) throw new Error(res.error.message);
+          return true;
+        });
+      },
+      restoreProject: function (id) {
+        return fetchProject(id).then(function (p) {
+          delete p.deletedAt;
+          return sb.from('projects').update({ data: pickData(p), updated_at: nowIso() })
+            .eq('id', id).select('*').single();
+        }).then(function (res) {
+          if (res.error) throw new Error(res.error.message);
+          return row2project(res.data);
+        });
+      },
+      purgeProject: function (id) {
+        return sb.storage.from(BUCKET).list(id).then(function (res) {
+          var files = ((res && res.data) || []).map(function (f) { return id + '/' + f.name; });
+          return files.length ? sb.storage.from(BUCKET).remove(files) : Promise.resolve({});
+        }).then(function () {
+          return sb.from('projects').delete().eq('id', id);
+        }).then(function (res) {
+          if (res && res.error) throw new Error(res.error.message);
+          return true;
+        });
+      },
+      emptyTrash: function (token) {
+        var self = this;
+        return this.listTrash(token).then(function (list) {
+          return list.reduce(function (chain, r) {
+            return chain.then(function (n) { return self.purgeProject(r.id).then(function () { return n + 1; }); });
+          }, Promise.resolve(0));
+        });
+      },
+      listTrash: function (token) {
+        return sb.functions.invoke('list-projects', { body: { token: token || '', view: 'trash' } }).then(function (res) {
+          if (res.error) throw new Error(res.error.message || 'unauthorized');
+          return (res.data && res.data.projects) || [];
+        });
+      },
+
+      duplicateProject: function (id) {
+        return fetchProject(id).then(function (src) {
+          var a1 = src.agentInfo || {};
+          var a2 = src.agentInfo2 || null;
+          var keep = [a1.headshotPhotoId, a1.brokerageLogoPhotoId, a2 && a2.headshotPhotoId].filter(Boolean);
+          var photos = (src.photos || []).filter(function (p) { return keep.indexOf(p.photoId) >= 0; });
+          var data = V2.blankProject(src.colorTheme);
+          data.topPhotoStyle = src.topPhotoStyle || data.topPhotoStyle;
+          data.agentInfo = Object.assign({}, a1);
+          data.agentInfo2 = a2 ? Object.assign({}, a2) : null;
+          data.photos = photos.map(function (p) { return Object.assign({}, p); });
+          if (src.boxOffsets) data.boxOffsets = JSON.parse(JSON.stringify(src.boxOffsets));
+          if (src.boxSizes) data.boxSizes = JSON.parse(JSON.stringify(src.boxSizes));
+          if (src.imageSizes) data.imageSizes = JSON.parse(JSON.stringify(src.imageSizes));
+          var nid = newId();
+          var copies = [];
+          photos.forEach(function (p) {
+            var ext = p.ext || 'jpg';
+            copies.push(sb.storage.from(BUCKET).copy(id + '/' + p.photoId + '.' + ext, nid + '/' + p.photoId + '.' + ext));
+            if (p.hasThumb) copies.push(sb.storage.from(BUCKET).copy(id + '/' + p.photoId + '_thumb.jpg', nid + '/' + p.photoId + '_thumb.jpg'));
+          });
+          return Promise.all(copies).then(function () {
+            return sb.from('projects').insert({ id: nid, data: data }).select('*').single();
+          }).then(function (res) {
+            if (res.error) throw new Error(res.error.message);
+            return row2project(res.data);
+          });
+        });
+      },
+
+      uploadPhoto: function (id, file, role) {
         var photoId = newId();
         var ext = extOf(file);
         var meta = {
           photoId: photoId, filename: file.name || (photoId + '.' + ext), ext: ext,
           width: 0, height: 0, hasThumb: false, bytes: file.size || 0, uploadedAt: nowIso(),
         };
+        if (role === 'headshot' || role === 'logo') meta.role = role;
         return Promise.all([imageSize(file), makeThumb(file)]).then(function (out) {
           meta.width = out[0].width; meta.height = out[0].height;
           var thumbBlob = out[1];
@@ -290,6 +415,27 @@
         });
       },
 
+      clearPhotos: function (id) {
+        return fetchProject(id).then(function (project) {
+          var photos = (project.photos || []).filter(function (p) { return !p.role; });
+          var paths = [];
+          photos.forEach(function (meta) {
+            paths.push(origPath(id, meta));
+            if (meta.hasThumb) paths.push(thumbPath(id, meta));
+            clearPhotoRefs(project, meta.photoId);
+          });
+          project.photos = (project.photos || []).filter(function (p) { return !!p.role; });
+          var removeJob = paths.length ? sb.storage.from(BUCKET).remove(paths) : Promise.resolve({});
+          return removeJob.then(function () {
+            return sb.from('projects').update({ data: pickData(project), updated_at: nowIso() })
+              .eq('id', id).select('*').single();
+          }).then(function (res) {
+            if (res.error) throw new Error(res.error.message);
+            return row2project(res.data);
+          });
+        });
+      },
+
       photoUrls: function (id, meta) {
         return {
           full: pubUrl(origPath(id, meta)),
@@ -313,6 +459,15 @@
         return sb.functions.invoke(name, { body: body }).then(function (res) {
           if (res.error) throw new Error(res.error.message || 'function error');
           return res.data;
+        });
+      },
+
+      // Admin (Franky) -- list every project via an edge function that
+      // checks the shared admin token and reads with the service role.
+      listAllProjects: function (token) {
+        return sb.functions.invoke('list-projects', { body: { token: token || '' } }).then(function (res) {
+          if (res.error) throw new Error(res.error.message || 'unauthorized');
+          return (res.data && res.data.projects) || [];
         });
       },
     };

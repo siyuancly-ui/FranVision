@@ -86,13 +86,17 @@ grant select, insert, update on public.projects to anon;
 insert into storage.buckets (id, name, public)
 values ('photos', 'photos', true) on conflict (id) do nothing;
 
+grant delete on public.projects to anon;
+
 alter table public.projects enable row level security;
 drop policy if exists "open projects read"   on public.projects;
 drop policy if exists "open projects insert" on public.projects;
 drop policy if exists "open projects update" on public.projects;
+drop policy if exists "open projects delete" on public.projects;
 create policy "open projects read"   on public.projects for select to anon using (true);
 create policy "open projects insert" on public.projects for insert to anon with check (true);
 create policy "open projects update" on public.projects for update to anon using (true) with check (true);
+create policy "open projects delete" on public.projects for delete to anon using (true);
 drop policy if exists "open photos read"   on storage.objects;
 drop policy if exists "open photos insert" on storage.objects;
 drop policy if exists "open photos delete" on storage.objects;
@@ -100,6 +104,19 @@ create policy "open photos read"   on storage.objects for select to anon using (
 create policy "open photos insert" on storage.objects for insert to anon with check (bucket_id = 'photos');
 create policy "open photos delete" on storage.objects for delete to anon using (bucket_id = 'photos');
 ```
+
+### Recycle bin (admin) -> the `list-projects` Edge Function
+
+Franky's admin view lists / deletes sheets through `supabase/functions/
+list-projects/index.ts`. It takes `view:"trash"` and returns `deletedAt`.
+Re-deploy it whenever that file changes:
+  CLI: `supabase functions deploy list-projects --project-ref papaswihicvajzcubbri`
+  or Dashboard -> Edge Functions -> list-projects -> paste the file -> Deploy.
+
+Soft delete / restore go through the normal `update` policy. Permanent
+delete ("delete forever" / "empty bin") needs the `delete` grant + policy
+in the schema block above -- run those two lines once if the project
+pre-dates them. `ADMIN_TOKEN` must be set in Edge Function Secrets.
 
 ### Confirm & Submit -> email the studio
 

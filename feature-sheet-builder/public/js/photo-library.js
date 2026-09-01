@@ -29,6 +29,10 @@
       el('div', { class: 'fsb-lib-title' }, [
         el('span', { text: 'Photo Library' }),
         el('span', { class: 'fsb-lib-count', id: 'fsb-lib-count', text: '0' }),
+        canUpload
+          ? el('button', { class: 'fsb-btn fsb-btn--sm fsb-btn--danger fsb-lib-clear', text: 'Clear 清空',
+              title: 'Delete every uploaded photo' })
+          : null,
       ]),
     ]);
     if (canUpload) {
@@ -38,6 +42,30 @@
       label.appendChild(input);
       head.appendChild(label);
       head.appendChild(el('div', { class: 'fsb-lib-drop', text: 'or drop JPG / PNG here' }));
+
+      head.querySelector('.fsb-lib-clear').addEventListener('click', function () {
+        var btn = this;
+        var n = src.list(app.project).length;
+        if (!n) { toast('Library is already empty 图库已空'); return; }
+        if (app.isReadOnly()) { toast('This project is confirmed. Un-confirm to edit.', 'error'); return; }
+        window.FSB.util.confirmDialog(
+          [
+            'Delete ALL ' + n + ' uploaded photos? Any slot using one will be cleared. This cannot be undone.',
+            '清空图库中全部 ' + n + ' 张照片？用到这些照片的框会被清空，且无法撤销。',
+          ],
+          { okText: 'Clear all 清空', cancelText: 'Cancel 取消' }
+        ).then(function (ok) {
+          if (!ok) return;
+          btn.disabled = true;
+          src.clearAll(app.projectId).then(function (updated) {
+            app.setProject(updated);
+            toast('Library cleared 图库已清空');
+          }).catch(function (err) {
+            btn.disabled = false;
+            toast('Clear failed 清空失败: ' + (err.message || err), 'error');
+          });
+        });
+      });
     }
     var grid = el('div', { class: 'fsb-lib-grid', id: 'fsb-lib-grid' });
     root.appendChild(head);
@@ -89,7 +117,9 @@
         var job = queue.shift();
         active++;
         (function (job) {
-          src.upload(app.projectId, job.file).then(function (meta) {
+          (app.ensureCreated ? app.ensureCreated() : Promise.resolve())
+            .then(function () { return src.upload(app.projectId, job.file); })
+            .then(function (meta) {
             app.addPhoto(meta);
             job.tile.remove();
           }).catch(function (err) {
@@ -120,16 +150,24 @@
         var used = app.slotsUsingPhoto(p.id);
         var img = el('img', { class: 'fsb-thumb-img', draggable: 'false', loading: 'lazy', alt: p.filename });
         img.src = src.thumbUrl(project, p.id);
-        // The library is browse + upload + delete only. Photos go into
-        // slots by clicking a slot on the sheet (photo-picker modal).
+        // Drag a thumbnail onto a slot to place / replace its photo
+        // (editor.js handles the drop); clicking a slot also opens the picker.
         var tile = el('div', {
           class: 'fsb-thumb' + (used ? ' fsb-thumb--used' : ''),
-          title: p.filename + (used ? ('  ·  used ×' + used) : ''), 'data-photo-id': p.id,
+          draggable: 'true', title: p.filename + (used ? ('  ·  used ×' + used) : ''), 'data-photo-id': p.id,
         }, [
           img,
           used ? el('span', { class: 'fsb-thumb-badge', text: '×' + used }) : null,
           canUpload ? el('button', { class: 'fsb-thumb-del', 'data-del': p.id, title: 'Delete photo', text: '✕' }) : null,
         ]);
+        tile.addEventListener('dragstart', function (e) {
+          if (app.isReadOnly()) { e.preventDefault(); return; }
+          e.dataTransfer.effectAllowed = 'copy';
+          e.dataTransfer.setData(MIME_PHOTO, p.id);
+          try { e.dataTransfer.setDragImage(img, 30, 30); } catch (_e) {}
+          tile.classList.add('fsb-thumb--drag');
+        });
+        tile.addEventListener('dragend', function () { tile.classList.remove('fsb-thumb--drag'); });
         grid.appendChild(tile);
       });
     }

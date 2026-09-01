@@ -12,13 +12,15 @@
   window.FSB = window.FSB || {};
   var el = window.FSB.util.el;
   var render = window.FSB.render;
-  var T = window.FSB_TEMPLATE;
+  var GEO = window.FSB_V2_GEOMETRY;
+  var PAGE_COUNT = GEO.page.count;
+  var PAGE_WIDTH_PT = GEO.page.trimWidthPt;
 
   // Cap the rendered page width -> ~medium res (well below print quality).
   var MAX_PREVIEW_PAGE_PX = 900;
 
   function open(app) {
-    var pageCount = T.page.count;
+    var pageCount = PAGE_COUNT;
     var overlay = el('div', { class: 'fsb-modal' });
     var bar = el('div', { class: 'fsb-modal-bar' }, [
       el('span', { class: 'fsb-modal-title', text: 'Preview 预览 — proof only, not for print / 仅供核对，不可用于打印' }),
@@ -36,7 +38,8 @@
     function draw() {
       pages.innerHTML = '';
       var avail = scroll.clientWidth - 48;
-      var scale = Math.min(avail / T.page.widthPt, MAX_PREVIEW_PAGE_PX / T.page.widthPt);
+      var scale = Math.min(avail / PAGE_WIDTH_PT, MAX_PREVIEW_PAGE_PX / PAGE_WIDTH_PT);
+      var pageEls = [];
       for (var p = 1; p <= pageCount; p++) {
         var wrap = el('div', { class: 'fsb-modal-page' });
         wrap.appendChild(el('div', { class: 'fsb-modal-page-label', text: 'Page ' + p }));
@@ -44,7 +47,11 @@
         pageEl.appendChild(el('div', { class: 'fsb-preview-wm' })); // watermark overlay (CSS)
         wrap.appendChild(pageEl);
         pages.appendChild(wrap);
+        pageEls.push(pageEl);
       }
+      // same auto-fit pass the editor stage runs, so the description
+      // block fills its box identically in preview
+      if (render.fitTexts) pageEls.forEach(function (n) { render.fitTexts(n); });
     }
 
     function onKey(e) { if (e.key === 'Escape') close(); }

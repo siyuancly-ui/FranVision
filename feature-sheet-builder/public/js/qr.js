@@ -13,7 +13,10 @@
   function render(box, url, opts) {
     opts = opts || {};
     box.innerHTML = '';
-    var size = Math.max(64, Math.round(Math.min(box.clientWidth, box.clientHeight) || 128));
+    if (!url || !String(url).trim()) return; // nothing to encode -> leave empty
+    var size = opts.size
+      ? Math.max(48, Math.round(opts.size))
+      : Math.max(64, Math.round(Math.min(box.clientWidth, box.clientHeight) || 128));
 
     if (typeof window.QRCode === 'function') {
       try {

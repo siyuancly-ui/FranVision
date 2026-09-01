@@ -4,10 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>FranVision — Feature Sheet Builder</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet"
-    href="https://fonts.googleapis.com/css2?family=Chivo+Mono:ital,wght@0,300;0,400;0,500;1,300;1,400&family=PT+Sans:ital,wght@0,400;0,700;1,400&display=swap" />
+  <!-- fonts are self-hosted in app.css (see the @font-face block there) so
+       the PDF export can embed them; no cross-origin Google Fonts link. -->
   <link rel="stylesheet" href="/css/app.css" />
 </head>
 <body>
@@ -15,7 +13,14 @@
 
   <!-- shared logic (also used by Node tests) -->
   <script src="/shared/crop-math.js"></script>
-  <script src="/shared/template-config.js"></script>
+
+  <!-- fsb-v2 template system (geometry / themes / modules / engine / registry) -->
+  <script src="/shared/v2/text-util.js"></script>
+  <script src="/shared/v2/geometry.js"></script>
+  <script src="/shared/v2/themes.js"></script>
+  <script src="/shared/v2/modules.js"></script>
+  <script src="/shared/v2/layout-engine.js"></script>
+  <script src="/shared/v2/registry.js"></script>
 
   <!-- third-party (pinned) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -29,11 +34,12 @@
   <script src="/js/store.js"></script>
   <script src="/js/photo-source.js"></script>
   <script src="/js/qr.js"></script>
-  <script src="/js/template-render.js"></script>
+  <script src="/js/template-render-v2.js"></script>
   <script src="/js/editor.js"></script>
   <script src="/js/photo-picker.js"></script>
   <script src="/js/photo-library.js"></script>
   <script src="/js/info-form.js"></script>
+  <script src="/js/admin.js"></script>
   <script src="/js/preview.js"></script>
   <script src="/js/export-pdf.js"></script>
   <script src="/js/submit.js"></script>

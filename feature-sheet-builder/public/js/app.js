@@ -13,7 +13,10 @@
   var store = window.FSB.store;
   var render = window.FSB.render;
   var CROP = window.FSB_CROP;
-  var T = window.FSB_TEMPLATE;
+  // fsb-v2: geometry replaces the old single template-config
+  var GEO = window.FSB_V2_GEOMETRY;
+  var PAGE_COUNT = GEO.page.count;          // 2
+  var PAGE_WIDTH_PT = GEO.page.trimWidthPt; // 1224
 
   var app = {
     project: null,
@@ -65,9 +68,75 @@
   };
 
   app.patchInfo = function (group, key, value) {
+    if (!app.project[group]) app.project[group] = {};
     app.project[group][key] = value;
     app.emit('dynamic');
     scheduleSave();
+  };
+
+  // top-level project fields (colorTheme, topPhotoStyle)
+  app.patchTop = function (key, value) {
+    app.project[key] = value;
+    app.emit('dynamic');
+    scheduleSave();
+  };
+
+  // agent-card image sizes (logo / headshot1 / headshot2 / qr) -- a
+  // multiplier the user sets by dragging the box edge.
+  app.mutateImageSize = function (key, mult) {
+    if (!app.project.imageSizes) app.project.imageSizes = {};
+    app.project.imageSizes[key] = Math.max(0.4, Math.min(2.5, mult));
+    app.emit('dynamic');
+    scheduleSave();
+  };
+
+  // agent-card box positions -- {dx,dy} offset (fraction of the agent
+  // band) set by Franky dragging a box in the admin view.
+  app.mutateBoxOffset = function (key, dx, dy) {
+    if (!app.project.boxOffsets) app.project.boxOffsets = {};
+    app.project.boxOffsets[key] = {
+      dx: Math.max(-1.2, Math.min(1.2, dx || 0)),
+      dy: Math.max(-1.5, Math.min(1.5, dy || 0)),
+    };
+    app.emit('dynamic');
+    scheduleSave();
+  };
+
+  // agent-card box scale -- a 0.4..2.5 multiplier on a box's w/h (and its
+  // type), set by Franky dragging the box's corner grip.
+  app.mutateBoxSize = function (key, mult) {
+    if (!app.project.boxSizes) app.project.boxSizes = {};
+    app.project.boxSizes[key] = Math.max(0.4, Math.min(2.5, mult || 1));
+    app.emit('dynamic');
+    scheduleSave();
+  };
+
+  // double-click a box -> back to its template position + size
+  app.resetBox = function (key) {
+    if (app.project.boxOffsets) delete app.project.boxOffsets[key];
+    if (app.project.boxSizes) delete app.project.boxSizes[key];
+    app.emit('dynamic');
+    scheduleSave();
+  };
+
+  // Resolve once the project row exists (lazy creation). Photo uploads and
+  // image fields need a real projectId before they can POST.
+  app.ensureCreated = function () {
+    if (app.projectId) return Promise.resolve(app.projectId);
+    if (!app._createPromise) {
+      app._createPromise = new Promise(function (resolve, reject) {
+        (function attempt() {
+          if (app.projectId) { app._createPromise = null; return resolve(app.projectId); }
+          if (app._saving) { setTimeout(attempt, 120); return; }  // a save is already in flight
+          app.save().then(function () {
+            app._createPromise = null;
+            if (app.projectId) resolve(app.projectId);
+            else reject(new Error('could not create the project'));
+          }, function (e) { app._createPromise = null; reject(e); });
+        })();
+      });
+    }
+    return app._createPromise;
   };
 
   app.assignPhotoToSlot = function (ref, photoId) {
@@ -114,14 +183,35 @@
   var scheduleSave = util.debounce(function () { app.save(); }, 800);
   app._markDirty = function () { app._dirty = true; app.emit('save-state'); };
   var origSchedule = scheduleSave;
-  scheduleSave = function () { app._markDirty(); origSchedule(); };
+  scheduleSave = function () {
+    app._markDirty();
+    // Materialise the row on the very first change so photo uploads (which
+    // need a projectId) and the shareable ?p= URL are available right away.
+    if (!app.projectId && !app._saving) { app.save(); return; }
+    origSchedule();
+  };
 
   app.save = function () {
     if (!app.project || app._saving) return Promise.resolve();
     app._saving = true; app.emit('save-state');
-    // Pass the whole in-memory project; each store impl persists what it needs
-    // (local server merges a patch; Supabase writes the full data blob).
-    return store.updateProject(app.projectId, app.project).then(function (updated) {
+    // Lazy creation: a bare-URL visit holds an in-memory blank project with
+    // no id. The row is only written on the first real save (= first edit),
+    // so "just looking" never leaves an orphan.
+    var work;
+    if (!app.projectId) {
+      work = store.createProject(app.project).then(function (created) {
+        app.projectId = created.projectId;
+        app.project.projectId = created.projectId;
+        app.project.createdAt = created.createdAt;
+        setUrlProject(created.projectId);
+        return created;
+      });
+    } else {
+      // Pass the whole in-memory project; each store impl persists what it
+      // needs (local server merges a patch; Supabase writes the full blob).
+      work = store.updateProject(app.projectId, app.project);
+    }
+    return work.then(function (updated) {
       app.project.updatedAt = updated.updatedAt;
       app._saving = false; app._dirty = false; app.emit('save-state');
     }).catch(function (err) {
@@ -130,14 +220,23 @@
     });
   };
 
+  function updateTitle() {
+    var a = app.project && app.project.propertyInfo && app.project.propertyInfo.address;
+    document.title = (a ? a + ' — ' : '') + 'FranVision Feature Sheet Builder';
+  }
+
   // ---- confirm ------------------------------------------------
   // Confirm = the agent's final sign-off: lock the design, then submit it
   // for printing (emails the finished sheet to the studio, when the submit
   // module is wired up).
   app.confirmDesign = function () {
+    var msg = app.adminToken
+      ? ['Submit this design for printing?\nOnce submitted it is locked. You can re-open it to make changes and submit again.',
+         '确认将当前版本提交打印？\n提交后会锁定；管理员可重新打开修改后再次提交。']
+      : ['Submit this design for printing?\nOnce submitted it is locked and sent to print. To make further changes, please contact Franky.',
+         '确认提交打印？\n提交后将锁定并送印；之后如需修改，请联系 Franky。'];
     util.confirmDialog(
-      'Submit this design for printing?\n\nOnce submitted it is locked. You can still re-open it to make changes and submit again.\n\n' +
-      '确认将当前版本提交打印？\n\n提交后会锁定。之后仍可重新打开修改并再次提交。',
+      msg,
       { okText: 'Confirm & Submit  确认提交', cancelText: 'Not yet  暂不' }
     ).then(function (ok) {
       if (!ok) return;
@@ -161,8 +260,10 @@
 
   app.unconfirm = function () {
     util.confirmDialog(
-      'Re-open for editing? You will need to Confirm & Submit again to send the updated version.\n\n' +
-      '重新打开编辑？修改后需要再次「确认提交」才会发送新版本。',
+      [
+        'Re-open for editing? You will need to Confirm & Submit again to send the updated version.',
+        '重新打开编辑？修改后需要再次「确认提交」才会发送新版本。',
+      ],
       { okText: 'Re-open  重新打开', cancelText: 'Cancel  取消' }
     ).then(function (ok) {
       if (!ok) return;
@@ -197,15 +298,29 @@
         el('span', { class: 'fsb-confirmed', id: 'fsb-confirmed-badge' }),
       ]),
       el('div', { class: 'fsb-topbar-actions' }, [
+        // "All sheets" only in Franky's admin context; agents get no list.
+        app.adminToken
+          ? el('a', { class: 'fsb-btn fsb-btn--ghost', id: 'fsb-btn-allsheets',
+              href: window.location.pathname + '?admin=' + encodeURIComponent(app.adminToken) +
+                (/[?&]local=1\b/.test(window.location.search) ? '&local=1' : ''),
+              text: '← All sheets 全部' })
+          : null,
         el('button', { class: 'fsb-btn fsb-btn--ghost', id: 'fsb-toggle-form', text: 'Info' }),
         el('button', { class: 'fsb-btn', id: 'fsb-btn-preview', text: 'Preview 预览' }),
+        // print-ready PDF export -- admin only
+        app.adminToken
+          ? el('button', { class: 'fsb-btn', id: 'fsb-btn-export', text: 'Export PDF 导出' })
+          : null,
         el('button', { class: 'fsb-btn fsb-btn--save', id: 'fsb-btn-save', text: 'Save 保存' }),
         el('button', { class: 'fsb-btn fsb-btn--primary', id: 'fsb-btn-confirm', text: 'Confirm & Submit 确认提交' }),
       ]),
     ]);
 
+    // The photo library (upload + thumbnails) is admin-only. Agents get
+    // a link after Franky/Admin has uploaded the photos; they only pick
+    // photos into slots via the per-slot picker.
     var body = el('div', { class: 'fsb-body' }, [
-      el('aside', { class: 'fsb-panel fsb-panel--library', id: 'fsb-library' }),
+      app.adminToken ? el('aside', { class: 'fsb-panel fsb-panel--library', id: 'fsb-library' }) : null,
       el('main', { class: 'fsb-center' }, [
         el('nav', { class: 'fsb-pagenav', id: 'fsb-pagenav' }),
         el('div', { class: 'fsb-stage-wrap' }, [el('div', { class: 'fsb-stage', id: 'fsb-stage' })]),
@@ -224,6 +339,12 @@
     rootApp.appendChild(toasts);
 
     document.getElementById('fsb-btn-preview').addEventListener('click', function () { window.FSB.preview.open(app); });
+    var exportBtn = document.getElementById('fsb-btn-export');
+    if (exportBtn) exportBtn.addEventListener('click', function () {
+      this.disabled = true;
+      var b = this;
+      window.FSB.exportPdf.run(app).catch(function () {}).then(function () { b.disabled = false; });
+    });
     document.getElementById('fsb-btn-save').addEventListener('click', function () { app.save().then(function () { util.toast('Saved 已保存'); }); });
     document.getElementById('fsb-btn-confirm').addEventListener('click', function () {
       if (app.isReadOnly()) app.unconfirm(); else app.confirmDesign();
@@ -231,12 +352,13 @@
     document.getElementById('fsb-toggle-form').addEventListener('click', function () {
       document.getElementById('fsb-app').classList.toggle('fsb-form-open');
     });
+
   }
 
   function buildPageNav() {
     var nav = document.getElementById('fsb-pagenav');
     nav.innerHTML = '';
-    for (var p = 1; p <= T.page.count; p++) {
+    for (var p = 1; p <= PAGE_COUNT; p++) {
       (function (pageNum) {
         nav.appendChild(el('button', {
           class: 'fsb-pagenav-btn', text: 'Page ' + pageNum,
@@ -264,7 +386,7 @@
   function computeScale() {
     var stage = document.getElementById('fsb-stage');
     var w = (stage.clientWidth || 700) - 8;
-    var fit = Math.max(0.3, Math.min(w / T.page.widthPt, 1.0));
+    var fit = Math.max(0.3, Math.min(w / PAGE_WIDTH_PT, 1.0));
     app._scale = app._userZoom ? app._userZoom : fit;
     var lbl = document.getElementById('fsb-zoom-label');
     if (lbl) lbl.textContent = app._userZoom ? (Math.round(app._userZoom * 100) + '%') : 'Fit';
@@ -275,17 +397,35 @@
     var stage = document.getElementById('fsb-stage');
     stage.innerHTML = '';
     app._pageEls = {};
-    for (var p = 1; p <= T.page.count; p++) {
+    for (var p = 1; p <= PAGE_COUNT; p++) {
       var wrap = el('div', { class: 'fsb-stage-page', id: 'fsb-stage-page-' + p });
       wrap.appendChild(el('div', { class: 'fsb-stage-page-label', text: 'Page ' + p }));
       var pageEl = render.renderPage(p, app.project, {
-        scale: app._scale, interactive: true, placeholders: true,
+        scale: app._scale, interactive: !app.isReadOnly(), placeholders: true,
+        // a submitted sheet is locked: no agent-box drag / resize, even for admin
+        admin: !!app.adminToken && !app.isReadOnly(),
       });
       app._pageEls[p] = pageEl;
       wrap.appendChild(pageEl);
       stage.appendChild(wrap);
     }
+    // Size the auto-fit blocks now, then again once fonts are ready and the
+    // layout has settled -- on a cold load the first pass measures before
+    // the webfont metrics land and the description ends up too small.
+    refitAll();
     stage.classList.toggle('fsb-stage--locked', app.isReadOnly());
+  }
+
+  function refitAll() {
+    if (!render.fitTexts) return;
+    var run = function () {
+      [1, 2].forEach(function (p) { if (app._pageEls[p]) render.fitTexts(app._pageEls[p]); });
+    };
+    run();
+    requestAnimationFrame(run);
+    var ready = (document.fonts && document.fonts.ready) ? document.fonts.ready : Promise.resolve();
+    ready.then(function () { requestAnimationFrame(run); });
+    setTimeout(run, 400);   // last resort once images / late layout settle
   }
 
   function reflectSaveState() {
@@ -303,12 +443,15 @@
     if (app.project && app.project.confirmed) {
       badge.textContent = 'SUBMITTED 已提交 · ' + util.formatDateTime(app.project.confirmedAt);
       badge.classList.add('show');
+      // re-opening a submitted sheet is an admin-only action
       btn.textContent = 'Re-open 重新打开';
       btn.classList.remove('fsb-btn--primary');
+      btn.hidden = !app.adminToken;
     } else {
       badge.classList.remove('show');
       btn.textContent = 'Confirm & Submit 确认提交';
       btn.classList.add('fsb-btn--primary');
+      btn.hidden = false;
     }
     document.getElementById('fsb-app').classList.toggle('is-confirmed', !!(app.project && app.project.confirmed));
   }
@@ -318,10 +461,12 @@
     app.on('save-state', reflectSaveState);
     app.on('dynamic', function () {
       [1, 2].forEach(function (p) { if (app._pageEls[p]) render.updateDynamic(app._pageEls[p], app.project); });
+      updateTitle();
     });
     app.on('project', function () {
       renderStage();
       [1, 2].forEach(function (p) { if (app._pageEls[p]) render.updateDynamic(app._pageEls[p], app.project); });
+      updateTitle();
     });
 
     var onResize = util.debounce(function () {
@@ -356,6 +501,16 @@
   }
 
   function start() {
+    var params = new URL(window.location.href).searchParams;
+    var pid = params.get('p');
+    app.adminToken = params.get('admin') || '';
+
+    // Franky's admin view: ?admin=<token> with no ?p= -> the central list.
+    if (app.adminToken && !pid) {
+      window.FSB.admin.mount(document.getElementById('fsb-app'), app.adminToken);
+      return;
+    }
+
     buildChrome();
     buildPageNav();
     wireEvents();
@@ -363,15 +518,16 @@
     var stage = document.getElementById('fsb-stage');
     window.FSB.editor.attach(stage, app);
 
-    var params = new URL(window.location.href).searchParams;
-    var pid = params.get('p');
-
     var load = pid
       ? store.getProject(pid).catch(function (err) {
           if (/not found/i.test(err.message)) { showFatal('That project link could not be found.', true); throw err; }
           throw err;
         })
-      : store.createProject().then(function (project) { setUrlProject(project.projectId); return project; });
+      // Lazy: no id -> in-memory blank project, no row written yet. The
+      // first edit triggers save() which creates the row + sets ?p=.
+      : Promise.resolve(Object.assign(
+          window.FSB_V2.blankProject('navy'),
+          { projectId: null, createdAt: null, updatedAt: null }));
 
     load.then(function (project) {
       app.setProject(project);
@@ -380,7 +536,8 @@
       var ps = window.FSB.photoSource;
       return Promise.resolve(ps.ready ? ps.ready(project) : null).then(function () { return project; });
     }).then(function (project) {
-      window.FSB.library.mount(document.getElementById('fsb-library'), app);
+      var libEl = document.getElementById('fsb-library');
+      if (libEl) window.FSB.library.mount(libEl, app);
       window.FSB.infoForm.mount(document.getElementById('fsb-form'), app);
       renderStage();
       reflectSaveState();
