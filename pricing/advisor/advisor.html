@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>FranVision Pricing Advisor</title>
+<style>
+  :root {
+    --bg: #f7f5f0;
+    --panel: #ffffff;
+    --ink: #1a1a1a;
+    --muted: #6b6b6b;
+    --border: #e2ddd2;
+    --accent: #b6892f;
+    --accent-dark: #1a1a1a;
+    --ok-bg: #eef7ee;
+    --ok-border: #b9dcb9;
+    --warn-bg: #fff8e6;
+    --warn-border: #e8cf8a;
+    --error-bg: #fdecec;
+    --error-border: #f0b7b7;
+    --hidden-bg: #f1e9f9;
+    --hidden-border: #d8c3ee;
+    --suggest-bg: #eef4fb;
+    --suggest-border: #bcd6f0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+  }
+  header {
+    padding: 20px 28px;
+    border-bottom: 1px solid var(--border);
+    background: var(--accent-dark);
+    color: #fff;
+  }
+  header h1 { margin: 0; font-size: 18px; letter-spacing: 0.02em; }
+  header p { margin: 4px 0 0; font-size: 12.5px; color: #cfcfcf; }
+  .layout { max-width: 1000px; margin: 0 auto; padding: 24px; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin-bottom: 18px;
+  }
+  h2 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin: 0 0 12px;
+  }
+  h3 { font-size: 13.5px; margin: 18px 0 8px; }
+  h3:first-child { margin-top: 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin-bottom: 6px; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); padding: 4px 6px; border-bottom: 1px solid var(--border); }
+  th.amt, td.amt { text-align: right; }
+  td { padding: 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  td.amt { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.dash { color: var(--muted); }
+  .badge {
+    display: inline-block;
+    font-size: 10.5px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    margin-left: 6px;
+    background: var(--hidden-bg);
+    border: 1px solid var(--hidden-border);
+    color: #6a3f96;
+  }
+  label { font-size: 13.5px; }
+  .field { margin-bottom: 12px; }
+  .field-label { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 4px; }
+  .field-hint { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+  input[type="text"], input[type="number"], select {
+    width: 100%;
+    padding: 7px 9px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13.5px;
+    font-family: inherit;
+  }
+  .radio-row, .check-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: 13.5px; }
+  .check-group { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+  input[type="radio"], input[type="checkbox"] { accent-color: var(--accent); }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  button {
+    font-family: inherit;
+    font-size: 13.5px;
+    padding: 8px 16px;
+    border-radius: 7px;
+    border: 1px solid var(--accent-dark);
+    background: var(--accent-dark);
+    color: #fff;
+    cursor: pointer;
+  }
+  button.secondary { background: #fff; color: var(--accent-dark); }
+  button.small { padding: 5px 10px; font-size: 12.5px; }
+  button.link { background: none; border: none; color: var(--accent); padding: 2px 6px; font-size: 12.5px; text-decoration: underline; cursor: pointer; }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  .queue-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    margin-bottom: 6px;
+    font-size: 13.5px;
+  }
+  .queue-item .tag { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-right: 6px; }
+  .empty-hint { color: var(--muted); font-size: 13px; }
+  .result-box { border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-top: 10px; }
+  .result-box.ok { background: var(--ok-bg); border: 1px solid var(--ok-border); }
+  .result-box ul { margin: 6px 0 0; padding-left: 18px; }
+  .result-box.error { background: var(--error-bg); border: 1px solid var(--error-border); }
+  .result-box.warn { background: var(--warn-bg); border: 1px solid var(--warn-border); }
+  .result-box.suggest { background: var(--suggest-bg); border: 1px solid var(--suggest-border); }
+  .result-box + .result-box { margin-top: 8px; }
+  .combos-note { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  textarea {
+    width: 100%;
+    min-height: 140px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .form-actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+  .type-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .type-tabs button { background: #fff; color: var(--ink); border: 1px solid var(--border); }
+  .type-tabs button.active { background: var(--accent-dark); color: #fff; border-color: var(--accent-dark); }
+  .new-item-box {
+    border: 1px dashed var(--border);
+    border-radius: 7px;
+    padding: 10px 12px;
+    margin-top: 8px;
+    font-size: 13px;
+  }
+  .inline-row { display: flex; gap: 8px; align-items: center; }
+  .inline-row input[type="text"] { flex: 1; }
+  .new-item-pending {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--suggest-bg);
+    border: 1px solid var(--suggest-border);
+    border-radius: 999px;
+    padding: 3px 10px 3px 12px;
+    font-size: 12.5px;
+    margin: 4px 6px 0 0;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>FranVision Pricing Advisor</h1>
+  <p>把新价格/新 add-on 假设性地加进价目表，落地前先测一遍逻辑，不碰真正的 pricing-config.js。</p>
+</header>
+
+<div class="layout">
+
+  <div class="panel">
+    <h2>现有价目表</h2>
+    <h3>Luxury Photography</h3>
+    <table>
+      <thead><tr><th>名称</th><th>包含</th><th class="amt">Condo</th><th class="amt">House</th></tr></thead>
+      <tbody id="table-luxury"></tbody>
+    </table>
+    <h3>Standard Photography</h3>
+    <table>
+      <thead><tr><th>名称</th><th>包含</th><th class="amt">Condo</th><th class="amt">House</th></tr></thead>
+      <tbody id="table-standard"></tbody>
+    </table>
+    <h3>Add-on Options</h3>
+    <table>
+      <thead><tr><th>名称</th><th>包含</th><th class="amt">Condo</th><th class="amt">House</th></tr></thead>
+      <tbody id="table-addons"></tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h2>待处理改动</h2>
+    <div id="queue-list"><p class="empty-hint">还没有待处理的改动。</p></div>
+    <div class="form-actions">
+      <button id="btn-show-form" type="button">+ 新增一个 add-on</button>
+    </div>
+  </div>
+
+  <div class="panel" id="form-panel" style="display:none;">
+    <h2>添加 / 编辑改动</h2>
+    <div class="type-tabs">
+      <button type="button" data-type="standalone">单个（能自己拆开单卖）</button>
+      <button type="button" data-type="combo">组合（几个东西绑一起卖）</button>
+      <button type="button" data-type="editPrice">修改现有价格</button>
+    </div>
+
+    <div id="form-standalone" style="display:none;">
+      <div class="field">
+        <label class="field-label">名称</label>
+        <input type="text" id="sa-name" placeholder="比如 Aerial Clip" />
+      </div>
+      <div class="field">
+        <label class="field-label">ID（自动生成，需要的话可以改）</label>
+        <input type="text" id="sa-id" />
+      </div>
+      <div class="field">
+        <label class="field-label">定价方式</label>
+        <select id="sa-pricing-type">
+          <option value="flat">一口价</option>
+          <option value="byPropertyType">按 condo / house 分开</option>
+          <option value="perUnit">按数量计价</option>
+        </select>
+        <div id="sa-pricing-flat" class="two-col" style="margin-top:8px;">
+          <div><label class="field-label">价格 ($)</label><input type="number" step="0.01" id="sa-flat-amount"></div>
+        </div>
+        <div id="sa-pricing-byproperty" class="two-col" style="margin-top:8px; display:none;">
+          <div><label class="field-label">Condo 价格 ($)</label><input type="number" step="0.01" id="sa-condo-amount"></div>
+          <div><label class="field-label">House 价格 ($)</label><input type="number" step="0.01" id="sa-house-amount"></div>
+        </div>
+        <div id="sa-pricing-perunit" class="two-col" style="margin-top:8px; display:none;">
+          <div><label class="field-label">单价 ($ / 件)</label><input type="number" step="0.01" id="sa-unit-amount"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="form-combo" style="display:none;">
+      <div class="field">
+        <label class="field-label">名称</label>
+        <input type="text" id="cb-name" placeholder="比如 Home Report + Floor Plan" />
+      </div>
+      <div class="field">
+        <label class="field-label">ID（自动生成，需要的话可以改）</label>
+        <input type="text" id="cb-id" />
+      </div>
+      <div class="field">
+        <label class="field-label">包含哪些东西（可以包含一个拍照档位）</label>
+        <div class="check-group" id="cb-items-list"></div>
+        <div class="new-item-box">
+          <div class="inline-row">
+            <input type="text" id="cb-new-name" placeholder="这里没有？直接打一个新名字" />
+            <button type="button" class="small secondary" id="cb-new-add">添加</button>
+          </div>
+          <div id="cb-new-confirm" style="display:none; margin-top:10px;">
+            <p style="margin:0 0 6px;">"<span id="cb-new-confirm-name"></span>" 是新的，需要单独定价吗？</p>
+            <div class="radio-row"><input type="radio" name="cb-new-standalone" id="cb-new-standalone-no" value="no" checked><label for="cb-new-standalone-no">不需要，只在这个组合里出现</label></div>
+            <div class="radio-row"><input type="radio" name="cb-new-standalone" id="cb-new-standalone-yes" value="yes"><label for="cb-new-standalone-yes">需要，单独价格是</label></div>
+            <div id="cb-new-price-row" style="display:none; margin:6px 0 0 22px; max-width:200px;">
+              <input type="number" step="0.01" id="cb-new-price" placeholder="$">
+            </div>
+            <div class="form-actions">
+              <button type="button" class="small" id="cb-new-confirm-btn">确认加入</button>
+              <button type="button" class="small secondary" id="cb-new-cancel-btn">取消</button>
+            </div>
+          </div>
+          <div id="cb-new-items-pending"></div>
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label">价格 ($)</label>
+        <input type="number" step="0.01" id="cb-price">
+      </div>
+      <div class="field">
+        <label class="field-label">适用房型</label>
+        <div class="radio-row"><input type="radio" name="cb-pt" id="cb-pt-both" value="both" checked><label for="cb-pt-both">不限</label></div>
+        <div class="radio-row"><input type="radio" name="cb-pt" id="cb-pt-condo" value="condo"><label for="cb-pt-condo">仅 condo</label></div>
+        <div class="radio-row"><input type="radio" name="cb-pt" id="cb-pt-house" value="house"><label for="cb-pt-house">仅 house</label></div>
+      </div>
+    </div>
+
+    <div id="form-editPrice" style="display:none;">
+      <div class="field">
+        <label class="field-label">选择要改价的东西</label>
+        <select id="ep-target"></select>
+      </div>
+      <div id="ep-fields"></div>
+    </div>
+
+    <div class="form-actions">
+      <button type="button" id="btn-test-item">测试这一条</button>
+      <button type="button" id="btn-add-item" disabled>加入待处理清单</button>
+      <button type="button" class="secondary" id="btn-cancel-form">取消</button>
+    </div>
+    <div id="item-test-result"></div>
+  </div>
+
+  <div class="panel">
+    <h2>最终检查</h2>
+    <button type="button" id="btn-full-check">重新跑一次综合测试</button>
+    <div id="full-check-result"></div>
+  </div>
+
+  <div class="panel" id="apply-panel" style="display:none;">
+    <h2>落地</h2>
+    <p class="field-hint">下载的文件保留所有数据，但不保留原文件里 <code>// $66</code> 这类行内金额注释，需要的话手动补回去。</p>
+    <button type="button" id="btn-download">生成新版 pricing-config.js 并下载</button>
+    <div class="field" style="margin-top:14px;">
+      <label class="field-label">Commit message（自动生成，可以改）</label>
+      <textarea id="commit-message"></textarea>
+    </div>
+    <p class="field-hint">
+      下载后：把文件替换到 <code>pricing/pricing-config.js</code>，然后跑 <code>node pricing/engine.test.js</code>，
+      把因为价格变了而失败的旧用例贴给我更新。
+    </p>
+  </div>
+
+</div>
+
+<script src="../pricing-config.js"></script>
+<script src="../engine.js"></script>
+<script src="validator.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  const el = (id) => document.getElementById(id);
+  // Not on the original "Service and Pricing.png" price sheet -- confirmed by re-reading
+  // the image and cross-checking against the config. Kept because they're actually charged.
+  const HIDDEN_SERVICES = new Set(['floor_plan', 'drone_photos', 'vlog_video']);
+  const HIDDEN_PACKAGES = new Set(['standard_walkthrough']);
+
+  let pending = [];
+  let currentType = 'standalone';
+  let editingIndex = null;
+  let idManuallyEdited = { standalone: false, combo: false };
+  let lastCandidate = null;
+  let pendingNewItems = []; // new services introduced inline while building the current combo, not yet in `pending`
+
+  function money(cents) { return PricingAdvisor.money(cents); }
+
+  function draftSoFar() {
+    return PricingAdvisor.applyChanges(PRICING_CONFIG, pending);
+  }
+
+  // ---- render existing price list, grouped like the original price sheet ----
+
+  function priceCells(pricing) {
+    if (!pricing) return ['<td class="amt dash">—</td>', '<td class="amt dash">—</td>'];
+    if (pricing.type === 'byPropertyType') {
+      return ['<td class="amt">' + money(pricing.condo) + '</td>', '<td class="amt">' + money(pricing.house) + '</td>'];
+    }
+    if (pricing.type === 'flat') {
+      return ['<td class="amt">' + money(pricing.amountCents) + '</td>', '<td class="amt">' + money(pricing.amountCents) + '</td>'];
+    }
+    if (pricing.type === 'perUnit') {
+      return ['<td class="amt" colspan="2">' + money(pricing.unitAmountCents) + ' / 件</td>'];
+    }
+    return ['<td class="amt dash">—</td>', '<td class="amt dash">—</td>'];
+  }
+
+  function packagePriceCells(pkg) {
+    const pt = pkg.eligiblePropertyTypes;
+    if (!pt || pt.length === 0) {
+      return ['<td class="amt">' + money(pkg.priceCents) + '</td>', '<td class="amt">' + money(pkg.priceCents) + '</td>'];
+    }
+    const condo = pt.includes('condo') ? '<td class="amt">' + money(pkg.priceCents) + '</td>' : '<td class="amt dash">—</td>';
+    const house = pt.includes('house') ? '<td class="amt">' + money(pkg.priceCents) + '</td>' : '<td class="amt dash">—</td>';
+    return [condo, house];
+  }
+
+  function includesLabel(pkg, config) {
+    return pkg.includes.map((id) => (config.services[id] || { displayName: id }).displayName).join(', ');
+  }
+
+  function renderPriceList() {
+    const config = PRICING_CONFIG;
+    const luxuryBody = el('table-luxury');
+    const standardBody = el('table-standard');
+    const addonBody = el('table-addons');
+    luxuryBody.innerHTML = '';
+    standardBody.innerHTML = '';
+    addonBody.innerHTML = '';
+
+    function row(name, includes, priceCellsArr, hiddenLabel) {
+      const tr = document.createElement('tr');
+      const badge = hiddenLabel ? '<span class="badge">' + hiddenLabel + '</span>' : '';
+      tr.innerHTML = '<td>' + name + badge + '</td><td>' + includes + '</td>' + priceCellsArr.join('');
+      return tr;
+    }
+
+    // Base photography rows
+    luxuryBody.appendChild(row('Luxury Photography', '—', priceCells(config.services.luxury_photo.pricing)));
+    standardBody.appendChild(row('Standard Photography', '—', priceCells(config.services.standard_photo.pricing)));
+
+    // Packages, grouped by whether they include a photography id
+    config.packages.forEach((pkg) => {
+      const hidden = HIDDEN_PACKAGES.has(pkg.id) ? '隐藏套餐' : null;
+      const tr = row(pkg.displayName, includesLabel(pkg, config), packagePriceCells(pkg), hidden);
+      if (pkg.includes.includes('luxury_photo')) luxuryBody.appendChild(tr);
+      else if (pkg.includes.includes('standard_photo')) standardBody.appendChild(tr);
+      else addonBody.appendChild(tr);
+    });
+
+    // Standalone-sellable add-ons (never appear as a lone row otherwise -- bundle-only
+    // services like Site Plan / Walkthrough Video only show up inside package rows above).
+    Object.keys(config.services).forEach((id) => {
+      const svc = config.services[id];
+      if (id === 'standard_photo' || id === 'luxury_photo') return;
+      if (!svc.standaloneAllowed) return;
+      const hidden = HIDDEN_SERVICES.has(id) ? '隐藏服务' : null;
+      addonBody.appendChild(row(svc.displayName, '—', priceCells(svc.pricing), hidden));
+    });
+  }
+
+  // ---- pending queue --------------------------------------------------------
+
+  function describeChange(ch) {
+    if (ch.type === 'newService') return { tag: '新增服务', text: ch.service.displayName + (ch.service.standaloneAllowed ? '（可单卖）' : '（仅组合内）') };
+    if (ch.type === 'newPackage') return { tag: '新增组合', text: ch.package.displayName + ' ' + money(ch.package.priceCents) };
+    if (ch.type === 'editServicePrice') return { tag: '改价', text: ch.id + ' -> ' + describePricing(ch.pricing) };
+    if (ch.type === 'editPackagePrice') return { tag: '改价', text: ch.id + ' -> ' + money(ch.priceCents) };
+    if (ch.type === 'setRequires') return { tag: '自动搭配', text: ch.id + ' 自动带上 ' + ch.requires.join(', ') };
+    return { tag: '', text: '' };
+  }
+
+  function describePricing(pricing) {
+    if (pricing.type === 'flat') return money(pricing.amountCents);
+    if (pricing.type === 'byPropertyType') return 'Condo ' + money(pricing.condo) + ' / House ' + money(pricing.house);
+    if (pricing.type === 'perUnit') return money(pricing.unitAmountCents) + ' / 件';
+    return '';
+  }
+
+  function renderQueue() {
+    const container = el('queue-list');
+    if (pending.length === 0) {
+      container.innerHTML = '<p class="empty-hint">还没有待处理的改动。</p>';
+      el('apply-panel').style.display = 'none';
+      return;
+    }
+    container.innerHTML = '';
+    pending.forEach((ch, idx) => {
+      const d = describeChange(ch);
+      const row = document.createElement('div');
+      row.className = 'queue-item';
+      row.innerHTML =
+        '<span><span class="tag">' + d.tag + '</span>' + d.text + '</span>' +
+        '<span><button type="button" class="link" data-edit="' + idx + '">编辑</button>' +
+        '<button type="button" class="link" data-remove="' + idx + '">删除</button></span>';
+      container.appendChild(row);
+    });
+    container.querySelectorAll('[data-remove]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        pending.splice(Number(btn.dataset.remove), 1);
+        renderQueue();
+        renderFullCheck(null);
+      });
+    });
+    container.querySelectorAll('[data-edit]').forEach((btn) => {
+      btn.addEventListener('click', () => startEdit(Number(btn.dataset.edit)));
+    });
+  }
+
+  // ---- form: type switching ------------------------------------------------
+
+  function showForm(type) {
+    currentType = type;
+    el('form-panel').style.display = 'block';
+    ['standalone', 'combo', 'editPrice'].forEach((t) => {
+      el('form-' + t).style.display = t === type ? 'block' : 'none';
+    });
+    document.querySelectorAll('.type-tabs button').forEach((b) => b.classList.toggle('active', b.dataset.type === type));
+    el('item-test-result').innerHTML = '';
+    el('btn-add-item').disabled = true;
+    lastCandidate = null;
+    if (type === 'combo') renderComboItemsList();
+    if (type === 'editPrice') renderEditTargetOptions();
+  }
+
+  el('btn-show-form').addEventListener('click', () => {
+    editingIndex = null;
+    resetForm();
+    showForm('standalone');
+  });
+  el('btn-cancel-form').addEventListener('click', () => {
+    el('form-panel').style.display = 'none';
+    editingIndex = null;
+  });
+  document.querySelectorAll('.type-tabs button').forEach((b) => {
+    b.addEventListener('click', () => showForm(b.dataset.type));
+  });
+
+  function resetForm() {
+    el('sa-name').value = '';
+    el('sa-id').value = '';
+    el('sa-pricing-type').value = 'flat';
+    el('sa-flat-amount').value = '';
+    el('sa-condo-amount').value = '';
+    el('sa-house-amount').value = '';
+    el('sa-unit-amount').value = '';
+    idManuallyEdited.standalone = false;
+    syncPricingSubfields();
+
+    el('cb-name').value = '';
+    el('cb-id').value = '';
+    el('cb-price').value = '';
+    el('cb-pt-both').checked = true;
+    idManuallyEdited.combo = false;
+    pendingNewItems = [];
+    el('cb-new-items-pending').innerHTML = '';
+    el('cb-new-confirm').style.display = 'none';
+    el('cb-new-name').value = '';
+  }
+
+  // ---- standalone form -------------------------------------------------------
+
+  el('sa-name').addEventListener('input', () => {
+    if (idManuallyEdited.standalone) return;
+    el('sa-id').value = PricingAdvisor.uniqueId(PricingAdvisor.slugify(el('sa-name').value), draftSoFar());
+  });
+  el('sa-id').addEventListener('input', () => { idManuallyEdited.standalone = true; });
+
+  el('sa-pricing-type').addEventListener('change', syncPricingSubfields);
+  function syncPricingSubfields() {
+    const type = el('sa-pricing-type').value;
+    el('sa-pricing-flat').style.display = type === 'flat' ? 'grid' : 'none';
+    el('sa-pricing-byproperty').style.display = type === 'byPropertyType' ? 'grid' : 'none';
+    el('sa-pricing-perunit').style.display = type === 'perUnit' ? 'grid' : 'none';
+  }
+
+  function readStandaloneForm() {
+    const name = el('sa-name').value.trim();
+    const id = el('sa-id').value.trim() || PricingAdvisor.slugify(name);
+    const type = el('sa-pricing-type').value;
+    const svc = { id, displayName: name, category: 'addon', standaloneAllowed: true };
+    if (type === 'flat') {
+      svc.pricing = { type: 'flat', amountCents: Math.round(parseFloat(el('sa-flat-amount').value) * 100) };
+    } else if (type === 'byPropertyType') {
+      svc.pricing = { type: 'byPropertyType', condo: Math.round(parseFloat(el('sa-condo-amount').value) * 100), house: Math.round(parseFloat(el('sa-house-amount').value) * 100) };
+    } else if (type === 'perUnit') {
+      svc.requiresQuantity = true;
+      svc.pricing = { type: 'perUnit', unitAmountCents: Math.round(parseFloat(el('sa-unit-amount').value) * 100) };
+    }
+    return { type: 'newService', service: svc };
+  }
+
+  // ---- combo form -------------------------------------------------------------
+
+  el('cb-name').addEventListener('input', () => {
+    if (idManuallyEdited.combo) return;
+    el('cb-id').value = PricingAdvisor.uniqueId(PricingAdvisor.slugify(el('cb-name').value), draftSoFar());
+  });
+  el('cb-id').addEventListener('input', () => { idManuallyEdited.combo = true; });
+
+  function renderComboItemsList() {
+    const draft = draftSoFar();
+    const box = el('cb-items-list');
+    box.innerHTML = '';
+    ['standard_photo', 'luxury_photo'].forEach((id) => {
+      const svc = draft.services[id];
+      const row = document.createElement('div');
+      row.className = 'check-row';
+      row.innerHTML = '<input type="checkbox" id="item-' + id + '" value="' + id + '"><label for="item-' + id + '">' + svc.displayName + '</label>';
+      box.appendChild(row);
+    });
+    Object.keys(draft.services).forEach((id) => {
+      if (id === 'standard_photo' || id === 'luxury_photo') return;
+      const svc = draft.services[id];
+      const row = document.createElement('div');
+      row.className = 'check-row';
+      row.innerHTML = '<input type="checkbox" id="item-' + id + '" value="' + id + '"><label for="item-' + id + '">' + svc.displayName + '</label>';
+      box.appendChild(row);
+    });
+  }
+
+  function findExistingServiceByName(name) {
+    const draft = draftSoFar();
+    const lower = name.trim().toLowerCase();
+    return Object.keys(draft.services).find((id) => draft.services[id].displayName.trim().toLowerCase() === lower);
+  }
+
+  el('cb-new-add').addEventListener('click', () => {
+    const name = el('cb-new-name').value.trim();
+    if (!name) return;
+    const existingId = findExistingServiceByName(name);
+    if (existingId) {
+      const cb = el('item-' + existingId);
+      if (cb) cb.checked = true;
+      el('cb-new-name').value = '';
+      return;
+    }
+    el('cb-new-confirm-name').textContent = name;
+    el('cb-new-confirm').style.display = 'block';
+    el('cb-new-standalone-no').checked = true;
+    el('cb-new-price-row').style.display = 'none';
+    el('cb-new-price').value = '';
+  });
+
+  document.querySelectorAll('input[name="cb-new-standalone"]').forEach((r) => {
+    r.addEventListener('change', () => {
+      el('cb-new-price-row').style.display = el('cb-new-standalone-yes').checked ? 'block' : 'none';
+    });
+  });
+
+  el('cb-new-cancel-btn').addEventListener('click', () => {
+    el('cb-new-confirm').style.display = 'none';
+    el('cb-new-name').value = '';
+  });
+
+  el('cb-new-confirm-btn').addEventListener('click', () => {
+    const name = el('cb-new-name').value.trim();
+    const id = PricingAdvisor.uniqueId(PricingAdvisor.slugify(name), draftSoFar());
+    const standalone = el('cb-new-standalone-yes').checked;
+    const svc = { id, displayName: name, category: 'addon', standaloneAllowed: standalone };
+    if (standalone) {
+      svc.pricing = { type: 'flat', amountCents: Math.round(parseFloat(el('cb-new-price').value) * 100) };
+    }
+    pendingNewItems.push(svc);
+
+    // Add it to the checkbox list immediately (via a throwaway draft that includes it) and check it.
+    renderComboItemsListWithPendingNew();
+    const cb = el('item-' + id);
+    if (cb) cb.checked = true;
+
+    el('cb-new-confirm').style.display = 'none';
+    el('cb-new-name').value = '';
+    renderPendingNewItemsChips();
+  });
+
+  function renderComboItemsListWithPendingNew() {
+    renderComboItemsList();
+    const box = el('cb-items-list');
+    const checkedBefore = Array.from(box.querySelectorAll('input:checked')).map((c) => c.value);
+    pendingNewItems.forEach((svc) => {
+      if (el('item-' + svc.id)) return;
+      const row = document.createElement('div');
+      row.className = 'check-row';
+      row.innerHTML = '<input type="checkbox" id="item-' + svc.id + '" value="' + svc.id + '"><label for="item-' + svc.id + '">' + svc.displayName + '（新）</label>';
+      box.appendChild(row);
+    });
+    checkedBefore.forEach((id) => { const cb = el('item-' + id); if (cb) cb.checked = true; });
+  }
+
+  function renderPendingNewItemsChips() {
+    const box = el('cb-new-items-pending');
+    box.innerHTML = '';
+    pendingNewItems.forEach((svc) => {
+      const chip = document.createElement('span');
+      chip.className = 'new-item-pending';
+      chip.textContent = svc.displayName + (svc.standaloneAllowed ? ' (' + money(svc.pricing.amountCents) + ')' : ' (仅组合内)');
+      box.appendChild(chip);
+    });
+  }
+
+  function readComboForm() {
+    const name = el('cb-name').value.trim();
+    const id = el('cb-id').value.trim() || PricingAdvisor.slugify(name);
+    const includes = Array.from(el('cb-items-list').querySelectorAll('input:checked')).map((c) => c.value);
+    const pkg = { id, displayName: name, includes, priceCents: Math.round(parseFloat(el('cb-price').value) * 100) };
+    const pt = document.querySelector('input[name="cb-pt"]:checked').value;
+    if (pt !== 'both') pkg.eligiblePropertyTypes = [pt];
+    return { type: 'newPackage', package: pkg };
+  }
+
+  // ---- editPrice form ---------------------------------------------------------
+
+  function renderEditTargetOptions() {
+    const draft = draftSoFar();
+    const sel = el('ep-target');
+    sel.innerHTML = '<option value="">-- 选择 --</option>';
+    const svcGroup = document.createElement('optgroup');
+    svcGroup.label = '单个';
+    Object.keys(draft.services).forEach((id) => {
+      if (!draft.services[id].standaloneAllowed) return;
+      const opt = document.createElement('option');
+      opt.value = 'service:' + id;
+      opt.textContent = draft.services[id].displayName;
+      svcGroup.appendChild(opt);
+    });
+    const pkgGroup = document.createElement('optgroup');
+    pkgGroup.label = '组合';
+    draft.packages.forEach((pkg) => {
+      const opt = document.createElement('option');
+      opt.value = 'package:' + pkg.id;
+      opt.textContent = pkg.displayName;
+      pkgGroup.appendChild(opt);
+    });
+    sel.appendChild(svcGroup);
+    sel.appendChild(pkgGroup);
+    sel.onchange = renderEditFields;
+    el('ep-fields').innerHTML = '';
+  }
+
+  function renderEditFields() {
+    const draft = draftSoFar();
+    const val = el('ep-target').value;
+    const box = el('ep-fields');
+    box.innerHTML = '';
+    if (!val) return;
+    const [kind, id] = val.split(':');
+    if (kind === 'service') {
+      const svc = draft.services[id];
+      const p = svc.pricing || {};
+      let html = '';
+      if (p.type === 'byPropertyType') {
+        html += '<div class="two-col"><div><label class="field-label">新 Condo 价格 ($)</label><input type="number" step="0.01" id="ep-condo" value="' + (p.condo / 100).toFixed(2) + '"></div>' +
+          '<div><label class="field-label">新 House 价格 ($)</label><input type="number" step="0.01" id="ep-house" value="' + (p.house / 100).toFixed(2) + '"></div></div>';
+      } else if (p.type === 'perUnit') {
+        html += '<label class="field-label">新单价 ($ / 件)</label><input type="number" step="0.01" id="ep-unit" value="' + (p.unitAmountCents / 100).toFixed(2) + '">';
+      } else {
+        html += '<label class="field-label">新价格 ($)</label><input type="number" step="0.01" id="ep-flat" value="' + (p.amountCents ? (p.amountCents / 100).toFixed(2) : '') + '">';
+      }
+      box.innerHTML = html;
+      box.dataset.pricingType = p.type || 'flat';
+    } else {
+      const pkg = draft.packages.find((p) => p.id === id);
+      box.innerHTML = '<label class="field-label">新价格 ($)</label><input type="number" step="0.01" id="ep-pkg-price" value="' + (pkg.priceCents / 100).toFixed(2) + '">';
+    }
+  }
+
+  function readEditPriceForm() {
+    const val = el('ep-target').value;
+    const [kind, id] = val.split(':');
+    if (kind === 'service') {
+      const type = el('ep-fields').dataset.pricingType;
+      let pricing;
+      if (type === 'byPropertyType') {
+        pricing = { type: 'byPropertyType', condo: Math.round(parseFloat(el('ep-condo').value) * 100), house: Math.round(parseFloat(el('ep-house').value) * 100) };
+      } else if (type === 'perUnit') {
+        pricing = { type: 'perUnit', unitAmountCents: Math.round(parseFloat(el('ep-unit').value) * 100) };
+      } else {
+        pricing = { type: 'flat', amountCents: Math.round(parseFloat(el('ep-flat').value) * 100) };
+      }
+      return { type: 'editServicePrice', id, pricing };
+    }
+    return { type: 'editPackagePrice', id, priceCents: Math.round(parseFloat(el('ep-pkg-price').value) * 100) };
+  }
+
+  // ---- test / add / edit ------------------------------------------------------
+
+  function readCurrentForm() {
+    if (currentType === 'standalone') return readStandaloneForm();
+    if (currentType === 'combo') return readComboForm();
+    return readEditPriceForm();
+  }
+
+  el('btn-test-item').addEventListener('click', () => {
+    const candidate = readCurrentForm();
+    const baseQueue = editingIndex === null ? pending : pending.filter((_, i) => i !== editingIndex);
+    // Any inline-created "new items" from the combo builder need to exist in the queue
+    // too, or they'd look like dangling references.
+    const newItemChanges = currentType === 'combo' ? pendingNewItems.map((svc) => ({ type: 'newService', service: svc })) : [];
+    const queueForCheck = baseQueue.concat(newItemChanges);
+    const errors = PricingAdvisor.checkStatic(PRICING_CONFIG, queueForCheck, candidate);
+    const box = el('item-test-result');
+    if (errors.length === 0) {
+      box.innerHTML = '<div class="result-box ok">✅ 静态检查通过。（穷举/加价单调性这类需要看全局的检测，会在最后"综合测试"里跑）</div>';
+      lastCandidate = { candidate, newItemChanges };
+      el('btn-add-item').disabled = false;
+    } else {
+      box.innerHTML = '<div class="result-box error">🔴 硬错误<ul>' + errors.map((e) => '<li>' + e.message + '</li>').join('') + '</ul></div>';
+      lastCandidate = null;
+      el('btn-add-item').disabled = true;
+    }
+  });
+
+  el('btn-add-item').addEventListener('click', () => {
+    if (!lastCandidate) return;
+    const toInsert = lastCandidate.newItemChanges.concat([lastCandidate.candidate]);
+    if (editingIndex !== null) {
+      pending.splice(editingIndex, 1, ...toInsert);
+      editingIndex = null;
+    } else {
+      pending.push(...toInsert);
+    }
+    el('form-panel').style.display = 'none';
+    renderQueue();
+  });
+
+  function startEdit(idx) {
+    editingIndex = idx;
+    const ch = pending[idx];
+    resetForm();
+    if (ch.type === 'newService') {
+      showForm('standalone');
+      el('sa-name').value = ch.service.displayName;
+      el('sa-id').value = ch.service.id;
+      idManuallyEdited.standalone = true;
+      if (ch.service.pricing) {
+        el('sa-pricing-type').value = ch.service.pricing.type;
+        syncPricingSubfields();
+        if (ch.service.pricing.type === 'flat') el('sa-flat-amount').value = (ch.service.pricing.amountCents / 100).toFixed(2);
+        if (ch.service.pricing.type === 'byPropertyType') {
+          el('sa-condo-amount').value = (ch.service.pricing.condo / 100).toFixed(2);
+          el('sa-house-amount').value = (ch.service.pricing.house / 100).toFixed(2);
+        }
+        if (ch.service.pricing.type === 'perUnit') el('sa-unit-amount').value = (ch.service.pricing.unitAmountCents / 100).toFixed(2);
+      }
+    } else if (ch.type === 'newPackage') {
+      showForm('combo');
+      el('cb-name').value = ch.package.displayName;
+      el('cb-id').value = ch.package.id;
+      idManuallyEdited.combo = true;
+      el('cb-price').value = (ch.package.priceCents / 100).toFixed(2);
+      const pt = (ch.package.eligiblePropertyTypes && ch.package.eligiblePropertyTypes[0]) || 'both';
+      el('cb-pt-' + pt).checked = true;
+      renderComboItemsList();
+      ch.package.includes.forEach((id) => { const cb = el('item-' + id); if (cb) cb.checked = true; });
+    } else {
+      showForm('editPrice');
+      const targetVal = ch.type === 'editServicePrice' ? 'service:' + ch.id : 'package:' + ch.id;
+      el('ep-target').value = targetVal;
+      renderEditFields();
+      if (ch.type === 'editServicePrice') {
+        const type = ch.pricing.type;
+        if (type === 'flat' && el('ep-flat')) el('ep-flat').value = (ch.pricing.amountCents / 100).toFixed(2);
+        if (type === 'byPropertyType' && el('ep-condo')) { el('ep-condo').value = (ch.pricing.condo / 100).toFixed(2); el('ep-house').value = (ch.pricing.house / 100).toFixed(2); }
+        if (type === 'perUnit' && el('ep-unit')) el('ep-unit').value = (ch.pricing.unitAmountCents / 100).toFixed(2);
+      } else if (el('ep-pkg-price')) {
+        el('ep-pkg-price').value = (ch.priceCents / 100).toFixed(2);
+      }
+    }
+  }
+
+  // ---- comprehensive test -----------------------------------------------------
+
+  function renderFullCheck(result) {
+    const box = el('full-check-result');
+    if (!result) { box.innerHTML = ''; el('apply-panel').style.display = 'none'; return; }
+    let html = '';
+    if (result.hardErrors.length) {
+      html += '<div class="result-box error">🔴 硬错误（' + result.hardErrors.length + '）<ul>' + result.hardErrors.map((e) => '<li>' + e.message + '</li>').join('') + '</ul></div>';
+    } else {
+      html += '<div class="result-box ok">✅ 没有硬错误。</div>';
+    }
+    if (result.warnings.length) {
+      html += '<div class="result-box warn">🟡 提示（' + result.warnings.length + '，能算出价但反直觉，人工判断是否是故意促销）<ul>' + result.warnings.map((w) => '<li>' + w.message + '</li>').join('') + '</ul></div>';
+    }
+    if (result.suggestions && result.suggestions.length) {
+      html += '<div class="result-box suggest">💡 自动搭配建议（可选，不影响算价）<ul>' +
+        result.suggestions.map((s, i) => {
+          const svc = result.draftConfig.services[s.id];
+          const names = s.requires.map((id) => (result.draftConfig.services[id] || { displayName: id }).displayName).join(', ');
+          return '<li>' + (svc ? svc.displayName : s.id) + ' 每次都跟 ' + names + ' 一起出现，要不要设成自动搭配？' +
+            ' <button type="button" class="small link" data-apply-suggestion="' + i + '">应用</button></li>';
+        }).join('') + '</ul></div>';
+    }
+    html += '<p class="combos-note">共检测 ' + result.combosChecked + ' 种订单组合。</p>';
+    box.innerHTML = html;
+    box.querySelectorAll('[data-apply-suggestion]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const s = result.suggestions[Number(btn.dataset.applySuggestion)];
+        pending.push({ type: 'setRequires', id: s.id, requires: s.requires });
+        renderQueue();
+        runFullCheckNow();
+      });
+    });
+    el('apply-panel').style.display = result.hardErrors.length === 0 && pending.length > 0 ? 'block' : 'none';
+    if (result.hardErrors.length === 0 && pending.length > 0) {
+      el('commit-message').value = buildCommitMessage();
+    }
+  }
+
+  function runFullCheckNow() {
+    if (pending.length === 0) { renderFullCheck({ hardErrors: [], warnings: [], combosChecked: 0, suggestions: [], draftConfig: PRICING_CONFIG }); return; }
+    const result = PricingAdvisor.runFullCheck(PRICING_CONFIG, pending);
+    result.suggestions = PricingAdvisor.suggestRequires(result.draftConfig);
+    renderFullCheck(result);
+  }
+
+  el('btn-full-check').addEventListener('click', runFullCheckNow);
+
+  // ---- download + commit message ----------------------------------------------
+
+  function buildCommitMessage() {
+    const lines = ['Update pricing list', ''];
+    pending.forEach((ch) => {
+      const d = describeChange(ch);
+      lines.push('- ' + d.tag + ': ' + d.text);
+    });
+    return lines.join('\n');
+  }
+
+  function buildConfigFileText(draft) {
+    const header =
+      "// FranVision pricing configuration.\n" +
+      "//\n" +
+      "// This is the ONLY file you should need to edit when prices change.\n" +
+      "// Do not put prices or package rules into engine.js or tester.html.\n" +
+      "//\n" +
+      "// Generated by pricing/advisor/advisor.html -- values only, the inline\n" +
+      "// dollar-amount comments from the original file are not preserved here.\n" +
+      "//\n" +
+      "// service.pricing.type:\n" +
+      '//   "flat"           -> pricing.amountCents, same price regardless of property type\n' +
+      '//   "byPropertyType" -> pricing.condo / pricing.house\n' +
+      '//   "perUnit"        -> pricing.unitAmountCents, requires a quantity (e.g. Virtual Staging)\n' +
+      "//   (omitted)        -> service has no standalone price (standaloneAllowed must be false)\n" +
+      "//\n" +
+      "// service.standaloneAllowed: false means this service can never be sold on\n" +
+      "// its own -- it can only appear as part of a package (see restrictionMessage).\n" +
+      "//\n" +
+      "// service.requires: other service ids that must also be present in the order\n" +
+      "// whenever this service is selected. The engine auto-adds missing\n" +
+      "// requirements, chained if needed.\n" +
+      "//\n" +
+      "// package.includes: which service ids this package covers. A package is only\n" +
+      "// considered \"applicable\" if every id in includes is present in the order.\n" +
+      "// package.eligiblePropertyTypes: omit to allow both condo and house.\n\n";
+    const wrapperOpen =
+      "(function (root, factory) {\n" +
+      "  if (typeof module === 'object' && module.exports) {\n" +
+      "    module.exports = factory();\n" +
+      "  } else {\n" +
+      "    root.PRICING_CONFIG = factory();\n" +
+      "  }\n" +
+      "})(typeof self !== 'undefined' ? self : this, function () {\n" +
+      "  'use strict';\n\n" +
+      "  return ";
+    const wrapperClose = ";\n});\n";
+    const body = JSON.stringify(draft, null, 2).split('\n').join('\n  ');
+    return header + wrapperOpen + body + wrapperClose;
+  }
+
+  el('btn-download').addEventListener('click', () => {
+    const draft = draftSoFar();
+    const text = buildConfigFileText(draft);
+    const blob = new Blob([text], { type: 'text/javascript' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'pricing-config.js';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
+  // ---- init -----------------------------------------------------------------
+
+  renderPriceList();
+  renderQueue();
+})();
+</script>
+</body>
+</html>
