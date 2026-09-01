@@ -139,3 +139,106 @@ test('headshot / logo references are cleared when their photo is deleted', async
   assert.strictEqual(after.agentInfo.headshotPhotoId, null);
   assert.strictEqual(after.agentInfo.brokerageLogoPhotoId, null);
 });
+
+test('updateProject: boxOffsets/boxSizes REPLACE (a dropped key does not resurrect)', async () => {
+  const { store } = freshStore();
+  const p = await store.createProject({ templateSystem: 'fsb-v2' });
+  await store.updateProject(p.projectId, { boxOffsets: { nameBox: { dx: 0.1, dy: -0.2 }, tourBox: { dx: 0, dy: 0.3 } } });
+  // client double-clicked nameBox to reset it -> sends the map without that key
+  const out = await store.updateProject(p.projectId, { boxOffsets: { tourBox: { dx: 0, dy: 0.3 } } });
+  assert.deepStrictEqual(Object.keys(out.boxOffsets), ['tourBox']);
+  assert.strictEqual(out.boxOffsets.nameBox, undefined);
+  // an empty map clears everything
+  const cleared = await store.updateProject(p.projectId, { boxOffsets: {} });
+  assert.deepStrictEqual(cleared.boxOffsets, {});
+});
+
+test('clearPhotos: wipes the library but keeps headshot / logo (role) assets', async () => {
+  const { store } = freshStore();
+  const p = await store.createProject({ templateSystem: 'fsb-v2' });
+  const lib1 = await store.savePhoto(p.projectId, { buffer: PNG_1PX, filename: 'room1.png', contentType: 'image/png' });
+  await store.savePhoto(p.projectId, { buffer: PNG_1PX, filename: 'room2.png', contentType: 'image/png' });
+  const head = await store.savePhoto(p.projectId, { buffer: PNG_1PX, filename: 'head.png', contentType: 'image/png', role: 'headshot' });
+  const logo = await store.savePhoto(p.projectId, { buffer: PNG_1PX, filename: 'logo.png', contentType: 'image/png', role: 'logo' });
+  await store.updateProject(p.projectId, {
+    agentInfo: { headshotPhotoId: head.photoId, brokerageLogoPhotoId: logo.photoId },
+    pages: { page1: { slots: { 'p1R-hero': { photoId: lib1.photoId } } } },
+  });
+
+  const after = await store.clearPhotos(p.projectId);
+  assert.deepStrictEqual(after.photos.map((x) => x.photoId).sort(), [head.photoId, logo.photoId].sort());
+  assert.strictEqual(after.pages.page1.slots['p1R-hero'].photoId, null, 'library slot ref cleared');
+  assert.strictEqual(after.agentInfo.headshotPhotoId, head.photoId, 'headshot ref kept');
+  assert.strictEqual(after.agentInfo.brokerageLogoPhotoId, logo.photoId, 'logo ref kept');
+  assert.strictEqual(store.getPhotoPath(p.projectId, lib1.photoId, 'original'), null, 'library file gone');
+  assert.ok(store.getPhotoPath(p.projectId, head.photoId, 'original'), 'headshot file kept');
+});
+
+test('recycle bin: soft delete -> restore -> purge; listProjects splits active vs trash', async () => {
+  const { store } = freshStore();
+  const a = await store.createProject({ templateSystem: 'fsb-v2' });
+  const b = await store.createProject({ templateSystem: 'fsb-v2' });
+
+  assert.strictEqual(await store.deleteProject(a.projectId), true);
+  let active = await store.listProjects();
+  let trash = await store.listProjects({ trashed: true });
+  assert.deepStrictEqual(active.map((r) => r.id), [b.projectId]);
+  assert.deepStrictEqual(trash.map((r) => r.id), [a.projectId]);
+  assert.ok(trash[0].deletedAt, 'deletedAt is reported');
+  // still on disk -> restorable
+  assert.ok(await store.getProject(a.projectId));
+
+  const restored = await store.restoreProject(a.projectId);
+  assert.strictEqual(restored.deletedAt, undefined);
+  active = await store.listProjects();
+  assert.strictEqual(active.length, 2);
+
+  await store.deleteProject(a.projectId);
+  assert.strictEqual(await store.purgeProject(a.projectId), true);
+  assert.strictEqual(await store.getProject(a.projectId), null, 'purge removes it for good');
+  assert.strictEqual(await store.purgeProject(a.projectId), false, 'purge of a missing id is a no-op');
+});
+
+test('emptyTrash: purges every soft-deleted sheet, leaves active ones', async () => {
+  const { store } = freshStore();
+  const a = await store.createProject({ templateSystem: 'fsb-v2' });
+  const b = await store.createProject({ templateSystem: 'fsb-v2' });
+  const c = await store.createProject({ templateSystem: 'fsb-v2' });
+  await store.deleteProject(a.projectId);
+  await store.deleteProject(c.projectId);
+
+  assert.strictEqual(await store.emptyTrash(), 2);
+  assert.strictEqual(await store.getProject(a.projectId), null);
+  assert.strictEqual(await store.getProject(c.projectId), null);
+  assert.ok(await store.getProject(b.projectId), 'active sheet untouched');
+  assert.strictEqual(await store.emptyTrash(), 0, 'nothing left to purge');
+});
+
+test('duplicateProject: keeps agent block + identity photos, drops property data', async () => {
+  const { store } = freshStore();
+  const src = await store.createProject({ templateSystem: 'fsb-v2' });
+  const lib = await store.savePhoto(src.projectId, { buffer: PNG_1PX, filename: 'room.png', contentType: 'image/png' });
+  const head = await store.savePhoto(src.projectId, { buffer: PNG_1PX, filename: 'head.png', contentType: 'image/png', role: 'headshot' });
+  await store.updateProject(src.projectId, {
+    colorTheme: 'burgundy',
+    propertyInfo: { address: '10 Old St', city: 'Markham', description: 'nice' },
+    agentInfo: { name: 'Jane Roe', email: 'jane@x.com', headshotPhotoId: head.photoId },
+    boxOffsets: { nameBox: { dx: 0.1, dy: 0 } },
+    pages: { page1: { slots: { 'p1R-hero': { photoId: lib.photoId } } } },
+    confirmed: true,
+  });
+
+  const dup = await store.duplicateProject(src.projectId);
+  assert.notStrictEqual(dup.projectId, src.projectId);
+  assert.strictEqual(dup.colorTheme, 'burgundy');
+  assert.strictEqual(dup.agentInfo.name, 'Jane Roe');
+  assert.strictEqual(dup.agentInfo.headshotPhotoId, head.photoId);
+  assert.deepStrictEqual(dup.boxOffsets, { nameBox: { dx: 0.1, dy: 0 } });
+  assert.strictEqual(dup.confirmed, false, 'copy starts unconfirmed');
+  assert.strictEqual(dup.propertyInfo.address, '', 'property info blanked');
+  assert.strictEqual(dup.propertyInfo.description, '');
+  assert.deepStrictEqual(dup.pages.page1.slots, {}, 'slot assignments dropped');
+  assert.deepStrictEqual(dup.photos.map((x) => x.photoId), [head.photoId], 'only identity photos carried');
+  assert.ok(store.getPhotoPath(dup.projectId, head.photoId, 'original'), 'headshot file copied into the new project');
+  assert.strictEqual(store.getPhotoPath(dup.projectId, lib.photoId, 'original'), null, 'library photo not copied');
+});
