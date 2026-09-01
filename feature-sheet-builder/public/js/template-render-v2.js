@@ -143,12 +143,29 @@
     return node;
   }
 
-  // ---- icon glyphs (line SVGs, redrawn to match the Sue template) ----
+  // ---- icon glyphs (line SVGs, redrawn to match the Sue template:
+  //      front-view double bed w/ two pillows, tub with a shower head,
+  //      pitched-roof garage with a car inside) --------------------
   var ICO = 'fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"';
   var ICONS = {
-    bed: '<svg viewBox="0 0 34 22" ' + ICO + '><path d="M3 5v13M3 18h27M3 18v3M27 18v3M3 12.5h18a6 6 0 0 1 6 5.5"/><circle cx="8" cy="9.6" r="2.6"/></svg>',
-    bath: '<svg viewBox="0 0 34 22" ' + ICO + '><path d="M4 4v9M4 8.5h3.5a3.5 3.5 0 0 1 3.5-3.5"/><path d="M4 13h26v2.5a5.5 5.5 0 0 1-5.5 5.5H9.5A5.5 5.5 0 0 1 4 15.5z"/><path d="M9.5 21l-1.6 2.4M24.5 21l1.6 2.4"/></svg>',
-    garage: '<svg viewBox="0 0 34 22" ' + ICO + '><path d="M3 21V10L17 3l14 7v11M3 21h28"/><path d="M11 21v-5.5a6 6 0 0 1 12 0V21"/></svg>',
+    bed: '<svg viewBox="0 0 36 22" ' + ICO + '>'
+      + '<path d="M4 18h28"/>'                                        /* base rail */
+      + '<path d="M5 18v-6a2 2 0 0 1 2-2h22a2 2 0 0 1 2 2v6"/>'       /* mattress frame */
+      + '<path d="M3 18v-9a1.6 1.6 0 0 1 1.6-1.6h26.8A1.6 1.6 0 0 1 33 9v9"/>' /* headboard */
+      + '<path d="M8 10V8.4A1.4 1.4 0 0 1 9.4 7h5.2A1.4 1.4 0 0 1 16 8.4V10"/>' /* pillow L */
+      + '<path d="M20 10V8.4A1.4 1.4 0 0 1 21.4 7h5.2A1.4 1.4 0 0 1 28 8.4V10"/>' /* pillow R */
+      + '<path d="M5 18v3M14 18v3M22 18v3M31 18v3"/></svg>',          /* legs */
+    bath: '<svg viewBox="0 0 36 22" ' + ICO + '>'
+      + '<path d="M4 13h26v2a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/>'       /* tub */
+      + '<path d="M4 13v-2M9 20l-1.5 2.6M25 20l1.5 2.6"/>'           /* rim + feet */
+      + '<path d="M8 3v3"/>'                                          /* shower pipe */
+      + '<path d="M5.5 6a2.5 2.5 0 0 1 5 0z"/>'                       /* shower head */
+      + '<path d="M6 8.5l-.7 2.3M8 8.5v2.4M10 8.5l.7 2.3"/></svg>',   /* spray */
+    garage: '<svg viewBox="0 0 36 22" ' + ICO + '>'
+      + '<path d="M3 21V10L18 3l15 7v11M3 21h30"/>'                   /* house shell */
+      + '<path d="M9 19h18"/>'                                        /* car underline */
+      + '<path d="M10 19v-2l2-3.5h12l2 3.5v2"/>'                      /* car body */
+      + '<circle cx="14" cy="19" r="1.7"/><circle cx="24" cy="19" r="1.7"/></svg>', /* wheels */
   };
 
   function buildIconRow(info, pw, ph, scale, theme) {
