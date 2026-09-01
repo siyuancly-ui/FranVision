@@ -32,7 +32,7 @@ copy(path.join(ROOT, 'templates', 'registry.js'), path.join(PUB, 'shared', 'regi
 copy(path.join(ROOT, 'templates', 'jason-fs-v1', 'template-config.js'), path.join(PUB, 'shared', 'template-config.js'));
 
 // fsb-v2 template system
-for (const f of ['geometry.js', 'themes.js', 'modules.js', 'layout-engine.js', 'registry.js']) {
+for (const f of ['text-util.js', 'geometry.js', 'themes.js', 'modules.js', 'layout-engine.js', 'registry.js']) {
   copy(path.join(ROOT, 'templates', 'fsb-v2', f), path.join(PUB, 'shared', 'v2', f));
 }
 copy(path.join(ROOT, 'templates', 'fsb-v2', 'assets', 'flourish.svg'),
