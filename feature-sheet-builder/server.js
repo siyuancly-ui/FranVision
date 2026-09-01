@@ -240,6 +240,7 @@ async function handleApi(req, res, parts, urlPath) {
         buffer,
         filename: req.headers['x-filename'] ? decodeURIComponent(req.headers['x-filename']) : '',
         contentType: req.headers['content-type'] || '',
+        role: req.headers['x-photo-role'] || '',
       });
       return meta ? sendJson(res, 201, { photo: meta }) : sendJson(res, 400, { error: 'Could not save photo (project missing or empty body)' });
     }

@@ -113,14 +113,25 @@
       var pick = el('button', { class: 'fsb-btn fsb-btn--sm', type: 'button', text: 'Choose… 选择' });
       var clear = el('button', { class: 'fsb-btn fsb-btn--sm fsb-btn--ghost', type: 'button', text: 'Clear 清除' });
       pick.addEventListener('click', function () { fileInput.click(); });
-      clear.addEventListener('click', function () { writeVal(app, groupKey, false, f.key, null); renderPrev(); });
+      clear.addEventListener('click', function () {
+        var pid = (app.project[groupKey] || {})[f.key];
+        var meta = pid && (app.project.photos || []).filter(function (p) { return p.photoId === pid; })[0];
+        // if it was uploaded here (role tag) and nothing else uses it, drop the file too
+        if (meta && meta.role && src.remove && !app.slotsUsingPhoto(pid)) {
+          src.remove(app.projectId, pid).then(function (updated) { app.setProject(updated); })
+            .catch(function () { writeVal(app, groupKey, false, f.key, null); renderPrev(); });
+          return;
+        }
+        writeVal(app, groupKey, false, f.key, null); renderPrev();
+      });
       fileInput.addEventListener('change', function () {
         var file = fileInput.files[0]; fileInput.value = '';
         if (!file) return;
         if (app.isReadOnly()) { toast('Project is confirmed.', 'error'); return; }
         preview.classList.add('is-loading');
+        var role = f.key.indexOf('logo') > -1 ? 'logo' : 'headshot';
         (app.ensureCreated ? app.ensureCreated() : Promise.resolve())
-          .then(function () { return src.upload(app.projectId, file); })
+          .then(function () { return src.upload(app.projectId, file, role); })
           .then(function (meta) {
           app.addPhoto(meta);
           writeVal(app, groupKey, false, f.key, meta.photoId);

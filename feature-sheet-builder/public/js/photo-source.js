@@ -70,10 +70,15 @@
     // No async prep needed -- project.photos arrives with the project.
     ready: undefined,
 
+    // The property photo library only. Info-form identity assets
+    // (headshot / logo -> p.role) are looked up via getMeta / *Url but
+    // never listed in the grid or the per-slot picker.
     list: function (project) {
-      return (project && project.photos ? project.photos : []).map(function (p) {
-        return { id: p.photoId, filename: p.filename, width: p.width || 0, height: p.height || 0 };
-      });
+      return (project && project.photos ? project.photos : [])
+        .filter(function (p) { return !p.role; })
+        .map(function (p) {
+          return { id: p.photoId, filename: p.filename, width: p.width || 0, height: p.height || 0 };
+        });
     },
 
     getMeta: function (project, id) {
@@ -91,7 +96,7 @@
     },
 
     supportsUpload: function () { return true; },
-    upload: function (projectId, file) { return store.uploadPhoto(projectId, file); },
+    upload: function (projectId, file, role) { return store.uploadPhoto(projectId, file, role); },
     remove: function (projectId, id) { return store.deletePhoto(projectId, id); },
     clearAll: function (projectId) { return store.clearPhotos(projectId); },
   };

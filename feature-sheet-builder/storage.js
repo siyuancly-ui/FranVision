@@ -265,6 +265,9 @@ class LocalDiskStorage {
       bytes: file.buffer.length,
       uploadedAt: nowIso(),
     };
+    // 'headshot' / 'logo' -> uploaded via the info form, an identity asset:
+    // hidden from the property photo library + kept by clearPhotos().
+    if (file.role === 'headshot' || file.role === 'logo') meta.role = file.role;
 
     // Only the project.json append is serialised.
     return this._withLock(id, () => {
@@ -297,18 +300,20 @@ class LocalDiskStorage {
     });
   }
 
-  // Wipe the whole photo library for a project (wrong batch uploaded).
+  // Wipe the property photo library (wrong batch uploaded). Keeps the
+  // info-form identity assets (headshot / brokerage logo).
   async clearPhotos(id) {
     if (!safeId(id)) return null;
     return this._withLock(id, () => {
       const project = this._read(id);
       if (!project) return null;
       (project.photos || []).forEach((meta) => {
+        if (meta.role) return;   // headshot / logo -> keep
         try { fs.unlinkSync(path.join(this._photosDir(id), meta.photoId + '.' + meta.ext)); } catch (_e) {}
         try { fs.unlinkSync(path.join(this._thumbsDir(id), meta.photoId + '.jpg')); } catch (_e) {}
         clearPhotoRefs(project, meta.photoId);
       });
-      project.photos = [];
+      project.photos = (project.photos || []).filter((p) => !!p.role);
       return this._write(project);
     });
   }

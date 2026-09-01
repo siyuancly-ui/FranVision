@@ -179,10 +179,14 @@
         return jsonFetch('/api/projects/' + encodeURIComponent(id) + '/duplicate', { method: 'POST' })
           .then(function (b) { return b.project; });
       },
-      uploadPhoto: function (id, file) {
+      uploadPhoto: function (id, file, role) {
         return jsonFetch('/api/projects/' + encodeURIComponent(id) + '/photos', {
           method: 'POST',
-          headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-Filename': encodeURIComponent(file.name || 'photo.jpg') },
+          headers: {
+            'Content-Type': file.type || 'application/octet-stream',
+            'X-Filename': encodeURIComponent(file.name || 'photo.jpg'),
+            'X-Photo-Role': role || '',
+          },
           body: file,
         }).then(function (b) { return b.photo; });
       },
@@ -364,13 +368,14 @@
         });
       },
 
-      uploadPhoto: function (id, file) {
+      uploadPhoto: function (id, file, role) {
         var photoId = newId();
         var ext = extOf(file);
         var meta = {
           photoId: photoId, filename: file.name || (photoId + '.' + ext), ext: ext,
           width: 0, height: 0, hasThumb: false, bytes: file.size || 0, uploadedAt: nowIso(),
         };
+        if (role === 'headshot' || role === 'logo') meta.role = role;
         return Promise.all([imageSize(file), makeThumb(file)]).then(function (out) {
           meta.width = out[0].width; meta.height = out[0].height;
           var thumbBlob = out[1];
@@ -412,14 +417,14 @@
 
       clearPhotos: function (id) {
         return fetchProject(id).then(function (project) {
-          var photos = project.photos || [];
+          var photos = (project.photos || []).filter(function (p) { return !p.role; });
           var paths = [];
           photos.forEach(function (meta) {
             paths.push(origPath(id, meta));
             if (meta.hasThumb) paths.push(thumbPath(id, meta));
             clearPhotoRefs(project, meta.photoId);
           });
-          project.photos = [];
+          project.photos = (project.photos || []).filter(function (p) { return !!p.role; });
           var removeJob = paths.length ? sb.storage.from(BUCKET).remove(paths) : Promise.resolve({});
           return removeJob.then(function () {
             return sb.from('projects').update({ data: pickData(project), updated_at: nowIso() })
