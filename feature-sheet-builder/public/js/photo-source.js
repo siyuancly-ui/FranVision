@@ -93,6 +93,7 @@
     supportsUpload: function () { return true; },
     upload: function (projectId, file) { return store.uploadPhoto(projectId, file); },
     remove: function (projectId, id) { return store.deletePhoto(projectId, id); },
+    clearAll: function (projectId) { return store.clearPhotos(projectId); },
   };
 
   window.FSB.photoSource = uploadSource;

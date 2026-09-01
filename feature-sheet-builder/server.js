@@ -249,6 +249,11 @@ async function handleApi(req, res, parts, urlPath) {
       const project = await storage.deletePhoto(id, parts[4]);
       return project ? sendJson(res, 200, { project }) : sendJson(res, 404, { error: 'Project or photo not found' });
     }
+    // DELETE /api/projects/:id/photos   -> clear the whole library
+    if (parts.length === 4 && parts[3] === 'photos' && method === 'DELETE') {
+      const project = await storage.clearPhotos(id);
+      return project ? sendJson(res, 200, { project }) : sendJson(res, 404, { error: 'Project not found' });
+    }
   }
 
   sendJson(res, 404, { error: 'Unknown API route: ' + method + ' ' + urlPath });

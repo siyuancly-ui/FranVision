@@ -297,6 +297,22 @@ class LocalDiskStorage {
     });
   }
 
+  // Wipe the whole photo library for a project (wrong batch uploaded).
+  async clearPhotos(id) {
+    if (!safeId(id)) return null;
+    return this._withLock(id, () => {
+      const project = this._read(id);
+      if (!project) return null;
+      (project.photos || []).forEach((meta) => {
+        try { fs.unlinkSync(path.join(this._photosDir(id), meta.photoId + '.' + meta.ext)); } catch (_e) {}
+        try { fs.unlinkSync(path.join(this._thumbsDir(id), meta.photoId + '.jpg')); } catch (_e) {}
+        clearPhotoRefs(project, meta.photoId);
+      });
+      project.photos = [];
+      return this._write(project);
+    });
+  }
+
   // Soft delete -> recycle bin. Sets deletedAt; the project stays on
   // disk and can be restored. purgeProject() / emptyTrash() do the real
   // removal.

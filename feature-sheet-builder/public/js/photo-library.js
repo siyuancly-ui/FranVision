@@ -29,6 +29,10 @@
       el('div', { class: 'fsb-lib-title' }, [
         el('span', { text: 'Photo Library' }),
         el('span', { class: 'fsb-lib-count', id: 'fsb-lib-count', text: '0' }),
+        canUpload
+          ? el('button', { class: 'fsb-btn fsb-btn--sm fsb-btn--danger fsb-lib-clear', text: 'Clear 清空',
+              title: 'Delete every uploaded photo' })
+          : null,
       ]),
     ]);
     if (canUpload) {
@@ -38,6 +42,30 @@
       label.appendChild(input);
       head.appendChild(label);
       head.appendChild(el('div', { class: 'fsb-lib-drop', text: 'or drop JPG / PNG here' }));
+
+      head.querySelector('.fsb-lib-clear').addEventListener('click', function () {
+        var btn = this;
+        var n = src.list(app.project).length;
+        if (!n) { toast('Library is already empty 图库已空'); return; }
+        if (app.isReadOnly()) { toast('This project is confirmed. Un-confirm to edit.', 'error'); return; }
+        window.FSB.util.confirmDialog(
+          [
+            'Delete ALL ' + n + ' uploaded photos? Any slot using one will be cleared. This cannot be undone.',
+            '清空图库中全部 ' + n + ' 张照片？用到这些照片的框会被清空，且无法撤销。',
+          ],
+          { okText: 'Clear all 清空', cancelText: 'Cancel 取消' }
+        ).then(function (ok) {
+          if (!ok) return;
+          btn.disabled = true;
+          src.clearAll(app.projectId).then(function (updated) {
+            app.setProject(updated);
+            toast('Library cleared 图库已清空');
+          }).catch(function (err) {
+            btn.disabled = false;
+            toast('Clear failed 清空失败: ' + (err.message || err), 'error');
+          });
+        });
+      });
     }
     var grid = el('div', { class: 'fsb-lib-grid', id: 'fsb-lib-grid' });
     root.appendChild(head);

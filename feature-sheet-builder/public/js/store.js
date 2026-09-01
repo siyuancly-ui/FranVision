@@ -191,6 +191,10 @@
           method: 'DELETE',
         }).then(function (b) { return b.project; });
       },
+      clearPhotos: function (id) {
+        return jsonFetch('/api/projects/' + encodeURIComponent(id) + '/photos', { method: 'DELETE' })
+          .then(function (b) { return b.project; });
+      },
       photoUrls: function (id, meta) {
         return {
           full: '/photos/' + id + '/' + meta.photoId,
@@ -395,6 +399,27 @@
           }
           project.photos = (project.photos || []).filter(function (p) { return p.photoId !== photoId; });
           clearPhotoRefs(project, photoId);
+          var removeJob = paths.length ? sb.storage.from(BUCKET).remove(paths) : Promise.resolve({});
+          return removeJob.then(function () {
+            return sb.from('projects').update({ data: pickData(project), updated_at: nowIso() })
+              .eq('id', id).select('*').single();
+          }).then(function (res) {
+            if (res.error) throw new Error(res.error.message);
+            return row2project(res.data);
+          });
+        });
+      },
+
+      clearPhotos: function (id) {
+        return fetchProject(id).then(function (project) {
+          var photos = project.photos || [];
+          var paths = [];
+          photos.forEach(function (meta) {
+            paths.push(origPath(id, meta));
+            if (meta.hasThumb) paths.push(thumbPath(id, meta));
+            clearPhotoRefs(project, meta.photoId);
+          });
+          project.photos = [];
           var removeJob = paths.length ? sb.storage.from(BUCKET).remove(paths) : Promise.resolve({});
           return removeJob.then(function () {
             return sb.from('projects').update({ data: pickData(project), updated_at: nowIso() })

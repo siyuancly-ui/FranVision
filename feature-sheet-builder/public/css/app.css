@@ -268,6 +268,7 @@ h2, h3 { margin: 0 0 8px; }
 .fsb-lib-head { position: sticky; top: 0; background: var(--panel); padding: 12px; border-bottom: 1px solid var(--line); z-index: 2; }
 .fsb-lib-title { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; margin-bottom: 10px; white-space: nowrap; }
 .fsb-lib-count { font-weight: 400; color: var(--ink-soft); background: #eef1f5; border-radius: 999px; padding: 1px 8px; font-size: 12px; }
+.fsb-lib-clear { margin-left: auto; }
 .fsb-upload-btn { display: block; width: 100%; text-align: center; }
 .fsb-lib-drop { margin: 10px 0 0; padding: 8px; border: 1px dashed var(--line); border-radius: 8px; text-align: center; color: var(--ink-soft); font-size: 11px; }
 .fsb-lib-hint { margin: 10px 0 0; font-size: 11px; line-height: 1.5; color: var(--ink-soft); }
