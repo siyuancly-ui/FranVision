@@ -169,17 +169,17 @@
     <h2>现有价目表</h2>
     <h3>Luxury Photography</h3>
     <table>
-      <thead id="thead-luxury"></thead>
+      <thead><tr><th>名称</th><th>包含</th><th class="amt">价格</th></tr></thead>
       <tbody id="table-luxury"></tbody>
     </table>
     <h3>Standard Photography</h3>
     <table>
-      <thead id="thead-standard"></thead>
+      <thead><tr><th>名称</th><th>包含</th><th class="amt">价格</th></tr></thead>
       <tbody id="table-standard"></tbody>
     </table>
     <h3>Add-on Options</h3>
     <table>
-      <thead id="thead-addons"></thead>
+      <thead><tr><th>名称</th><th>包含</th><th class="amt">价格</th></tr></thead>
       <tbody id="table-addons"></tbody>
     </table>
   </div>
@@ -339,52 +339,71 @@
 
   // ---- render existing price list, grouped like the original price sheet ----
 
-  // Figures out whether a row's price actually varies by property type, so the
-  // table can skip splitting into Condo/House columns when nothing in it varies.
-  function servicePriceInfo(pricing) {
-    if (!pricing) return { differs: false, label: '—' };
-    if (pricing.type === 'byPropertyType') return { differs: pricing.condo !== pricing.house, condo: pricing.condo, house: pricing.house, label: money(pricing.condo) };
-    if (pricing.type === 'flat') return { differs: false, condo: pricing.amountCents, house: pricing.amountCents, label: money(pricing.amountCents) };
-    if (pricing.type === 'perUnit') return { differs: false, label: money(pricing.unitAmountCents) + ' / 件' };
-    return { differs: false, label: '—' };
+  // Splits a priced thing into one row per property type ONLY when its price
+  // actually differs -- e.g. Luxury Photography becomes two plain rows ("Luxury
+  // Photography（Condo）" / "（House）"), each with one plain price. Something
+  // priced the same everywhere (or restricted to a single property type) is
+  // just one row, with no "condo"/"house" wording unless it's actually needed --
+  // same convention the original price sheet image itself uses.
+  function priceRows(name, includes, pricingLike, hiddenLabel) {
+    let condoCents = null;
+    let houseCents = null;
+    let flatLabel = null;
+
+    if (!pricingLike) {
+      flatLabel = '—';
+    } else if (pricingLike.kind === 'flat') {
+      flatLabel = money(pricingLike.amountCents);
+    } else if (pricingLike.kind === 'perUnit') {
+      flatLabel = money(pricingLike.unitAmountCents) + ' / 件';
+    } else if (pricingLike.kind === 'byPropertyType') {
+      if (pricingLike.condo === pricingLike.house) {
+        flatLabel = money(pricingLike.condo);
+      } else {
+        condoCents = pricingLike.condo;
+        houseCents = pricingLike.house;
+      }
+    } else if (pricingLike.kind === 'restrictedFlat') {
+      if (pricingLike.propertyTypes.includes('condo')) condoCents = pricingLike.amountCents;
+      if (pricingLike.propertyTypes.includes('house')) houseCents = pricingLike.amountCents;
+    }
+
+    if (flatLabel !== null) {
+      return [{ name, includes, price: flatLabel, hiddenLabel }];
+    }
+    const rows = [];
+    if (condoCents != null) rows.push({ name: name + '（Condo）', includes, price: money(condoCents), hiddenLabel });
+    if (houseCents != null) rows.push({ name: name + '（House）', includes, price: money(houseCents), hiddenLabel });
+    return rows;
   }
 
-  function packagePriceInfo(pkg) {
+  function servicePricingLike(pricing) {
+    if (!pricing) return null;
+    if (pricing.type === 'flat') return { kind: 'flat', amountCents: pricing.amountCents };
+    if (pricing.type === 'byPropertyType') return { kind: 'byPropertyType', condo: pricing.condo, house: pricing.house };
+    if (pricing.type === 'perUnit') return { kind: 'perUnit', unitAmountCents: pricing.unitAmountCents };
+    return null;
+  }
+
+  function packagePricingLike(pkg) {
     const pt = pkg.eligiblePropertyTypes;
-    if (!pt || pt.length === 0) return { differs: false, condo: pkg.priceCents, house: pkg.priceCents, label: money(pkg.priceCents) };
-    // Restricted to exactly one property type -- treat as "differs" so it renders
-    // under the matching column with a dash on the other, rather than looking flat.
-    return { differs: true, condo: pt.includes('condo') ? pkg.priceCents : null, house: pt.includes('house') ? pkg.priceCents : null };
-  }
-
-  function priceCellsHtml(info, tableSplits) {
-    if (!tableSplits) return '<td class="amt">' + info.label + '</td>';
-    if (!info.differs) return '<td class="amt" colspan="2">' + info.label + '</td>';
-    const condoCell = info.condo == null ? '<td class="amt dash">—</td>' : '<td class="amt">' + money(info.condo) + '</td>';
-    const houseCell = info.house == null ? '<td class="amt dash">—</td>' : '<td class="amt">' + money(info.house) + '</td>';
-    return condoCell + houseCell;
+    if (!pt || pt.length === 0) return { kind: 'flat', amountCents: pkg.priceCents };
+    return { kind: 'restrictedFlat', propertyTypes: pt, amountCents: pkg.priceCents };
   }
 
   function includesLabel(pkg, config) {
     return pkg.includes.map((id) => (config.services[id] || { displayName: id }).displayName).join(', ');
   }
 
-  function renderPriceTable(theadId, tbodyId, rows) {
-    const anySplit = rows.some((r) => r.info.differs);
-    const thead = el(theadId);
-    thead.innerHTML = anySplit
-      ? '<tr><th>名称</th><th>包含</th><th class="amt">Condo</th><th class="amt">House</th></tr>'
-      : '<tr><th>名称</th><th>包含</th><th class="amt">价格</th></tr>';
-
+  function renderPriceTable(tbodyId, rows) {
     // Hidden items sort to the bottom, otherwise original order is preserved (stable partition).
     const ordered = rows.filter((r) => !r.hiddenLabel).concat(rows.filter((r) => r.hiddenLabel));
-
     const tbody = el(tbodyId);
     tbody.innerHTML = '';
     ordered.forEach((r) => {
       const badge = r.hiddenLabel ? '<span class="badge">' + r.hiddenLabel + '</span>' : '';
       const tr = document.createElement('tr');
-      tr.innerHTML = '<td>' + r.name + badge + '</td><td>' + r.includes + '</td>' + priceCellsHtml(r.info, anySplit);
+      tr.innerHTML = '<td>' + r.name + badge + '</td><td>' + r.includes + '</td><td class="amt">' + r.price + '</td>';
       tbody.appendChild(tr);
     });
   }
@@ -395,20 +414,14 @@
     const standardRows = [];
     const addonRows = [];
 
-    luxuryRows.push({ name: 'Luxury Photography', includes: '—', info: servicePriceInfo(config.services.luxury_photo.pricing) });
-    standardRows.push({ name: 'Standard Photography', includes: '—', info: servicePriceInfo(config.services.standard_photo.pricing) });
+    luxuryRows.push(...priceRows('Luxury Photography', '—', servicePricingLike(config.services.luxury_photo.pricing)));
+    standardRows.push(...priceRows('Standard Photography', '—', servicePricingLike(config.services.standard_photo.pricing)));
 
     // Packages, grouped by whether they include a photography id
     config.packages.forEach((pkg) => {
-      const entry = {
-        name: pkg.displayName,
-        includes: includesLabel(pkg, config),
-        info: packagePriceInfo(pkg),
-        hiddenLabel: HIDDEN_PACKAGES.has(pkg.id) ? '隐藏套餐' : null,
-      };
-      if (pkg.includes.includes('luxury_photo')) luxuryRows.push(entry);
-      else if (pkg.includes.includes('standard_photo')) standardRows.push(entry);
-      else addonRows.push(entry);
+      const rows = priceRows(pkg.displayName, includesLabel(pkg, config), packagePricingLike(pkg), HIDDEN_PACKAGES.has(pkg.id) ? '隐藏套餐' : null);
+      const target = pkg.includes.includes('luxury_photo') ? luxuryRows : pkg.includes.includes('standard_photo') ? standardRows : addonRows;
+      target.push(...rows);
     });
 
     // Standalone-sellable add-ons (never appear as a lone row otherwise -- bundle-only
@@ -417,17 +430,12 @@
       const svc = config.services[id];
       if (id === 'standard_photo' || id === 'luxury_photo') return;
       if (!svc.standaloneAllowed) return;
-      addonRows.push({
-        name: svc.displayName,
-        includes: '—',
-        info: servicePriceInfo(svc.pricing),
-        hiddenLabel: HIDDEN_SERVICES.has(id) ? '隐藏服务' : null,
-      });
+      addonRows.push(...priceRows(svc.displayName, '—', servicePricingLike(svc.pricing), HIDDEN_SERVICES.has(id) ? '隐藏服务' : null));
     });
 
-    renderPriceTable('thead-luxury', 'table-luxury', luxuryRows);
-    renderPriceTable('thead-standard', 'table-standard', standardRows);
-    renderPriceTable('thead-addons', 'table-addons', addonRows);
+    renderPriceTable('table-luxury', luxuryRows);
+    renderPriceTable('table-standard', standardRows);
+    renderPriceTable('table-addons', addonRows);
   }
 
   // ---- pending queue --------------------------------------------------------
