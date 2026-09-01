@@ -230,11 +230,13 @@
   // for printing (emails the finished sheet to the studio, when the submit
   // module is wired up).
   app.confirmDesign = function () {
+    var msg = app.adminToken
+      ? ['Submit this design for printing?\nOnce submitted it is locked. You can re-open it to make changes and submit again.',
+         '确认将当前版本提交打印？\n提交后会锁定；管理员可重新打开修改后再次提交。']
+      : ['Submit this design for printing?\nOnce submitted it is locked and sent to print. To make further changes, please contact Franky.',
+         '确认提交打印？\n提交后将锁定并送印；之后如需修改，请联系 Franky。'];
     util.confirmDialog(
-      [
-        'Submit this design for printing?\nOnce submitted it is locked — you can still re-open it to make changes and submit again.',
-        '确认将当前版本提交打印？\n提交后会锁定；之后仍可重新打开修改，并再次提交。',
-      ],
+      msg,
       { okText: 'Confirm & Submit  确认提交', cancelText: 'Not yet  暂不' }
     ).then(function (ok) {
       if (!ok) return;
@@ -399,15 +401,31 @@
       var wrap = el('div', { class: 'fsb-stage-page', id: 'fsb-stage-page-' + p });
       wrap.appendChild(el('div', { class: 'fsb-stage-page-label', text: 'Page ' + p }));
       var pageEl = render.renderPage(p, app.project, {
-        scale: app._scale, interactive: true, placeholders: true, admin: !!app.adminToken,
+        scale: app._scale, interactive: !app.isReadOnly(), placeholders: true,
+        // a submitted sheet is locked: no agent-box drag / resize, even for admin
+        admin: !!app.adminToken && !app.isReadOnly(),
       });
       app._pageEls[p] = pageEl;
       wrap.appendChild(pageEl);
       stage.appendChild(wrap);
     }
-    // now in the DOM -> size the auto-fit text blocks
-    if (render.fitTexts) [1, 2].forEach(function (p) { if (app._pageEls[p]) render.fitTexts(app._pageEls[p]); });
+    // Size the auto-fit blocks now, then again once fonts are ready and the
+    // layout has settled -- on a cold load the first pass measures before
+    // the webfont metrics land and the description ends up too small.
+    refitAll();
     stage.classList.toggle('fsb-stage--locked', app.isReadOnly());
+  }
+
+  function refitAll() {
+    if (!render.fitTexts) return;
+    var run = function () {
+      [1, 2].forEach(function (p) { if (app._pageEls[p]) render.fitTexts(app._pageEls[p]); });
+    };
+    run();
+    requestAnimationFrame(run);
+    var ready = (document.fonts && document.fonts.ready) ? document.fonts.ready : Promise.resolve();
+    ready.then(function () { requestAnimationFrame(run); });
+    setTimeout(run, 400);   // last resort once images / late layout settle
   }
 
   function reflectSaveState() {
@@ -425,12 +443,15 @@
     if (app.project && app.project.confirmed) {
       badge.textContent = 'SUBMITTED 已提交 · ' + util.formatDateTime(app.project.confirmedAt);
       badge.classList.add('show');
+      // re-opening a submitted sheet is an admin-only action
       btn.textContent = 'Re-open 重新打开';
       btn.classList.remove('fsb-btn--primary');
+      btn.hidden = !app.adminToken;
     } else {
       badge.classList.remove('show');
       btn.textContent = 'Confirm & Submit 确认提交';
       btn.classList.add('fsb-btn--primary');
+      btn.hidden = false;
     }
     document.getElementById('fsb-app').classList.toggle('is-confirmed', !!(app.project && app.project.confirmed));
   }
