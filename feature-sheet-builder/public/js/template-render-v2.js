@@ -143,11 +143,12 @@
     return node;
   }
 
-  // ---- icon glyphs (simple line SVGs) ---------------------------
+  // ---- icon glyphs (line SVGs, redrawn to match the Sue template) ----
+  var ICO = 'fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"';
   var ICONS = {
-    bed: '<svg viewBox="0 0 32 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 4v13M2 17h28M30 17v-6a4 4 0 0 0-4-4H10v6M2 11h8"/><circle cx="7" cy="9" r="2.2"/></svg>',
-    bath: '<svg viewBox="0 0 32 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 3v10M4 13h26v3a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4zM4 8h4a3 3 0 0 1 3-3"/><path d="M8 20l-1 2M24 20l1 2"/></svg>',
-    garage: '<svg viewBox="0 0 32 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 22V9l13-6 13 6v13M7 22v-9h18v9M7 16h18M7 19h18"/></svg>',
+    bed: '<svg viewBox="0 0 34 22" ' + ICO + '><path d="M3 5v13M3 18h27M3 18v3M27 18v3M3 12.5h18a6 6 0 0 1 6 5.5"/><circle cx="8" cy="9.6" r="2.6"/></svg>',
+    bath: '<svg viewBox="0 0 34 22" ' + ICO + '><path d="M4 4v9M4 8.5h3.5a3.5 3.5 0 0 1 3.5-3.5"/><path d="M4 13h26v2.5a5.5 5.5 0 0 1-5.5 5.5H9.5A5.5 5.5 0 0 1 4 15.5z"/><path d="M9.5 21l-1.6 2.4M24.5 21l1.6 2.4"/></svg>',
+    garage: '<svg viewBox="0 0 34 22" ' + ICO + '><path d="M3 21V10L17 3l14 7v11M3 21h28"/><path d="M11 21v-5.5a6 6 0 0 1 12 0V21"/></svg>',
   };
 
   function buildIconRow(info, pw, ph, scale, theme) {
