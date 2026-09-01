@@ -324,6 +324,25 @@
   const HIDDEN_SERVICES = new Set(['floor_plan', 'drone_photos', 'vlog_video']);
   const HIDDEN_PACKAGES = new Set(['standard_walkthrough']);
 
+  // The "includes / details" wording straight from the original price sheet
+  // image, keyed by service/package id (luxury_photo needs a condo and a
+  // house variant since the two rows describe different photo counts).
+  // Anything not in here (hidden items, anything added later) has no original
+  // wording to copy, so the display falls back to an auto-derived description.
+  const ORIGINAL_SHEET_TEXT = {
+    luxury_photo_condo: 'Up to 40 Luxury Photos',
+    luxury_photo_house: 'Up to 80 Luxury Photos',
+    luxury_floorplan: 'Up to 80 Luxury Photos + Floor Plan',
+    luxury_walkthrough: 'Up to 80 Luxury Photos + 1 Min Video + Drone Clips',
+    luxury_vlog: 'Up to 80 Luxury Photos + 1 Min Agent Vlog + Drone Clips',
+    standard_photo: 'Up to 40 Photos',
+    standard_floorplan: 'Up to 40 Photos + Floor Plan',
+    three_d_tour: '3D Matterport / 3D Tour',
+    virtual_staging: 'AI Virtual Staging 每张',
+    feature_sheets: 'Custom feature sheet design + Printed delivery (30份)',
+    floorplan_siteplan: 'Includes Floor Plan + Site Plan',
+  };
+
   let pending = [];
   let currentType = 'standalone';
   let editingIndex = null;
@@ -391,8 +410,17 @@
     return { kind: 'restrictedFlat', propertyTypes: pt, amountCents: pkg.priceCents };
   }
 
+  // Auto-derived fallback for anything with no original price-sheet wording to copy.
   function includesLabel(pkg, config) {
     return pkg.includes.map((id) => (config.services[id] || { displayName: id }).displayName).join(', ');
+  }
+
+  function packageIncludesText(pkg, config) {
+    return ORIGINAL_SHEET_TEXT[pkg.id] !== undefined ? ORIGINAL_SHEET_TEXT[pkg.id] : includesLabel(pkg, config);
+  }
+
+  function serviceIncludesText(id) {
+    return ORIGINAL_SHEET_TEXT[id] !== undefined ? ORIGINAL_SHEET_TEXT[id] : '—';
   }
 
   function renderPriceTable(tbodyId, rows) {
@@ -414,12 +442,23 @@
     const standardRows = [];
     const addonRows = [];
 
-    luxuryRows.push(...priceRows('Luxury Photography', '—', servicePricingLike(config.services.luxury_photo.pricing)));
-    standardRows.push(...priceRows('Standard Photography', '—', servicePricingLike(config.services.standard_photo.pricing)));
+    // Luxury Photography needs different "includes" wording for its Condo and
+    // House rows (different photo counts), so it's built directly rather than
+    // through priceRows (which assumes one includes-text for every row it emits).
+    const luxPricing = config.services.luxury_photo.pricing;
+    if (luxPricing.condo === luxPricing.house) {
+      luxuryRows.push(...priceRows('Luxury Photography', serviceIncludesText('luxury_photo'), servicePricingLike(luxPricing)));
+    } else {
+      luxuryRows.push(
+        { name: 'Luxury Photography（Condo）', includes: ORIGINAL_SHEET_TEXT.luxury_photo_condo, price: money(luxPricing.condo) },
+        { name: 'Luxury Photography（House）', includes: ORIGINAL_SHEET_TEXT.luxury_photo_house, price: money(luxPricing.house) }
+      );
+    }
+    standardRows.push(...priceRows('Standard Photography', serviceIncludesText('standard_photo'), servicePricingLike(config.services.standard_photo.pricing)));
 
     // Packages, grouped by whether they include a photography id
     config.packages.forEach((pkg) => {
-      const rows = priceRows(pkg.displayName, includesLabel(pkg, config), packagePricingLike(pkg), HIDDEN_PACKAGES.has(pkg.id) ? '隐藏套餐' : null);
+      const rows = priceRows(pkg.displayName, packageIncludesText(pkg, config), packagePricingLike(pkg), HIDDEN_PACKAGES.has(pkg.id) ? '隐藏套餐' : null);
       const target = pkg.includes.includes('luxury_photo') ? luxuryRows : pkg.includes.includes('standard_photo') ? standardRows : addonRows;
       target.push(...rows);
     });
@@ -430,7 +469,7 @@
       const svc = config.services[id];
       if (id === 'standard_photo' || id === 'luxury_photo') return;
       if (!svc.standaloneAllowed) return;
-      addonRows.push(...priceRows(svc.displayName, '—', servicePricingLike(svc.pricing), HIDDEN_SERVICES.has(id) ? '隐藏服务' : null));
+      addonRows.push(...priceRows(svc.displayName, serviceIncludesText(id), servicePricingLike(svc.pricing), HIDDEN_SERVICES.has(id) ? '隐藏服务' : null));
     });
 
     renderPriceTable('table-luxury', luxuryRows);
