@@ -69,15 +69,18 @@
     });
     stage.addEventListener('dragend', clearDragState);
 
-    // Only slot<->slot moves are dragged now (via the Move handle);
-    // photos get INTO slots by clicking the slot -> picker modal.
+    // A slot accepts either a dragged library thumbnail (MIME_PHOTO) or
+    // another slot (MIME_SLOT, via the Move handle). Clicking a slot also
+    // opens the picker -- see the click / pan handlers below.
     stage.addEventListener('dragover', function (e) {
       var slotEl = e.target.closest('.fsb-slot');
       if (!slotEl || app.isReadOnly()) return;
       var t = e.dataTransfer.types || [];
-      if ([].indexOf.call(t, MIME_SLOT) < 0) return;
+      var isSlot = [].indexOf.call(t, MIME_SLOT) >= 0;
+      var isPhoto = [].indexOf.call(t, MIME_PHOTO) >= 0;
+      if (!isSlot && !isPhoto) return;
       e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
+      e.dataTransfer.dropEffect = isSlot ? 'move' : 'copy';
       slotEl.classList.add('fsb-slot--drop');
     });
     stage.addEventListener('dragleave', function (e) {
@@ -94,21 +97,22 @@
       if (slotData) {
         var s = JSON.parse(slotData);
         if (!(s.page === target.page && s.slotId === target.slotId)) app.swapSlots(s, target);
+      } else {
+        var photoId = e.dataTransfer.getData(MIME_PHOTO);
+        if (photoId) app.assignPhotoToSlot(target, photoId);
       }
       clearDragState(); // in case the re-render swallows the dragend
     });
 
-    // ---- click a slot -> photo picker -----------------------------
-    // Empty slot: click anywhere. Filled slot: the "change" toolbar button
-    // (clicking the image itself is reserved for panning).
+    // ---- click a slot -> photo picker ----------------------------
+    // Empty slot: handled here. Filled slot: handled in endPan() so a
+    // real pan-drag doesn't also trigger it. Either way, a plain click
+    // anywhere on the slot opens the picker; drag pans.
     stage.addEventListener('click', function (e) {
       if (app.isReadOnly()) return;
-      var changeBtn = e.target.closest('.fsb-slot-tools button[data-action="change"]');
+      if (e.target.closest('.fsb-slot-tools') || e.target.closest('.fsb-slot-move')) return;
       var emptySlot = e.target.closest('.fsb-slot--empty');
-      var slotEl = changeBtn ? changeBtn.closest('.fsb-slot') : emptySlot;
-      if (slotEl && (changeBtn || emptySlot)) {
-        window.FSB.photoPicker.open(app, slotRef(slotEl));
-      }
+      if (emptySlot) window.FSB.photoPicker.open(app, slotRef(emptySlot));
     });
 
     // ---- toolbar buttons ------------------------------------------
@@ -177,17 +181,22 @@
       if (!pan) return;
       var dx = e.clientX - pan.lastX, dy = e.clientY - pan.lastY;
       pan.lastX = e.clientX; pan.lastY = e.clientY;
-      if (Math.abs(dx) + Math.abs(dy) > 0) pan.moved = true;
+      pan.dist = (pan.dist || 0) + Math.abs(dx) + Math.abs(dy);
+      if (pan.dist > 4) pan.moved = true;           // past this it's a drag, not a click
       pan.state = CROP.panByPixels(pan.state,
         { slotW: pan.dims.w, slotH: pan.dims.h, photoW: pan.pd.w, photoH: pan.pd.h }, dx, dy);
       applyImg(pan.slotEl, pan.dims, pan.pd, pan.state);
     });
     function endPan(e) {
       if (!pan) return;
-      pan.slotEl.classList.remove('fsb-slot--panning');
-      try { pan.slotEl.releasePointerCapture(e.pointerId); } catch (_e) {}
-      if (pan.moved) app.mutateSlot(pan.ref, pan.state, { silentRender: true });
-      pan = null;
+      var p = pan; pan = null;
+      p.slotEl.classList.remove('fsb-slot--panning');
+      try { p.slotEl.releasePointerCapture(e.pointerId); } catch (_e) {}
+      if (p.moved) {
+        app.mutateSlot(p.ref, p.state, { silentRender: true });
+      } else if (window.FSB.photoPicker) {
+        window.FSB.photoPicker.open(app, p.ref);   // a click, not a drag -> swap the photo
+      }
     }
     stage.addEventListener('pointerup', endPan);
     stage.addEventListener('pointercancel', endPan);

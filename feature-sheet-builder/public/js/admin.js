@@ -196,12 +196,38 @@
       });
     }
 
+    // agent's first name -> for the primary A-Z sort
+    function agentFirstName(r) {
+      var n = ((r.agents && r.agents[0]) || '').trim();
+      return n.split(/\s+/)[0].toLowerCase();
+    }
+    // active list: by agent first name A-Z, then newest-updated first
+    // within the same name. (Trash stays newest-deleted first.)
+    function sortRows() {
+      if (view === 'trash') {
+        rows.sort(function (a, b) {
+          return String(b.deletedAt || '').localeCompare(String(a.deletedAt || ''));
+        });
+        return;
+      }
+      rows.sort(function (a, b) {
+        var fa = agentFirstName(a), fb = agentFirstName(b);
+        if (fa !== fb) {
+          if (!fa) return 1;
+          if (!fb) return -1;
+          return fa < fb ? -1 : 1;
+        }
+        return String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''));
+      });
+    }
+
     function load() {
       body.innerHTML = '';
       body.appendChild(el('div', { class: 'fsb-admin-loading', text: 'Loading… 加载中…' }));
       var p = view === 'trash' ? store.listTrash(token) : store.listAllProjects(token);
       p.then(function (list) {
         rows = (list || []).slice();
+        sortRows();
         render();
       }).catch(function (err) {
         body.innerHTML = '';

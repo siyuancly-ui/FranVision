@@ -122,16 +122,24 @@
         var used = app.slotsUsingPhoto(p.id);
         var img = el('img', { class: 'fsb-thumb-img', draggable: 'false', loading: 'lazy', alt: p.filename });
         img.src = src.thumbUrl(project, p.id);
-        // The library is browse + upload + delete only. Photos go into
-        // slots by clicking a slot on the sheet (photo-picker modal).
+        // Drag a thumbnail onto a slot to place / replace its photo
+        // (editor.js handles the drop); clicking a slot also opens the picker.
         var tile = el('div', {
           class: 'fsb-thumb' + (used ? ' fsb-thumb--used' : ''),
-          title: p.filename + (used ? ('  ·  used ×' + used) : ''), 'data-photo-id': p.id,
+          draggable: 'true', title: p.filename + (used ? ('  ·  used ×' + used) : ''), 'data-photo-id': p.id,
         }, [
           img,
           used ? el('span', { class: 'fsb-thumb-badge', text: '×' + used }) : null,
           canUpload ? el('button', { class: 'fsb-thumb-del', 'data-del': p.id, title: 'Delete photo', text: '✕' }) : null,
         ]);
+        tile.addEventListener('dragstart', function (e) {
+          if (app.isReadOnly()) { e.preventDefault(); return; }
+          e.dataTransfer.effectAllowed = 'copy';
+          e.dataTransfer.setData(MIME_PHOTO, p.id);
+          try { e.dataTransfer.setDragImage(img, 30, 30); } catch (_e) {}
+          tile.classList.add('fsb-thumb--drag');
+        });
+        tile.addEventListener('dragend', function () { tile.classList.remove('fsb-thumb--drag'); });
         grid.appendChild(tile);
       });
     }

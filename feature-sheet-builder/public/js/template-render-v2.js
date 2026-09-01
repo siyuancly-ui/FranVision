@@ -89,7 +89,7 @@
       el('span', { class: 'fsb-slot-move-txt', text: 'Move' }),
     ]));
     frag.appendChild(el('div', { class: 'fsb-slot-tools' }, [
-      el('button', { 'data-action': 'change', title: 'Change photo 换图', text: '⇄' }),
+      // no "change" button -- clicking the photo opens the picker (editor.js)
       el('button', { 'data-action': 'zoom-out', title: 'Zoom out', text: '−' }),
       el('button', { 'data-action': 'zoom-in', title: 'Zoom in', text: '+' }),
       el('button', { 'data-action': 'reset', title: 'Reset framing', text: '↺' }),
