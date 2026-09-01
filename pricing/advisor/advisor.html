@@ -195,21 +195,27 @@
   <div class="panel" id="form-panel" style="display:none;">
     <h2>添加 / 编辑改动</h2>
     <div class="type-tabs">
-      <button type="button" data-type="standalone">单个（能自己拆开单卖）</button>
-      <button type="button" data-type="combo">组合（几个东西绑一起卖）</button>
+      <button type="button" data-type="standalone">第一步：新增最小单位服务</button>
+      <button type="button" data-type="combo">第二步：组合并定价</button>
       <button type="button" data-type="editPrice">修改现有价格</button>
     </div>
 
     <div id="form-standalone" style="display:none;">
       <div class="field">
         <label class="field-label">名称</label>
-        <input type="text" id="sa-name" placeholder="比如 Aerial Clip" />
+        <input type="text" id="sa-name" placeholder="比如 Home Tour" />
       </div>
       <div class="field">
         <label class="field-label">ID（自动生成，需要的话可以改）</label>
         <input type="text" id="sa-id" />
       </div>
       <div class="field">
+        <label class="field-label">能不能单独定价？</label>
+        <div class="radio-row"><input type="radio" name="sa-standalone" id="sa-standalone-yes" value="yes" checked><label for="sa-standalone-yes">能</label></div>
+        <div class="radio-row"><input type="radio" name="sa-standalone" id="sa-standalone-no" value="no"><label for="sa-standalone-no">不能，只能通过第二步的"组合"来定价</label></div>
+        <p class="field-hint">选"不能"的话，这一条现在还不算完整——得在第二步把它跟别的东西组合、赋予价格，才算一次有效添加。</p>
+      </div>
+      <div class="field" id="sa-pricing-field">
         <label class="field-label">定价方式</label>
         <select id="sa-pricing-type">
           <option value="flat">一口价</option>
@@ -239,27 +245,8 @@
         <input type="text" id="cb-id" />
       </div>
       <div class="field">
-        <label class="field-label">包含哪些东西（可以包含一个拍照档位）</label>
+        <label class="field-label">包含哪些东西（可以包含一个拍照档位；第一步新增的东西也会出现在这里）</label>
         <div class="check-group" id="cb-items-list"></div>
-        <div class="new-item-box">
-          <div class="inline-row">
-            <input type="text" id="cb-new-name" placeholder="这里没有？直接打一个新名字" />
-            <button type="button" class="small secondary" id="cb-new-add">添加</button>
-          </div>
-          <div id="cb-new-confirm" style="display:none; margin-top:10px;">
-            <p style="margin:0 0 6px;">"<span id="cb-new-confirm-name"></span>" 是新的，需要单独定价吗？</p>
-            <div class="radio-row"><input type="radio" name="cb-new-standalone" id="cb-new-standalone-no" value="no" checked><label for="cb-new-standalone-no">不需要，只在这个组合里出现</label></div>
-            <div class="radio-row"><input type="radio" name="cb-new-standalone" id="cb-new-standalone-yes" value="yes"><label for="cb-new-standalone-yes">需要，单独价格是</label></div>
-            <div id="cb-new-price-row" style="display:none; margin:6px 0 0 22px; max-width:200px;">
-              <input type="number" step="0.01" id="cb-new-price" placeholder="$">
-            </div>
-            <div class="form-actions">
-              <button type="button" class="small" id="cb-new-confirm-btn">确认加入</button>
-              <button type="button" class="small secondary" id="cb-new-cancel-btn">取消</button>
-            </div>
-          </div>
-          <div id="cb-new-items-pending"></div>
-        </div>
       </div>
       <div class="field">
         <label class="field-label">价格 ($)</label>
@@ -348,7 +335,6 @@
   let editingIndex = null;
   let idManuallyEdited = { standalone: false, combo: false };
   let lastCandidate = null;
-  let pendingNewItems = []; // new services introduced inline while building the current combo, not yet in `pending`
 
   function money(cents) { return PricingAdvisor.money(cents); }
 
@@ -479,8 +465,18 @@
 
   // ---- pending queue --------------------------------------------------------
 
+  // A newService with standaloneAllowed:false has no price of its own -- it isn't
+  // a complete, valid addition until some pending combo actually includes it.
+  function isPendingUnpriced(ch) {
+    if (ch.type !== 'newService' || ch.service.standaloneAllowed) return false;
+    return !pending.some((other) => other.type === 'newPackage' && other.package.includes.includes(ch.service.id));
+  }
+
   function describeChange(ch) {
-    if (ch.type === 'newService') return { tag: '新增服务', text: ch.service.displayName + (ch.service.standaloneAllowed ? '（可单卖）' : '（仅组合内）') };
+    if (ch.type === 'newService') {
+      const unpriced = isPendingUnpriced(ch);
+      return { tag: '新增服务', text: ch.service.displayName + (ch.service.standaloneAllowed ? '（可单卖）' : unpriced ? '（⚠️ 还没有组合覆盖它，未定价）' : '（仅组合内）') };
+    }
     if (ch.type === 'newPackage') return { tag: '新增组合', text: ch.package.displayName + ' ' + money(ch.package.priceCents) };
     if (ch.type === 'editServicePrice') return { tag: '改价', text: ch.id + ' -> ' + describePricing(ch.pricing) };
     if (ch.type === 'editPackagePrice') return { tag: '改价', text: ch.id + ' -> ' + money(ch.priceCents) };
@@ -557,12 +553,14 @@
   function resetForm() {
     el('sa-name').value = '';
     el('sa-id').value = '';
+    el('sa-standalone-yes').checked = true;
     el('sa-pricing-type').value = 'flat';
     el('sa-flat-amount').value = '';
     el('sa-condo-amount').value = '';
     el('sa-house-amount').value = '';
     el('sa-unit-amount').value = '';
     idManuallyEdited.standalone = false;
+    syncStandaloneVisibility();
     syncPricingSubfields();
 
     el('cb-name').value = '';
@@ -570,19 +568,20 @@
     el('cb-price').value = '';
     el('cb-pt-both').checked = true;
     idManuallyEdited.combo = false;
-    pendingNewItems = [];
-    el('cb-new-items-pending').innerHTML = '';
-    el('cb-new-confirm').style.display = 'none';
-    el('cb-new-name').value = '';
   }
 
-  // ---- standalone form -------------------------------------------------------
+  // ---- step 1: new minimum-unit service form ---------------------------------
 
   el('sa-name').addEventListener('input', () => {
     if (idManuallyEdited.standalone) return;
     el('sa-id').value = PricingAdvisor.uniqueId(PricingAdvisor.slugify(el('sa-name').value), draftSoFar());
   });
   el('sa-id').addEventListener('input', () => { idManuallyEdited.standalone = true; });
+
+  document.querySelectorAll('input[name="sa-standalone"]').forEach((r) => r.addEventListener('change', syncStandaloneVisibility));
+  function syncStandaloneVisibility() {
+    el('sa-pricing-field').style.display = el('sa-standalone-yes').checked ? 'block' : 'none';
+  }
 
   el('sa-pricing-type').addEventListener('change', syncPricingSubfields);
   function syncPricingSubfields() {
@@ -595,20 +594,23 @@
   function readStandaloneForm() {
     const name = el('sa-name').value.trim();
     const id = el('sa-id').value.trim() || PricingAdvisor.slugify(name);
-    const type = el('sa-pricing-type').value;
-    const svc = { id, displayName: name, category: 'addon', standaloneAllowed: true };
-    if (type === 'flat') {
-      svc.pricing = { type: 'flat', amountCents: Math.round(parseFloat(el('sa-flat-amount').value) * 100) };
-    } else if (type === 'byPropertyType') {
-      svc.pricing = { type: 'byPropertyType', condo: Math.round(parseFloat(el('sa-condo-amount').value) * 100), house: Math.round(parseFloat(el('sa-house-amount').value) * 100) };
-    } else if (type === 'perUnit') {
-      svc.requiresQuantity = true;
-      svc.pricing = { type: 'perUnit', unitAmountCents: Math.round(parseFloat(el('sa-unit-amount').value) * 100) };
+    const standalone = el('sa-standalone-yes').checked;
+    const svc = { id, displayName: name, category: 'addon', standaloneAllowed: standalone };
+    if (standalone) {
+      const type = el('sa-pricing-type').value;
+      if (type === 'flat') {
+        svc.pricing = { type: 'flat', amountCents: Math.round(parseFloat(el('sa-flat-amount').value) * 100) };
+      } else if (type === 'byPropertyType') {
+        svc.pricing = { type: 'byPropertyType', condo: Math.round(parseFloat(el('sa-condo-amount').value) * 100), house: Math.round(parseFloat(el('sa-house-amount').value) * 100) };
+      } else if (type === 'perUnit') {
+        svc.requiresQuantity = true;
+        svc.pricing = { type: 'perUnit', unitAmountCents: Math.round(parseFloat(el('sa-unit-amount').value) * 100) };
+      }
     }
     return { type: 'newService', service: svc };
   }
 
-  // ---- combo form -------------------------------------------------------------
+  // ---- step 2: combine into a priced combo -------------------------------------
 
   el('cb-name').addEventListener('input', () => {
     if (idManuallyEdited.combo) return;
@@ -632,87 +634,8 @@
       const svc = draft.services[id];
       const row = document.createElement('div');
       row.className = 'check-row';
-      row.innerHTML = '<input type="checkbox" id="item-' + id + '" value="' + id + '"><label for="item-' + id + '">' + svc.displayName + '</label>';
+      row.innerHTML = '<input type="checkbox" id="item-' + id + '" value="' + id + '"><label for="item-' + id + '">' + svc.displayName + (svc.standaloneAllowed ? '' : '（未定价）') + '</label>';
       box.appendChild(row);
-    });
-  }
-
-  function findExistingServiceByName(name) {
-    const draft = draftSoFar();
-    const lower = name.trim().toLowerCase();
-    return Object.keys(draft.services).find((id) => draft.services[id].displayName.trim().toLowerCase() === lower);
-  }
-
-  el('cb-new-add').addEventListener('click', () => {
-    const name = el('cb-new-name').value.trim();
-    if (!name) return;
-    const existingId = findExistingServiceByName(name);
-    if (existingId) {
-      const cb = el('item-' + existingId);
-      if (cb) cb.checked = true;
-      el('cb-new-name').value = '';
-      return;
-    }
-    el('cb-new-confirm-name').textContent = name;
-    el('cb-new-confirm').style.display = 'block';
-    el('cb-new-standalone-no').checked = true;
-    el('cb-new-price-row').style.display = 'none';
-    el('cb-new-price').value = '';
-  });
-
-  document.querySelectorAll('input[name="cb-new-standalone"]').forEach((r) => {
-    r.addEventListener('change', () => {
-      el('cb-new-price-row').style.display = el('cb-new-standalone-yes').checked ? 'block' : 'none';
-    });
-  });
-
-  el('cb-new-cancel-btn').addEventListener('click', () => {
-    el('cb-new-confirm').style.display = 'none';
-    el('cb-new-name').value = '';
-  });
-
-  el('cb-new-confirm-btn').addEventListener('click', () => {
-    const name = el('cb-new-name').value.trim();
-    const id = PricingAdvisor.uniqueId(PricingAdvisor.slugify(name), draftSoFar());
-    const standalone = el('cb-new-standalone-yes').checked;
-    const svc = { id, displayName: name, category: 'addon', standaloneAllowed: standalone };
-    if (standalone) {
-      svc.pricing = { type: 'flat', amountCents: Math.round(parseFloat(el('cb-new-price').value) * 100) };
-    }
-    pendingNewItems.push(svc);
-
-    // Add it to the checkbox list immediately (via a throwaway draft that includes it) and check it.
-    renderComboItemsListWithPendingNew();
-    const cb = el('item-' + id);
-    if (cb) cb.checked = true;
-
-    el('cb-new-confirm').style.display = 'none';
-    el('cb-new-name').value = '';
-    renderPendingNewItemsChips();
-  });
-
-  function renderComboItemsListWithPendingNew() {
-    renderComboItemsList();
-    const box = el('cb-items-list');
-    const checkedBefore = Array.from(box.querySelectorAll('input:checked')).map((c) => c.value);
-    pendingNewItems.forEach((svc) => {
-      if (el('item-' + svc.id)) return;
-      const row = document.createElement('div');
-      row.className = 'check-row';
-      row.innerHTML = '<input type="checkbox" id="item-' + svc.id + '" value="' + svc.id + '"><label for="item-' + svc.id + '">' + svc.displayName + '（新）</label>';
-      box.appendChild(row);
-    });
-    checkedBefore.forEach((id) => { const cb = el('item-' + id); if (cb) cb.checked = true; });
-  }
-
-  function renderPendingNewItemsChips() {
-    const box = el('cb-new-items-pending');
-    box.innerHTML = '';
-    pendingNewItems.forEach((svc) => {
-      const chip = document.createElement('span');
-      chip.className = 'new-item-pending';
-      chip.textContent = svc.displayName + (svc.standaloneAllowed ? ' (' + money(svc.pricing.amountCents) + ')' : ' (仅组合内)');
-      box.appendChild(chip);
     });
   }
 
@@ -810,16 +733,12 @@
 
   el('btn-test-item').addEventListener('click', () => {
     const candidate = readCurrentForm();
-    const baseQueue = editingIndex === null ? pending : pending.filter((_, i) => i !== editingIndex);
-    // Any inline-created "new items" from the combo builder need to exist in the queue
-    // too, or they'd look like dangling references.
-    const newItemChanges = currentType === 'combo' ? pendingNewItems.map((svc) => ({ type: 'newService', service: svc })) : [];
-    const queueForCheck = baseQueue.concat(newItemChanges);
+    const queueForCheck = editingIndex === null ? pending : pending.filter((_, i) => i !== editingIndex);
     const errors = PricingAdvisor.checkStatic(PRICING_CONFIG, queueForCheck, candidate);
     const box = el('item-test-result');
     if (errors.length === 0) {
       box.innerHTML = '<div class="result-box ok">✅ 静态检查通过。（穷举/加价单调性这类需要看全局的检测，会在最后"综合测试"里跑）</div>';
-      lastCandidate = { candidate, newItemChanges };
+      lastCandidate = candidate;
       el('btn-add-item').disabled = false;
     } else {
       box.innerHTML = '<div class="result-box error">🔴 硬错误<ul>' + errors.map((e) => '<li>' + e.message + '</li>').join('') + '</ul></div>';
@@ -830,12 +749,11 @@
 
   el('btn-add-item').addEventListener('click', () => {
     if (!lastCandidate) return;
-    const toInsert = lastCandidate.newItemChanges.concat([lastCandidate.candidate]);
     if (editingIndex !== null) {
-      pending.splice(editingIndex, 1, ...toInsert);
+      pending.splice(editingIndex, 1, lastCandidate);
       editingIndex = null;
     } else {
-      pending.push(...toInsert);
+      pending.push(lastCandidate);
     }
     el('form-panel').style.display = 'none';
     renderQueue();
@@ -850,6 +768,8 @@
       el('sa-name').value = ch.service.displayName;
       el('sa-id').value = ch.service.id;
       idManuallyEdited.standalone = true;
+      el(ch.service.standaloneAllowed ? 'sa-standalone-yes' : 'sa-standalone-no').checked = true;
+      syncStandaloneVisibility();
       if (ch.service.pricing) {
         el('sa-pricing-type').value = ch.service.pricing.type;
         syncPricingSubfields();
