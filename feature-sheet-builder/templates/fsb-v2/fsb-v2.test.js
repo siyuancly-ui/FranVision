@@ -64,6 +64,25 @@ test('themes: 3 themes, each with the token + font set', () => {
   });
 });
 
+test('geometry: page-2 flourish frame (shared Kevin-9 ornament)', () => {
+  const [L, R] = GEO.page2.flourish.map((f) => f.rect);
+  assertRect(L, 'flourish L');
+  assertRect(R, 'flourish R');
+  // mirrored across the spread: same band, same size
+  assert.equal(L[1], R[1], 'L/R share the top edge');
+  assert.equal(L[2], R[2], 'L/R share the width');
+  assert.equal(L[3], R[3], 'L/R share the height');
+  // centred over each panel (panelBorder centre), tolerance 0.01
+  const [PL, PR] = GEO.page2.panelBorder.map((b) => b.rect);
+  assert.ok(Math.abs((L[0] + L[2] / 2) - (PL[0] + PL[2] / 2)) < 0.01, 'L centred over its panel');
+  assert.ok(Math.abs((R[0] + R[2] / 2) - (PR[0] + PR[2] / 2)) < 0.01, 'R centred over its panel');
+  // sits in the band above the panel border, not overlapping it
+  assert.ok(L[1] + L[3] <= PL[1] + 0.003, 'flourish clears the panel border');
+  // frame aspect tracks the ornament art (flourish-v2.svg is ~3.8:1)
+  const aspect = (L[2] * 1224) / (L[3] * 792);
+  assert.ok(aspect > 3.5 && aspect < 4.1, 'frame aspect ~3.8:1, got ' + aspect.toFixed(2));
+});
+
 // ================================================================
 test('modules: left column variants', () => {
   const lc = MOD.leftColumn;
@@ -184,6 +203,15 @@ test('registry: compose output shape + no-overflow agent band', () => {
   assertRect(s.page1.right.agent.rect, 'composed agent band');
   const ar = s.page1.right.agent.rect;
   assert.ok(ar[1] + ar[3] <= 1.001, 'agent band stays on the page');
+
+  // page-2 flourish flows through unchanged from geometry.js (shared by all themes)
+  assert.equal(s.page2.flourish.length, 2, 'two flourishes composed');
+  s.page2.flourish.forEach((f, i) => {
+    assertRect(f.rect, 'composed flourish ' + f.panel);
+    assert.deepEqual(f.rect, GEO.page2.flourish[i].rect);
+  });
+  assert.deepEqual(REG.compose(REG.blankProject('navy')).page2.flourish,
+    s.page2.flourish, 'flourish frame is theme-independent');
 });
 
 test('registry: blankProject scaffold shape', () => {

@@ -417,10 +417,12 @@
     });
   }
 
-  // ---- flourish (page 2): the exact original filigree, extracted from
-  //      the InDesign source to templates/fsb-v2/assets/flourish.svg and
-  //      recoloured per theme via CSS mask.
-  var FLOURISH_URL = '/shared/v2/assets/flourish.svg';
+  // ---- flourish (page 2): the real Kevin-9 filigree ornament, shared by
+  //      all three themes and recoloured with the theme `gold` token via a
+  //      CSS mask. Frame rect (matched to the ornament's aspect) is
+  //      geometry.js page2.flourish. (templates/fsb-v2/assets/flourish.svg
+  //      is the retired v1 tulip, kept for reference.)
+  var FLOURISH_URL = '/template-assets/fsb-v2/assets/flourish-v2.svg';
   function styleFlourish(node, color) {
     node.style.cssText += ';background-color:' + color +
       ';-webkit-mask:url(' + FLOURISH_URL + ') center/contain no-repeat' +

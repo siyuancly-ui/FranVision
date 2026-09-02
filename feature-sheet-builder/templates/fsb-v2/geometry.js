@@ -99,11 +99,15 @@
     //  and is not used). Only the palette changes between themes.
     // ================================================================
     page2: {
-      // gold filigree ornament centred above each panel (in the navy band
-      // between the page top and the panel border)
+      // gold filigree ornament centred above each panel (in the band
+      // between the page top and the panel border). Frame lifted 1:1 from
+      // Kevin-9.idml: Spread_u111 rects u1110 / u111e, placed image u110c
+      // at scale 0.1287817; ornament content bounds x72..1461 y303..668
+      // within its 1536x1024 source canvas, normalised to the 1224x792
+      // page. Aspect matches templates/fsb-v2/assets/flourish-v2.svg.
       flourish: [
-        { panel: 'L', rect: [0.150, 0.012, 0.200, 0.050] },
-        { panel: 'R', rect: [0.650, 0.012, 0.200, 0.050] },
+        { panel: 'L', rect: [0.174634, 0.014329, 0.146142, 0.059350] },
+        { panel: 'R', rect: [0.678095, 0.014329, 0.146142, 0.059350] },
       ],
       // gold double keyline framing each panel's photo block
       panelBorder: [
