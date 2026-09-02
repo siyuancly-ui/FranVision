@@ -12,9 +12,14 @@
  *   - marble : Kevin-9      light marble texture, ~#F5F4F1, brass gold
  *   - burgundy: Michelle&Sue / Sue   oxblood #301417, vignette to #1c0708
  *
- * `bg.css` is a CSS approximation of the original (navy velvet vignette /
- * marble / oxblood vignette). Swap for a real texture PNG later by
- * setting `bg.asset`.
+ * `bg.css` for navy / burgundy is a CSS approximation of the original
+ * (velvet vignette / oxblood vignette). marble now uses the real Carrara
+ * texture (`bg.css` = `url(...)` + a fallback colour); swap navy / burgundy
+ * to real artwork the same way.
+ *
+ * The page-2 ornament is shared by all three themes: asset + geometry live
+ * in template-render-v2.js (FLOURISH_URL) and geometry.js (page2.flourish),
+ * recoloured per theme with the `gold` token via CSS mask.
  */
 (function (root) {
   'use strict';
@@ -78,8 +83,11 @@
       panelInk: '#26292F',
       agentText: '#26292F',   // marble: everything is dark (LYF ref)
     }, {
-      asset: null,
-      css: 'linear-gradient(157deg, #FAF8F2 0%, #F0EDE4 46%, #E4DFD2 100%)',
+      // Real Carrara texture from the Kevin-9 reference (5100x3300 = exactly
+      // one page's aspect, so `cover` shows the whole slab with no crop).
+      // Pale stone underneath as a fallback while it loads / if it 404s.
+      asset: '/template-assets/fsb-v2/assets/marble.jpg',
+      css: "#F4F2EC url('/template-assets/fsb-v2/assets/marble.jpg') center / cover no-repeat",
     }),
 
     burgundy: theme('burgundy', '酒红 · Burgundy', {
