@@ -65,6 +65,7 @@
       gold: '#D9B28D',
       goldDeep: '#c0925f',
       goldLine: '#a97c4f',
+      goldSoft: '#E7D2BC',    // pale gold -- page-1 hero keyline only
       panelInk: '#F4EFE6',
       agentText: '#D9B28D',   // navy: agent name/contact = gold
     }, {
@@ -80,6 +81,7 @@
       gold: '#9c7b33',         // deeper brass reads on light stone
       goldDeep: '#7c6128',
       goldLine: '#b39a56',
+      goldSoft: '#C0A66E',    // pale gold -- page-1 hero keyline only
       panelInk: '#26292F',
       agentText: '#26292F',   // marble: everything is dark (LYF ref)
     }, {
@@ -98,6 +100,7 @@
       gold: '#D9B28D',
       goldDeep: '#c0925f',
       goldLine: '#a97c4f',
+      goldSoft: '#E7D2BC',    // pale gold -- page-1 hero keyline only
       panelInk: '#F4EFE6',
       agentText: '#D9B28D',
     }, {

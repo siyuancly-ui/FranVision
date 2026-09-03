@@ -1,16 +1,14 @@
 /*
- * export-pdf.js -- the print-ready 2-page PDF (admin only).
+ * export-pdf.js -- the 2-page Feature Sheet PDF (admin export + studio submission).
  *
  * Pipeline:
- *   render each page's DOM at ~300 dpi -> html-to-image PNG -> jsPDF page
- *   -> vector crop marks + a centre fold tick drawn in the bleed.
+ *   render each page's DOM at ~300 dpi -> html-to-image JPEG -> jsPDF page.
  *
  * Page geometry (fsb-v2):
- *   trim   1224 x 792 pt   (17 x 11 in landscape spread, folds at 8.5")
- *   bleed  3 mm  (0.1181 in) on every side  ->  media box = trim + bleed
- *   the raster is scaled to cover the whole media box (uniform, centred),
- *   so edge artwork bleeds; crop / fold marks are white 0.5 pt lines that
- *   sit inside the 3 mm bleed.
+ *   trim 1224 x 792 pt  (17 x 11 in landscape spread, folds at 8.5")
+ *   NO bleed, NO crop / fold marks -- the PDF is exactly the trim box and
+ *   the rasterised page is placed 1:1 over it. (A print-ready path with
+ *   real bleed + vector marks + CMYK would replace renderPageToDataUrl.)
  *
  * Libraries (index.html): window.jspdf (jsPDF 2.5.1), window.htmlToImage.
  *
@@ -26,33 +24,11 @@
   var render = window.FSB.render;
 
   var PT = 72;
-  var MM = 1 / 25.4;
   var TRIM_W = 1224, TRIM_H = 792;
-  var BLEED = 3 * MM * PT;                 // 8.5039 pt
   var DPI = 300;
 
-  var MEDIA_W = TRIM_W + 2 * BLEED;        // 1241.008 pt
-  var MEDIA_H = TRIM_H + 2 * BLEED;        // 809.008 pt
-  // Scale the trim artwork up just enough to bleed on the LEFT/RIGHT
-  // (where photos sit against the trim); this leaves ~3pt unbled top and
-  // bottom, backfilled with the theme's edge colour so there is never a
-  // white sliver. Scaling by the larger (height) factor would push the
-  // near-edge left column ~2pt into the bleed and shave the description.
-  var COVER = 1 + 2 * BLEED / TRIM_W;      // ~1.0139
   // raster the page DOM this much bigger than trim pt -> ~300 dpi in print
-  var RENDER_SCALE = Math.ceil((MEDIA_W / TRIM_W) * (DPI / PT) * 20) / 20;  // ~4.25
-
-  function edgeColor(project) {
-    try {
-      var t = window.FSB_V2.compose(project).theme.tokens;
-      return t.bgDeep || t.bg || '#0d1220';
-    } catch (_e) { return '#0d1220'; }
-  }
-  function hexRgb(h) {
-    h = String(h || '').replace('#', '');
-    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
-    return [parseInt(h.slice(0, 2), 16) || 0, parseInt(h.slice(2, 4), 16) || 0, parseInt(h.slice(4, 6), 16) || 0];
-  }
+  var RENDER_SCALE = Math.ceil((DPI / PT) * 20) / 20;   // 4.2  (~302 dpi)
 
   function pageCount() {
     return (window.FSB_V2_GEOMETRY && window.FSB_V2_GEOMETRY.page && window.FSB_V2_GEOMETRY.page.count) || 2;
@@ -86,7 +62,7 @@
       .then(function () { return new Promise(function (r) { setTimeout(r, 150); }); })
       .then(function () {
         return window.htmlToImage.toJpeg(pageEl, {
-          width: wPx, height: hPx, pixelRatio: 1, quality: 0.92, backgroundColor: '#0d1220',
+          width: wPx, height: hPx, pixelRatio: 1, quality: 0.92, backgroundColor: '#ffffff',
           style: { transform: 'none' },
         });
       })
@@ -94,39 +70,12 @@
       .catch(function (err) { holder.remove(); throw err; });
   }
 
-  // white 0.5pt crop marks at the trim corners + a dashed fold tick, all
-  // inside the 3mm bleed.
-  function drawMarks(pdf) {
-    var GAP = 3, LEN = Math.max(2, BLEED - GAP);
-    var L = BLEED, T = BLEED, R = BLEED + TRIM_W, B = BLEED + TRIM_H;
-    pdf.setDrawColor(255, 255, 255);
-    pdf.setLineWidth(0.5);
-    pdf.setLineDashPattern([], 0);
-    function corner(x, y, sx, sy) {
-      pdf.line(x + sx * GAP, y, x + sx * (GAP + LEN), y);
-      pdf.line(x, y + sy * GAP, x, y + sy * (GAP + LEN));
-    }
-    corner(L, T, -1, -1);
-    corner(R, T, 1, -1);
-    corner(L, B, -1, 1);
-    corner(R, B, 1, 1);
-
-    var fx = BLEED + TRIM_W / 2;   // centre fold (8.5")
-    pdf.setLineDashPattern([2, 2], 0);
-    pdf.line(fx, 0, fx, T - GAP);
-    pdf.line(fx, B + GAP, fx, MEDIA_H);
-    pdf.setLineDashPattern([], 0);
-  }
-
   function buildPdf(app) {
     if (!window.jspdf || !window.htmlToImage) {
       return Promise.reject(new Error('PDF libraries did not load (offline?)'));
     }
     var JsPDF = window.jspdf.jsPDF;
-    var pdf = new JsPDF({ unit: 'pt', format: [MEDIA_W, MEDIA_H], orientation: 'landscape', compress: true });
-    var drawW = TRIM_W * COVER, drawH = TRIM_H * COVER;
-    var dx = (MEDIA_W - drawW) / 2, dy = (MEDIA_H - drawH) / 2;   // dx ~0, dy ~3pt
-    var edge = hexRgb(edgeColor(app.project));
+    var pdf = new JsPDF({ unit: 'pt', format: [TRIM_W, TRIM_H], orientation: 'landscape', compress: true });
     var n = pageCount();
 
     var chain = Promise.resolve();
@@ -135,11 +84,8 @@
         chain = chain
           .then(function () { return renderPageToDataUrl(pageNum, app.project); })
           .then(function (url) {
-            if (pageNum > 1) pdf.addPage([MEDIA_W, MEDIA_H], 'landscape');
-            pdf.setFillColor(edge[0], edge[1], edge[2]);
-            pdf.rect(0, 0, MEDIA_W, MEDIA_H, 'F');            // edge-colour backfill for the top/bottom bleed
-            pdf.addImage(url, 'JPEG', dx, dy, drawW, drawH, undefined, 'FAST');
-            drawMarks(pdf);
+            if (pageNum > 1) pdf.addPage([TRIM_W, TRIM_H], 'landscape');
+            pdf.addImage(url, 'JPEG', 0, 0, TRIM_W, TRIM_H, undefined, 'FAST');
           });
       })(p);
     }
@@ -184,7 +130,7 @@
 
   function run(app) {
     var setBusy = window.FSB.app && window.FSB.app.setBusy;
-    if (setBusy) setBusy('Building the print PDF… 正在生成打印 PDF…');
+    if (setBusy) setBusy('Building the PDF… 正在生成 PDF…');
     return buildPdf(app).then(function (pdf) {
       return saveBlob(pdf.output('blob'), fileName(app.project));
     }).then(function (how) {
