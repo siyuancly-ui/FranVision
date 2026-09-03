@@ -249,8 +249,54 @@
     }
 
     const subsets = powerset(universe);
-    const errors = [];
+    // Grouped by root cause (not one line per combo) -- with more than a
+    // handful of new add-ons, the same underlying problem (e.g. "Home Report
+    // needs Floor Plan") shows up on every combo that also happens to include
+    // some unrelated extra, which without grouping can mean hundreds of
+    // near-duplicate lines for what's really one thing to fix.
+    const groups = {};
     let combosChecked = 0;
+
+    // A service the engine lists as "blocked" might be a genuinely new problem
+    // (added or changed by this batch) or might just be a pre-existing,
+    // already-confirmed rule (e.g. Site Plan needing Floor Plan) that happens to
+    // be present on the same order as the real new problem. Only the former is
+    // this batch's fault, so only those ids' restriction messages should be
+    // reported as "the reason" -- otherwise old, settled rules get blamed for
+    // failures a brand-new service actually caused.
+    const newBlockableIds = new Set(
+      Object.keys(draftConfig.services).filter((id) => !baseConfig.services[id] && draftConfig.services[id].standaloneAllowed === false)
+    );
+    function restrictionMessageFor(id) {
+      const svc = draftConfig.services[id];
+      return svc.restrictionMessage || svc.displayName + ' is not available standalone.';
+    }
+
+    // Human-readable reason: for "invalid", filter the engine's blocked-id list
+    // down to ones this batch actually introduced (also returning that filtered
+    // id set, so a later pass can drop groups whose set is a superset of some
+    // other group's -- see below); for "ambiguous" there's no such list, so
+    // build a reason from which packages are tied instead.
+    function reasonFor(result) {
+      if (result.status === 'ambiguous') {
+        const tied = result.candidates
+          .map((c) => c.lineItems.filter((li) => li.type === 'package').map((li) => li.label).sort().join(' + '))
+          .sort()
+          .join(' 和 ');
+        return { reason: tied + ' 打平，需要人工选一个', ids: null };
+      }
+      // Sorted so the same underlying set of blocked ids always produces the same
+      // sentence, regardless of which order they happened to appear on this
+      // particular combo -- otherwise "A blocked, B blocked" and "B blocked, A
+      // blocked" look like two different root causes and both get listed.
+      const newOnes = (result.blockedIds || []).filter((id) => newBlockableIds.has(id)).sort();
+      if (newOnes.length === 0) return { reason: result.reason || '未知原因', ids: null }; // fallback, shouldn't normally happen
+      return { reason: newOnes.map(restrictionMessageFor).join(' '), ids: newOnes };
+    }
+
+    function tierLabel(photography, propertyType) {
+      return (photography === 'luxury' ? 'Luxury' : 'Standard') + '/' + (propertyType === 'condo' ? 'Condo' : 'House');
+    }
 
     ['condo', 'house'].forEach((propertyType) => {
       ['standard', 'luxury'].forEach((photography) => {
@@ -264,17 +310,36 @@
             ? calculatePrice(buildOrder(propertyType, photography, addonIds, baseConfig), baseConfig)
             : null;
           const wasFineBefore = baselineResult && baselineResult.status === 'ok';
+          if (usesOnlyOldServices && !wasFineBefore) return;
 
-          if (!usesOnlyOldServices || wasFineBefore) {
-            const label = photography + '/' + propertyType + (addonIds.length ? ' + ' + addonIds.join('+') : '');
-            if (draftResult.status === 'ambiguous') {
-              errors.push({ code: 'new_ambiguous', message: '订单组合「' + label + '」现在算不出唯一价格了（多个套餐组合打平，需要人工选一个）。' });
-            } else {
-              errors.push({ code: 'new_invalid', message: '订单组合「' + label + '」现在算不出价格：' + (draftResult.reason || '未知原因') });
-            }
+          const { reason, ids } = reasonFor(draftResult);
+          const key = draftResult.status + ':' + reason;
+          if (!groups[key]) {
+            const names = addonIds.map((id) => (draftConfig.services[id] || { displayName: id }).displayName);
+            const example = '比如：' + tierLabel(photography, propertyType) + (names.length ? '，同时选了 ' + names.join('、') + ' 的时候' : '');
+            groups[key] = { status: draftResult.status, reason, ids, example };
           }
         });
       });
+    });
+
+    // Drop any group whose blocked-id set is a strict superset of some other
+    // group's -- e.g. "Home Report + Home Tour blocked" adds nothing once
+    // "Home Report blocked" is already reported (Home Tour requires Home
+    // Report, so anywhere Home Tour breaks, Home Report was already broken).
+    // Keep only the minimal, most fundamental version of each root cause.
+    const allIdSets = Object.values(groups).map((g) => g.ids).filter(Boolean);
+    const keptKeys = Object.keys(groups).filter((key) => {
+      const g = groups[key];
+      if (!g.ids) return true; // ambiguous groups have no id set to compare
+      return !allIdSets.some((other) => other !== g.ids && other.length < g.ids.length && other.every((id) => g.ids.includes(id)));
+    });
+
+    // One-sentence summary of the root cause, plus one concrete, plain-language
+    // example -- not a raw dump of every combo it happens to trigger on.
+    const errors = keptKeys.map((key) => {
+      const g = groups[key];
+      return { code: g.status === 'ambiguous' ? 'new_ambiguous' : 'new_invalid', groupKey: key, message: g.reason, example: g.example };
     });
 
     return { errors, combosChecked };
@@ -295,6 +360,7 @@
         if (isProperSubset && a.priceCents < b.priceCents) {
           warnings.push({
             code: 'subset_inversion',
+            groupKey: 'subset_inversion:' + [a.id, b.id].sort().join('+'),
             message: '套餐 "' + a.displayName + '"（包含更多服务）比 "' + b.displayName + '"（包含更少服务）还便宜：' + money(a.priceCents) + ' vs ' + money(b.priceCents) + '。',
           });
         }
@@ -322,6 +388,7 @@
       if (pair.luxury && pair.standard && pair.luxury.priceCents <= pair.standard.priceCents) {
         warnings.push({
           code: 'luxury_not_pricier',
+          groupKey: 'luxury_not_pricier:' + [pair.luxury.id, pair.standard.id].sort().join('+'),
           message: '"' + pair.luxury.displayName + '"（Luxury）的价格不高于 "' + pair.standard.displayName + '"（Standard）：' + money(pair.luxury.priceCents) + ' vs ' + money(pair.standard.priceCents) + '。',
         });
       }
@@ -329,15 +396,22 @@
     return warnings;
   }
 
-  // For every order that prices fine, adding one more selected service
-  // should never make the total go DOWN. A drop is either a genuine bug or
-  // a deliberate promotion -- flagged either way for a human to judge.
+  // How many distinct culprits (services whose addition drops the total on
+  // at least one order) to report. Capped worst-first by biggest single drop.
+  const MAX_MONOTONICITY_WARNINGS = 5;
+
+  // For every order that prices fine, adding one more selected service should
+  // never make the total go DOWN. A drop is either a genuine bug or a
+  // deliberate promotion -- flagged either way for a human to judge. Grouped
+  // by WHICH service causes the drop (not one line per order it happens to
+  // touch): "adding Home Tour makes several packages cheaper" is one fact, not
+  // a dozen near-identical lines that all name Home Tour.
   function checkMonotonicity(draftConfig) {
-    const warnings = [];
     const universe = addonUniverse(draftConfig);
-    if (universe.length > MAX_UNIVERSE) return warnings;
+    if (universe.length > MAX_UNIVERSE) return [];
 
     const seen = new Set();
+    const byExtra = {}; // extraId -> { count, worstDropCents, worstExample }
     ['condo', 'house'].forEach((propertyType) => {
       ['standard', 'luxury'].forEach((photography) => {
         powerset(universe).forEach((addonIds) => {
@@ -347,22 +421,41 @@
             if (addonIds.includes(extraId)) return;
             const withExtra = calculatePrice(buildOrder(propertyType, photography, addonIds.concat([extraId]), draftConfig), draftConfig);
             if (withExtra.status !== 'ok') return;
-            if (withExtra.totalCents < base.totalCents) {
-              const key = propertyType + '|' + photography + '|' + addonIds.slice().sort().join(',') + '|+' + extraId;
-              if (seen.has(key)) return;
-              seen.add(key);
-              const svc = draftConfig.services[extraId];
-              const label = photography + '/' + propertyType + (addonIds.length ? ' + ' + addonIds.join('+') : '');
-              warnings.push({
-                code: 'non_monotonic',
-                message: '订单「' + label + '」加了 "' + (svc ? svc.displayName : extraId) + '" 之后总价反而变低了：' + money(base.totalCents) + ' -> ' + money(withExtra.totalCents) + '。',
-              });
+            const dropCents = base.totalCents - withExtra.totalCents;
+            if (dropCents <= 0) return;
+            const key = propertyType + '|' + photography + '|' + addonIds.slice().sort().join(',') + '|+' + extraId;
+            if (seen.has(key)) return;
+            seen.add(key);
+
+            if (!byExtra[extraId]) byExtra[extraId] = { count: 0, worstDropCents: -1 };
+            byExtra[extraId].count++;
+            if (dropCents > byExtra[extraId].worstDropCents) {
+              byExtra[extraId].worstDropCents = dropCents;
+              byExtra[extraId].worstExample = { propertyType, photography, addonIds, baseTotal: base.totalCents, withExtraTotal: withExtra.totalCents };
             }
           });
         });
       });
     });
-    return warnings;
+
+    const entries = Object.keys(byExtra).map((extraId) => Object.assign({ extraId }, byExtra[extraId]));
+    entries.sort((a, b) => b.worstDropCents - a.worstDropCents);
+
+    return entries.slice(0, MAX_MONOTONICITY_WARNINGS).map((e) => {
+      const svc = draftConfig.services[e.extraId];
+      const name = svc ? svc.displayName : e.extraId;
+      const ex = e.worstExample;
+      const tier = (ex.photography === 'luxury' ? 'Luxury' : 'Standard') + '/' + (ex.propertyType === 'condo' ? 'Condo' : 'House');
+      const already = ex.addonIds.map((id) => (draftConfig.services[id] || { displayName: id }).displayName);
+      const example = '比如：' + tier + (already.length ? '，已经选了 ' + already.join('、') : '') +
+        '，这时候再加上 ' + name + '，总价从 ' + money(ex.baseTotal) + ' 变成 ' + money(ex.withExtraTotal) + '。';
+      return {
+        code: 'non_monotonic',
+        groupKey: 'non_monotonic:' + e.extraId,
+        message: '加了 "' + name + '" 之后，有 ' + e.count + ' 种订单的总价反而变低了，最多便宜 ' + money(e.worstDropCents) + '。',
+        example,
+      };
+    });
   }
 
   // ---- "auto-add" suggestions ----------------------------------------------

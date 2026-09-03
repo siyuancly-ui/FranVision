@@ -26,36 +26,53 @@ test('Sanity: the real current price list has zero hard errors and zero warnings
   assert.ok(r.combosChecked > 0);
 });
 
-test('checkStatic: duplicate service id is a hard error', () => {
-  const candidate = { type: 'newService', service: { id: 'floor_plan', displayName: 'Dup', standaloneAllowed: false } };
-  const errors = advisor.checkStatic(config, [], candidate);
-  assert.ok(errors.some((e) => e.code === 'duplicate_id'));
-});
-
-test('checkStatic: package referencing an unknown service id is a hard error', () => {
-  const candidate = { type: 'newPackage', package: { id: 'ghost_pkg', displayName: 'Ghost', includes: ['luxury_photo', 'nope'], priceCents: 10000 } };
-  const errors = advisor.checkStatic(config, [], candidate);
-  assert.ok(errors.some((e) => e.code === 'dangling_reference'));
-});
-
-test('checkStatic: standalone-allowed service missing a price is a hard error', () => {
-  const candidate = { type: 'newService', service: { id: 'x', displayName: 'X', standaloneAllowed: true } };
-  const errors = advisor.checkStatic(config, [], candidate);
-  assert.ok(errors.some((e) => e.code === 'missing_pricing'));
-});
-
-test('checkStatic: two packages with the same includes set but different prices conflict', () => {
-  const queued = [{ type: 'newPackage', package: { id: 'a', displayName: 'A', includes: ['luxury_photo', 'vlog_video'], priceCents: 10000 } }];
-  const candidate = { type: 'newPackage', package: { id: 'b', displayName: 'B', includes: ['vlog_video', 'luxury_photo'], priceCents: 20000 } };
-  const errors = advisor.checkStatic(config, queued, candidate);
-  assert.ok(errors.some((e) => e.code === 'package_conflict'));
-});
-
-test('checkStatic: a brand-new service referenced by a same-batch package is NOT a dangling reference', () => {
-  const queued = [{ type: 'newService', service: { id: 'home_tour', displayName: 'Home Tour', standaloneAllowed: false } }];
-  const candidate = { type: 'newPackage', package: { id: 'luxury_hometour', displayName: 'Luxury + Home Tour', includes: ['luxury_photo', 'home_tour'], priceCents: 25000 } };
-  const errors = advisor.checkStatic(config, queued, candidate);
-  assert.deepStrictEqual(errors, []);
+test('checkStatic: hard-error / non-error cases', () => {
+  const cases = [
+    {
+      label: 'duplicate service id',
+      queued: [],
+      candidate: { type: 'newService', service: { id: 'floor_plan', displayName: 'Dup', standaloneAllowed: false } },
+      expectCode: 'duplicate_id',
+    },
+    {
+      label: 'package references an unknown service id',
+      queued: [],
+      candidate: { type: 'newPackage', package: { id: 'ghost_pkg', displayName: 'Ghost', includes: ['luxury_photo', 'nope'], priceCents: 10000 } },
+      expectCode: 'dangling_reference',
+    },
+    {
+      label: 'standalone-allowed service missing a price',
+      queued: [],
+      candidate: { type: 'newService', service: { id: 'x', displayName: 'X', standaloneAllowed: true } },
+      expectCode: 'missing_pricing',
+    },
+    {
+      label: 'same includes, same (unrestricted) property types, different price -- conflict',
+      queued: [{ type: 'newPackage', package: { id: 'a', displayName: 'A', includes: ['luxury_photo', 'vlog_video'], priceCents: 10000 } }],
+      candidate: { type: 'newPackage', package: { id: 'b', displayName: 'B', includes: ['vlog_video', 'luxury_photo'], priceCents: 20000 } },
+      expectCode: 'package_conflict',
+    },
+    {
+      label: 'same includes, condo-only vs house-only, different price -- NOT a conflict (that\'s how a combo gets two prices)',
+      queued: [{ type: 'newPackage', package: { id: 'combo_condo', displayName: 'Combo (condo)', includes: ['luxury_photo', 'drone_photos'], priceCents: 20000, eligiblePropertyTypes: ['condo'] } }],
+      candidate: { type: 'newPackage', package: { id: 'combo_house', displayName: 'Combo (house)', includes: ['luxury_photo', 'drone_photos'], priceCents: 23000, eligiblePropertyTypes: ['house'] } },
+      expectCode: null,
+    },
+    {
+      label: 'a new package referencing a same-batch new service is NOT a dangling reference',
+      queued: [{ type: 'newService', service: { id: 'home_tour', displayName: 'Home Tour', standaloneAllowed: false } }],
+      candidate: { type: 'newPackage', package: { id: 'luxury_hometour', displayName: 'Luxury + Home Tour', includes: ['luxury_photo', 'home_tour'], priceCents: 25000 } },
+      expectCode: null,
+    },
+  ];
+  cases.forEach((c) => {
+    const errors = advisor.checkStatic(config, c.queued, c.candidate);
+    if (c.expectCode) {
+      assert.ok(errors.some((e) => e.code === c.expectCode), c.label + ' -- expected code "' + c.expectCode + '", got ' + JSON.stringify(errors));
+    } else {
+      assert.deepStrictEqual(errors, [], c.label);
+    }
+  });
 });
 
 test('runFullCheck: the Home Tour example, only Luxury covered, correctly flags every Standard combo as new_invalid', () => {
@@ -66,11 +83,11 @@ test('runFullCheck: the Home Tour example, only Luxury covered, correctly flags 
   const r = advisor.runFullCheck(config, changes);
   assert.ok(r.hardErrors.length > 0);
   assert.ok(r.hardErrors.every((e) => e.code === 'new_invalid'));
-  // Standard-tier combos are always broken (no package covers home_tour there at all).
-  // Luxury-tier combos are fine UNLESS walkthrough_video is also selected -- that's the
-  // same "two standaloneAllowed:false services competing for one photo slot" conflict
-  // covered explicitly in the next test, so it's expected to show up here too.
-  assert.ok(r.hardErrors.every((e) => e.message.includes('standard/') || e.message.includes('walkthrough_video')));
+  // Home Tour is the one thing broken in every case: alone on the Standard tier (no
+  // package covers it there at all), or paired with Walkthrough Video on the Luxury
+  // tier -- the "two standaloneAllowed:false services competing for one photo slot"
+  // conflict covered explicitly in the next test, so it's expected to show up here too.
+  assert.ok(r.hardErrors.every((e) => e.message.includes('Home Tour')));
 });
 
 test('runFullCheck: both tiers covered, and the new service has a standalone fallback price, is clean end to end', () => {
@@ -100,9 +117,13 @@ test('runFullCheck: two standalone-disallowed services both wanting the same pho
   ];
   const r = advisor.runFullCheck(config, changes);
   assert.ok(r.hardErrors.length > 0);
-  // Every flagged combo should be one that selected walkthrough_video and home_tour together.
   assert.ok(r.hardErrors.every((e) => e.code === 'new_invalid'));
-  assert.ok(r.hardErrors.every((e) => e.message.includes('walkthrough_video') && e.message.includes('home_tour')));
+  // Walkthrough Video is pre-existing (not part of this batch), so per the "only blame what
+  // this batch actually introduced" rule its restriction message is deliberately left out of
+  // the reason text -- only Home Tour (the new, genuinely-added-by-this-batch culprit) is named.
+  // The conflict is still correctly caught as invalid; the message just doesn't spell out that
+  // it's specifically the pairing with Walkthrough Video that triggers it.
+  assert.ok(r.hardErrors.every((e) => e.message.includes('Home Tour')));
 });
 
 test('runFullCheck: a standalone-disallowed service with NO covering package surfaces as new_invalid (not caught earlier)', () => {
@@ -117,76 +138,88 @@ test('runFullCheck: a standalone-disallowed service with NO covering package sur
   assert.ok(r.hardErrors.some((e) => e.code === 'new_invalid'));
 });
 
-test('runFullCheck: a superset package priced below a subset package is a subset_inversion warning', () => {
+test('runFullCheck: warning cases (computable, but worth a human look)', () => {
+  const cases = [
+    {
+      label: 'a superset package priced below a subset package',
+      changes: [{ type: 'newPackage', package: { id: 'super_pkg', displayName: 'Super Bundle', includes: ['standard_photo', 'floor_plan', 'drone_photos'], priceCents: 10000 } }],
+      expectCode: 'subset_inversion',
+    },
+    {
+      label: 'a Luxury package priced at or below its Standard equivalent',
+      changes: [
+        { type: 'newPackage', package: { id: 'luxury_drone_pkg', displayName: 'Luxury + Drone', includes: ['luxury_photo', 'drone_photos'], priceCents: 5000 } },
+        { type: 'newPackage', package: { id: 'standard_drone_pkg', displayName: 'Standard + Drone', includes: ['standard_photo', 'drone_photos'], priceCents: 10000 } },
+      ],
+      expectCode: 'luxury_not_pricier',
+    },
+    {
+      label: 'a discount package that makes the total drop when it applies on top of an order',
+      changes: [{ type: 'newPackage', package: { id: 'weird_discount', displayName: 'Weird Discount', includes: ['standard_photo', 'feature_sheets'], priceCents: 5000 } }],
+      expectCode: 'non_monotonic',
+    },
+  ];
+  cases.forEach((c) => {
+    const r = advisor.runFullCheck(config, c.changes);
+    assert.ok(r.warnings.some((w) => w.code === c.expectCode), c.label + ' -- expected a "' + c.expectCode + '" warning, got ' + JSON.stringify(r.warnings));
+  });
+});
+
+test('runFullCheck: non_monotonic warnings are capped and sorted biggest-drop-first', () => {
+  // Two separate discount packages that undercut different base orders by very
+  // different amounts -- the $60 feature_sheets base drops a lot more (bigger
+  // dollar gap) than the $50 drone_photos base does.
   const changes = [
-    { type: 'newPackage', package: { id: 'super_pkg', displayName: 'Super Bundle', includes: ['standard_photo', 'floor_plan', 'drone_photos'], priceCents: 10000 } },
+    { type: 'newPackage', package: { id: 'big_discount', displayName: 'Big Discount', includes: ['standard_photo', 'feature_sheets'], priceCents: 100 } },
+    { type: 'newPackage', package: { id: 'small_discount', displayName: 'Small Discount', includes: ['standard_photo', 'drone_photos'], priceCents: 14000 } },
   ];
   const r = advisor.runFullCheck(config, changes);
-  assert.ok(r.warnings.some((w) => w.code === 'subset_inversion'));
+  const hits = r.warnings.filter((w) => w.code === 'non_monotonic');
+  assert.ok(hits.length <= 5, 'expected at most 5 non_monotonic warnings, got ' + hits.length);
+  assert.ok(hits.length > 0);
+  // The biggest-drop case (the near-free Big Discount package) should be the one reported.
+  assert.ok(hits[0].message.includes('Feature Sheets'), 'expected the worst offender first, got: ' + hits[0].message);
 });
 
-test('runFullCheck: a Luxury package priced at or below its Standard equivalent is a luxury_not_pricier warning', () => {
-  const changes = [
-    { type: 'newPackage', package: { id: 'luxury_drone_pkg', displayName: 'Luxury + Drone', includes: ['luxury_photo', 'drone_photos'], priceCents: 5000 } },
-    { type: 'newPackage', package: { id: 'standard_drone_pkg', displayName: 'Standard + Drone', includes: ['standard_photo', 'drone_photos'], priceCents: 10000 } },
+test('suggestRequires: cases', () => {
+  const cases = [
+    {
+      label: 'a bundle-only service appearing in 2+ packages always alongside the same companion is suggested',
+      changes: [
+        { type: 'newService', service: { id: 'home_report', displayName: 'Home Report', category: 'addon', standaloneAllowed: false } },
+        { type: 'newPackage', package: { id: 'floorplan_homereport', displayName: 'Floor Plan + Home Report', includes: ['floor_plan', 'home_report'], priceCents: 6600 } },
+        { type: 'newPackage', package: { id: 'luxury_floorplan_homereport', displayName: 'Luxury + Floor Plan + Home Report', includes: ['luxury_photo', 'floor_plan', 'home_report'], priceCents: 25000 } },
+      ],
+      assertion: (suggestions) => {
+        const forHomeReport = suggestions.find((s) => s.id === 'home_report');
+        assert.ok(forHomeReport, 'expected a suggestion for home_report');
+        assert.deepStrictEqual(forHomeReport.requires, ['floor_plan']);
+      },
+    },
+    {
+      label: 'no suggestion when the service only appears in one package so far (not enough evidence)',
+      changes: [
+        { type: 'newService', service: { id: 'home_report', displayName: 'Home Report', category: 'addon', standaloneAllowed: false } },
+        { type: 'newPackage', package: { id: 'floorplan_homereport', displayName: 'Floor Plan + Home Report', includes: ['floor_plan', 'home_report'], priceCents: 6600 } },
+      ],
+      assertion: (suggestions) => assert.ok(!suggestions.some((s) => s.id === 'home_report')),
+    },
+    {
+      label: 'existing Site Plan (already has requires) is not re-suggested',
+      changes: [],
+      assertion: (suggestions) => assert.ok(!suggestions.some((s) => s.id === 'site_plan')),
+    },
   ];
-  const r = advisor.runFullCheck(config, changes);
-  assert.ok(r.warnings.some((w) => w.code === 'luxury_not_pricier'));
-});
-
-test('runFullCheck: a service priced so total drops when added is a non_monotonic warning', () => {
-  const changes = [
-    { type: 'editServicePrice', id: 'drone_photos', pricing: { type: 'flat', amountCents: -500 } },
-  ];
-  // Note: this also trips bad_price in checkStatic since -500 is negative --
-  // use a different angle: a discount package that undercuts standalone Standard Photo itself.
-  const altChanges = [
-    { type: 'newPackage', package: { id: 'weird_discount', displayName: 'Weird Discount', includes: ['standard_photo', 'feature_sheets'], priceCents: 5000 } },
-  ];
-  const r = advisor.runFullCheck(config, altChanges);
-  assert.ok(r.warnings.some((w) => w.code === 'non_monotonic'));
-});
-
-test('checkStatic: same includes, different eligiblePropertyTypes (condo vs house pricing) is NOT a conflict', () => {
-  const queued = [{ type: 'newPackage', package: { id: 'combo_condo', displayName: 'Combo (condo)', includes: ['luxury_photo', 'drone_photos'], priceCents: 20000, eligiblePropertyTypes: ['condo'] } }];
-  const candidate = { type: 'newPackage', package: { id: 'combo_house', displayName: 'Combo (house)', includes: ['luxury_photo', 'drone_photos'], priceCents: 23000, eligiblePropertyTypes: ['house'] } };
-  const errors = advisor.checkStatic(config, queued, candidate);
-  assert.deepStrictEqual(errors, []);
-});
-
-test('checkStatic: same includes, same (or no) eligiblePropertyTypes, different price IS still a conflict', () => {
-  const queued = [{ type: 'newPackage', package: { id: 'combo_a', displayName: 'Combo A', includes: ['luxury_photo', 'drone_photos'], priceCents: 20000 } }];
-  const candidate = { type: 'newPackage', package: { id: 'combo_b', displayName: 'Combo B', includes: ['drone_photos', 'luxury_photo'], priceCents: 21000 } };
-  const errors = advisor.checkStatic(config, queued, candidate);
-  assert.ok(errors.some((e) => e.code === 'package_conflict'));
-});
-
-test('suggestRequires: a bundle-only service appearing in 2+ packages always alongside the same companion is suggested', () => {
-  const changes = [
-    { type: 'newService', service: { id: 'home_report', displayName: 'Home Report', category: 'addon', standaloneAllowed: false } },
-    { type: 'newPackage', package: { id: 'floorplan_homereport', displayName: 'Floor Plan + Home Report', includes: ['floor_plan', 'home_report'], priceCents: 6600 } },
-    { type: 'newPackage', package: { id: 'luxury_floorplan_homereport', displayName: 'Luxury + Floor Plan + Home Report', includes: ['luxury_photo', 'floor_plan', 'home_report'], priceCents: 25000 } },
-  ];
-  const draft = advisor.applyChanges(config, changes);
-  const suggestions = advisor.suggestRequires(draft);
-  const forHomeReport = suggestions.find((s) => s.id === 'home_report');
-  assert.ok(forHomeReport, 'expected a suggestion for home_report');
-  assert.deepStrictEqual(forHomeReport.requires, ['floor_plan']);
-});
-
-test('suggestRequires: no suggestion when the service only appears in one package so far (not enough evidence)', () => {
-  const changes = [
-    { type: 'newService', service: { id: 'home_report', displayName: 'Home Report', category: 'addon', standaloneAllowed: false } },
-    { type: 'newPackage', package: { id: 'floorplan_homereport', displayName: 'Floor Plan + Home Report', includes: ['floor_plan', 'home_report'], priceCents: 6600 } },
-  ];
-  const draft = advisor.applyChanges(config, changes);
-  const suggestions = advisor.suggestRequires(draft);
-  assert.ok(!suggestions.some((s) => s.id === 'home_report'));
-});
-
-test('suggestRequires: existing Site Plan (already has requires) is not re-suggested', () => {
-  const suggestions = advisor.suggestRequires(config);
-  assert.ok(!suggestions.some((s) => s.id === 'site_plan'));
+  cases.forEach((c) => {
+    const draft = advisor.applyChanges(config, c.changes);
+    const suggestions = advisor.suggestRequires(draft);
+    try {
+      c.assertion(suggestions);
+    } catch (err) {
+      err.message = c.label + ' -- ' + err.message;
+      throw err;
+    }
+  });
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
