@@ -120,9 +120,21 @@
       css: 'linear-gradient(157deg, #431a1f 0%, #331216 44%, #1c0809 100%)',
     }),
 
-    // ---- Estate layout (single agent) -----------------------------
+    // ---- Estate layout (single agent) ----------------------------
+    // Same geometry / chevron / metalbar / white text for every colour;
+    // only `bg.asset` (a recoloured velvet) changes. Add a colour = one
+    // more line here.
     'estate-navy': theme('estate-navy', '华邸藏蓝 · Estate Navy', ESTATE_INK, {
       asset: '/template-assets/fsb-v2/assets/estate-bg-navy.jpg',
+    }, 'jason'),
+    'estate-burgundy': theme('estate-burgundy', '华邸酒红 · Estate Burgundy', ESTATE_INK, {
+      asset: '/template-assets/fsb-v2/assets/estate-bg-burgundy.jpg',
+    }, 'jason'),
+    'estate-emerald': theme('estate-emerald', '华邸墨绿 · Estate Emerald', ESTATE_INK, {
+      asset: '/template-assets/fsb-v2/assets/estate-bg-emerald.jpg',
+    }, 'jason'),
+    'estate-charcoal': theme('estate-charcoal', '华邸深灰 · Estate Charcoal', ESTATE_INK, {
+      asset: '/template-assets/fsb-v2/assets/estate-bg-charcoal.jpg',
     }, 'jason'),
   };
 
