@@ -58,12 +58,12 @@ open a page, compare to the PDF, tell me "slot p2R-3 is ~2% too low" etc.
   uncover its slot.
 
 ## 6. PDF export
-- Each page is rasterised at ~2480px wide (≈3×) then placed on a jsPDF page of
-  the exact template size (1242.57 × 808.87 pt). Two pages, landscape.
-- Output is a high-quality **screen** PDF, ~4–6 MB. Not print-ready yet
-  (no CMYK, no crop/bleed marks, text is rasterised). The renderer is isolated
-  behind `exportPdf.renderPageToImage()` so a vector/print path can replace it
-  later without touching the rest.
+- Each page is rasterised at ~4.2× (≈300 dpi) then placed 1:1 on a jsPDF page
+  of the exact **trim** size (fsb-v2: 1224 × 792 pt). Two pages, landscape.
+- **No bleed, no crop / fold marks** -- the PDF is exactly the trim box. A
+  print-ready path (real 3 mm bleed + vector marks + CMYK + vector text)
+  would replace `exportPdf.renderPageToDataUrl()`; the rest is isolated from it.
+- Output is a high-quality **screen** PDF, ~4–6 MB, text rasterised.
 - Uses CDN libs (`jspdf`, `html-to-image`, `qrcodejs`). Needs internet on first load.
 
 ## 7. Supabase backend

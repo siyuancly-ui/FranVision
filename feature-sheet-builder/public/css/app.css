@@ -332,10 +332,12 @@ body.fsb-modal-open { overflow: hidden; }
 .fsb-modal-page-label { color: #aeb6c2; }
 .fsb-modal-title { white-space: normal; }
 
-/* Preview watermark -- diagonal tiled text, over the whole page */
+/* Preview watermark -- diagonal tiled text, over the whole page.
+   White fill + dark stroke (paint-order:stroke = halo behind the glyphs)
+   so it stays legible on light (marble) and dark (navy/burgundy) alike. */
 .fsb-preview-wm {
   position: absolute; inset: 0; z-index: 50; pointer-events: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='340' height='190'%3E%3Ctext x='0' y='110' transform='rotate(-24 0 110)' font-family='Arial, sans-serif' font-size='26' font-weight='700' fill='%23ffffff' fill-opacity='0.16'%3EPREVIEW · 预览 · NOT FOR PRINT%3C/text%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='340' height='190'%3E%3Ctext x='0' y='110' transform='rotate(-24 0 110)' font-family='Arial, sans-serif' font-size='26' font-weight='700' paint-order='stroke' stroke='%23000000' stroke-opacity='0.16' stroke-width='2.5' fill='%23ffffff' fill-opacity='0.16'%3EPREVIEW · 预览 · NOT FOR PRINT%3C/text%3E%3C/svg%3E");
   background-repeat: repeat;
 }
 

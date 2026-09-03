@@ -506,8 +506,8 @@
       page.appendChild(addr);
 
       var hero = buildSlot(project, 'p1R-hero', R.hero.rect, pw, ph, interactive);
-      var hbw = Math.max(2, R.hero.border.widthPt * scale);
-      hero.style.border = hbw + 'px solid ' + tokenColor(theme, 'gold');
+      var hbw = Math.max(1.5, R.hero.border.widthPt * scale);
+      hero.style.border = hbw + 'px solid ' + tokenColor(theme, R.hero.border.token || 'goldSoft');
       hero.style.boxShadow = 'inset 0 0 0 ' + Math.max(1, hbw * 0.4) + 'px ' + tokenColor(theme, 'bg');
       hero.style.boxSizing = 'border-box';
       page.appendChild(hero);

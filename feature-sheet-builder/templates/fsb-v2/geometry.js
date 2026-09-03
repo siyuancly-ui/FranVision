@@ -69,8 +69,8 @@
 
       hero: {
         rect: [0.504, 0.134, 0.492, 0.505],
-        // gold double keyline, ~5pt in source
-        border: { widthPt: 5, token: 'goldLine', double: true, radiusPt: 4 },
+        // thin, soft-gold keyline (source is ~5pt; dialled down per Franny)
+        border: { widthPt: 3, token: 'goldSoft', double: true, radiusPt: 4 },
       },
 
       // bed / bath / garage. Horizontal group, centred in the right half.

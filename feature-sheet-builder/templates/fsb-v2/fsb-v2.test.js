@@ -55,7 +55,7 @@ test('themes: 3 themes, each with the token + font set', () => {
   ['navy', 'marble', 'burgundy'].forEach((id) => {
     const t = THEMES[id];
     assert.ok(t, id + ' theme exists');
-    ['ink', 'gold', 'goldLine', 'bg', 'agentText'].forEach((tok) => {
+    ['ink', 'gold', 'goldLine', 'goldSoft', 'bg', 'agentText'].forEach((tok) => {
       assert.equal(typeof t.tokens[tok], 'string', `${id}.tokens.${tok}`);
     });
     ['serif', 'sans', 'script'].forEach((f) => {

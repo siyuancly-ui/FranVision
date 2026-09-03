@@ -128,11 +128,10 @@ first.
 
 - [ ] "Export PDF 导出" button only shows in the admin view.
 - [ ] Click → (Chrome) a "choose location" dialog; other browsers → download.
-- [ ] Open the PDF: **2 pages**, page size ≈ **1241 × 809 pt** (17×11" + 3mm
-      bleed).
-- [ ] **Crop marks** at the 4 trim corners + a **dashed fold tick** top &
-      bottom at the centre.
-- [ ] Edge artwork bleeds to the page edge — no white slivers.
+- [ ] Open the PDF: **2 pages**, page size = **1224 × 792 pt** (17×11" trim,
+      no bleed).
+- [ ] **No crop / fold marks**, no bleed — the page is exactly the trim box,
+      art placed edge to edge.
 - [ ] Text in the PDF **matches the editor**: agent names in Cormorant Garamond
       (not a bold system serif), no mid-word breaks ("Franky Chen" on one line,
       "Broker" on one line), description shows in full (last line not cut).
