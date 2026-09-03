@@ -56,6 +56,7 @@ const SHARED_FILES = {
   // fsb-v2 template system (geometry / themes / modules / engine / registry)
   '/shared/v2/text-util.js': path.join(__dirname, 'templates', 'fsb-v2', 'text-util.js'),
   '/shared/v2/geometry.js': path.join(__dirname, 'templates', 'fsb-v2', 'geometry.js'),
+  '/shared/v2/geometry-estate.js': path.join(__dirname, 'templates', 'fsb-v2', 'geometry-estate.js'),
   '/shared/v2/themes.js': path.join(__dirname, 'templates', 'fsb-v2', 'themes.js'),
   '/shared/v2/modules.js': path.join(__dirname, 'templates', 'fsb-v2', 'modules.js'),
   '/shared/v2/layout-engine.js': path.join(__dirname, 'templates', 'fsb-v2', 'layout-engine.js'),
