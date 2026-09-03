@@ -13,7 +13,11 @@
  * .../template-assets/ (git-ignored) before deploy.
  */
 {
-  "name": "feature-sheet-generator",
+  // MUST match the Worker name in the Cloudflare dashboard, or `wrangler
+  // deploy` (the CF build's deploy step) pushes to the wrong Worker and the
+  // live site never updates. The dashboard renamed this from
+  // "feature-sheet-generator" to "franvision" on 2026-09-03.
+  "name": "franvision",
   "compatibility_date": "2025-06-01",
   "assets": {
     "directory": "./feature-sheet-builder/public"
