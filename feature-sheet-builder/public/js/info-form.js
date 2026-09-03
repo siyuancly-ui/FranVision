@@ -24,6 +24,7 @@
     { key: 'credentials', label: 'Title / credentials 职务' },
     { key: 'cellPhone', label: 'Phone 电话' },
     { key: 'email', label: 'Email 邮箱' },
+    { key: 'website', label: 'Website 网站', hint: '可留空' },
     { key: 'headshotPhotoId', label: 'Headshot 头像', type: 'image' },
     { key: 'brokerage', label: 'Brokerage 经纪公司' },
     { key: 'brokerageOffice', label: 'Brokerage office phone 公司电话', hint: '可留空;填了显示在公司地址上方' },
@@ -65,11 +66,18 @@
     agentInfo2: { title: 'Second agent 第二经纪 (co-listing，可选)', fields: AGENT2_FIELDS, optionalGroup: true },
   };
 
+  function isJason(app) {
+    var t = THEMES[(app.project || {}).colorTheme];
+    return !!(t && t.layout === 'jason');
+  }
+
   function mount(root, app) {
     root.innerHTML = '';
     var inputs = {};
+    var jason = isJason(app);   // Estate layout = single agent, no co-listing
 
     Object.keys(SCHEMA).forEach(function (groupKey) {
+      if (groupKey === 'agentInfo2' && jason) return;
       var g = SCHEMA[groupKey];
       var sec = el('div', { class: 'fsb-form-sec' }, [el('h3', { text: g.title })]);
       if (g.optionalGroup) {
@@ -77,6 +85,9 @@
         sec.appendChild(hint);
       }
       g.fields.forEach(function (f) {
+        // Estate has no bed/bath/garage icon row -> hide those inputs so
+        // the client isn't left wondering where the numbers went
+        if (jason && (f.key === 'bedrooms' || f.key === 'bathrooms' || f.key === 'garage')) return;
         var id = 'f-' + groupKey + '-' + f.key;
         var row = el('div', { class: 'fsb-form-row' });
         row.appendChild(el('label', { for: id, text: f.label + (f.required ? ' *' : '') }));
@@ -87,7 +98,13 @@
           var sel = el('select', { id: id });
           f.options.forEach(function (o) { sel.appendChild(el('option', { value: o.v, text: o.t })); });
           sel.value = readVal(app, groupKey, g.top, f.key) || f.options[0].v;
-          sel.addEventListener('change', function () { writeVal(app, groupKey, g.top, f.key, sel.value); });
+          sel.addEventListener('change', function () {
+            var wasJason = jason;
+            writeVal(app, groupKey, g.top, f.key, sel.value);
+            // switching in/out of the Estate layout adds/removes the co-listing
+            // section -> re-render the form
+            if (f.key === 'colorTheme' && isJason(app) !== wasJason) mount(root, app);
+          });
           inputs[groupKey + '.' + f.key] = sel;
           row.appendChild(sel);
         } else {

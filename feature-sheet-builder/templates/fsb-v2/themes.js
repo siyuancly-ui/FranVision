@@ -47,9 +47,21 @@
     },
   };
 
-  function theme(id, name, tokens, bg) {
-    return { id: id, name: name, fonts: fonts, tokens: tokens, bg: bg };
+  function theme(id, name, tokens, bg, layout) {
+    return { id: id, name: name, fonts: fonts, tokens: tokens, bg: bg, layout: layout || 'standard' };
   }
+
+  // Estate layout: all copy is white on the artwork, so the token set is
+  // trivial. `bg.layer` carries the InDesign crop for the velvet ground
+  // (see geometry-estate.js artwork frames); chevron / metalbar are layout
+  // constants. A new Estate colour = another theme() here with layout
+  // 'jason' and a different `bg.asset` -- nothing else changes.
+  var ESTATE_INK = {
+    bg: '#141b30', bgDeep: '#0d1220',
+    ink: '#FFFFFF', inkMuted: '#e8ecf5',
+    gold: '#FFFFFF', goldDeep: '#FFFFFF', goldLine: '#FFFFFF', goldSoft: '#FFFFFF',
+    panelInk: '#FFFFFF', agentText: '#FFFFFF',
+  };
 
   // Backgrounds are LINEAR gradients, matching the originals (IDML
   // Gradient stops): navy 120 = CMYK 98/89/50/44 -> 98/89/62/68;
@@ -107,6 +119,23 @@
       asset: null,
       css: 'linear-gradient(157deg, #431a1f 0%, #331216 44%, #1c0809 100%)',
     }),
+
+    // ---- Estate layout (single agent) ----------------------------
+    // Same geometry / chevron / metalbar / white text for every colour;
+    // only `bg.asset` (a recoloured velvet) changes. Add a colour = one
+    // more line here.
+    'estate-navy': theme('estate-navy', '华邸藏蓝 · Estate Navy', ESTATE_INK, {
+      asset: '/template-assets/fsb-v2/assets/estate-bg-navy.jpg',
+    }, 'jason'),
+    'estate-burgundy': theme('estate-burgundy', '华邸酒红 · Estate Burgundy', ESTATE_INK, {
+      asset: '/template-assets/fsb-v2/assets/estate-bg-burgundy.jpg',
+    }, 'jason'),
+    'estate-emerald': theme('estate-emerald', '华邸墨绿 · Estate Emerald', ESTATE_INK, {
+      asset: '/template-assets/fsb-v2/assets/estate-bg-emerald.jpg',
+    }, 'jason'),
+    'estate-charcoal': theme('estate-charcoal', '华邸深灰 · Estate Charcoal', ESTATE_INK, {
+      asset: '/template-assets/fsb-v2/assets/estate-bg-charcoal.jpg',
+    }, 'jason'),
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = THEMES;

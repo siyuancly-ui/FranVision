@@ -430,6 +430,197 @@
   }
 
   // ================================================================
+  //  Estate layout (geometry-estate.js) -- single agent, white text on
+  //  the supplied artwork PNGs. Every rect is lifted 1:1 from Jason.idml.
+  // ================================================================
+  function estateLayer(L, bgAsset, pw, ph) {
+    var clip = el('div', { class: 'fsb-estate-art' });
+    clip.style.pointerEvents = 'none';
+    var asset = L.kind === 'bg' ? bgAsset : L.asset;
+    if (L.kind === 'bg') {
+      // the velvet PNG is a full 17x11 page design -> place it full-bleed
+      clip.style.cssText = 'position:absolute;inset:0;';
+      if (asset) {
+        clip.style.backgroundImage = "url('" + asset + "')";
+        clip.style.backgroundSize = 'cover';
+        clip.style.backgroundPosition = 'center';
+        clip.style.backgroundRepeat = 'no-repeat';
+      }
+      return clip;
+    }
+    // chevron / metalbar: reproduce InDesign's fill-frame crop exactly --
+    // clip at `frame`, source scaled/offset per `img` (both page-normalised)
+    setBox(clip, L.frame, pw, ph);
+    clip.style.overflow = 'hidden';
+    var im = el('div');
+    im.style.position = 'absolute';
+    im.style.left = ((L.img[0] - L.frame[0]) * pw) + 'px';
+    im.style.top = ((L.img[1] - L.frame[1]) * ph) + 'px';
+    im.style.width = (L.img[2] * pw) + 'px';
+    im.style.height = (L.img[3] * ph) + 'px';
+    if (asset) {
+      im.style.backgroundImage = "url('" + asset + "')";
+      im.style.backgroundSize = '100% 100%';
+      im.style.backgroundRepeat = 'no-repeat';
+    }
+    clip.appendChild(im);
+    return clip;
+  }
+
+  // stacked text lines (each its own point size); colour is always white
+  function estateText(rect, pw, ph, scale, opts, lines) {
+    var node = el('div', { class: 'fsb-text fsb-estate-text' });
+    setBox(node, rect, pw, ph);
+    node.style.display = 'flex';
+    node.style.flexDirection = 'column';
+    node.style.justifyContent = opts.vAlign || 'center';
+    node.style.alignItems = opts.align === 'center' ? 'center' : (opts.align === 'right' ? 'flex-end' : 'flex-start');
+    node.style.textAlign = opts.align || 'left';
+    node.style.fontFamily = opts.family;
+    node.style.color = '#fff';
+    node.style.whiteSpace = 'pre-wrap';
+    node.style.overflow = 'hidden';
+    if (opts.tracking) node.style.letterSpacing = opts.tracking + 'em';
+    if (opts.transform) node.style.textTransform = opts.transform;
+    if (opts.shadow) {
+      node.style.textShadow = '0 ' + (3 * scale).toFixed(2) + 'px ' + (7 * scale).toFixed(2) + 'px rgba(0,0,0,0.55)';
+    }
+    lines.forEach(function (ln) {
+      if (ln.text === '' && ln.text !== 0) { /* keep empty lines out */ return; }
+      var d = el('div', { text: String(ln.text) });
+      d.style.fontSize = (ln.sizePt * scale) + 'px';
+      d.style.lineHeight = opts.leadingPt ? (opts.leadingPt * scale) + 'px' : '1.2';
+      d.style.width = '100%';
+      node.appendChild(d);
+    });
+    return node;
+  }
+
+  function famFor2(spec, which) { return famFor(spec.theme, which); }
+
+  function renderEstate(page, pageNum, spec, project, pw, ph, scale, opts, interactive) {
+    var pl = !!opts.placeholders;
+    var ai = project.agentInfo || {};
+    var bgAsset = (spec.theme.bg && spec.theme.bg.asset) || null;
+    (spec.artwork['page' + pageNum] || []).forEach(function (L) {
+      page.appendChild(estateLayer(L, bgAsset, pw, ph));
+    });
+    var wf = Math.max(1, (spec.geometry.whiteFrameWeightPt || 4) * scale);
+
+    if (pageNum === 1) {
+      var P = spec.page1;
+      var cf = el('div');
+      setBox(cf, P.collageFrame, pw, ph);
+      cf.style.cssText += ';border:' + wf + 'px solid #fff;box-sizing:border-box;pointer-events:none;';
+      page.appendChild(cf);
+      P.collage.forEach(function (c) { page.appendChild(buildSlot(project, c.id, c.rect, pw, ph, interactive)); });
+      page.appendChild(buildSlot(project, P.hero.id, P.hero.rect, pw, ph, interactive));
+
+      // circular headshot: white plate + circle-clipped photo
+      var plate = el('div');
+      setBox(plate, P.headshot.plateRect, pw, ph);
+      plate.style.cssText += ';background:#fff;border-radius:50%;pointer-events:none;';
+      page.appendChild(plate);
+      var hs = el('div');
+      setBox(hs, P.headshot.photoRect, pw, ph);
+      var hsUrl = fullUrl(project, ai.headshotPhotoId);
+      hs.style.cssText += ';border-radius:50%;overflow:hidden;background:center/cover no-repeat ' +
+        (hsUrl ? "url('" + hsUrl + "')" : 'rgba(255,255,255,.12)') + ';pointer-events:none;';
+      if (!hsUrl && pl) {
+        hs.style.cssText += 'display:flex;align-items:center;justify-content:center;font-size:' +
+          (8 * scale) + 'px;color:rgba(255,255,255,.7);';
+        hs.textContent = 'Headshot';
+      }
+      page.appendChild(hs);
+
+      // brokerage logo -- the one box Franky (admin) can drag / resize /
+      // double-click-reset in this layout
+      var lr = P.logo.rect;
+      var loff = boxOffset(project, 'estate-logo'), lsz = boxSize(project, 'estate-logo');
+      var lg = el('div', { class: 'fsb-agent-box fsb-agent-box--image', 'data-box-key': 'estate-logo' });
+      lg.style.cssText = 'position:absolute;box-sizing:border-box;overflow:hidden;' +
+        'left:' + ((lr[0] + loff.dx) * pw) + 'px;top:' + ((lr[1] + loff.dy) * ph) + 'px;' +
+        'width:' + (lr[2] * pw * lsz) + 'px;height:' + (lr[3] * ph * lsz) + 'px;';
+      var lgUrl = fullUrl(project, ai.brokerageLogoPhotoId);
+      lg.appendChild(imgBox(spec.theme, scale, lgUrl, pl ? 'Logo' : '', 'contain'));
+      if (opts.admin && interactive) {
+        addBoxDrag(lg, project, 'estate-logo', pw, ph, lr);
+        addBoxResize(lg, project, 'estate-logo', lr[2] * pw, lr[3] * ph);
+      }
+      page.appendChild(lg);
+
+      var qb = el('div', { class: 'fsb-estate-qr' });
+      setBox(qb, P.qr.rect, pw, ph);
+      qb.style.cssText += ';background:#fff;padding:' + (2 * scale) + 'px;box-sizing:border-box;';
+      if (P.qr.value && window.FSB.qr) {
+        window.FSB.qr.render(qb, P.qr.value, { size: P.qr.rect[2] * pw - 4 * scale, dark: '#141414', light: '#fff' });
+      } else if (pl) { qb.style.opacity = '.4'; }
+      page.appendChild(qb);
+      page.appendChild(estateText(P.qr.caption.rect, pw, ph, scale,
+        { family: famFor2(spec, 'sans'), align: 'left', shadow: true },
+        [{ text: P.qr.caption.text, sizePt: P.qr.caption.spec.sizePt }]));
+
+      page.appendChild(estateText(P.address.rect, pw, ph, scale,
+        { family: famFor2(spec, P.address.spec.font), align: 'center', shadow: true },
+        [{ text: P.address.line1 || (pl ? '123 Example St' : ''), sizePt: P.address.spec.line1.sizePt },
+         { text: P.address.line2 || (pl ? 'City' : ''), sizePt: P.address.spec.line2.sizePt }]));
+
+      page.appendChild(estateText(P.chevronName.rect, pw, ph, scale,
+        { family: famFor2(spec, P.chevronName.spec.font), align: 'center', shadow: true },
+        [{ text: P.chevronName.line1 || (pl ? 'Agent Name' : ''), sizePt: P.chevronName.spec.line1.sizePt },
+         { text: P.chevronName.line2 || '', sizePt: P.chevronName.spec.line2.sizePt }]));
+      page.appendChild(estateText(P.chevronPhone.rect, pw, ph, scale,
+        { family: famFor2(spec, P.chevronPhone.spec.font), align: 'center', shadow: true },
+        [{ text: P.chevronPhone.value || (pl ? '000-000-0000' : ''), sizePt: P.chevronPhone.spec.sizePt }]));
+
+      if (P.footer.value || pl) {
+        page.appendChild(estateText(P.footer.rect, pw, ph, scale,
+          { family: famFor2(spec, P.footer.spec.font), align: 'center', shadow: true,
+            tracking: P.footer.spec.tracking, transform: P.footer.spec.transform, leadingPt: P.footer.spec.leadingPt },
+          [{ text: P.footer.value || (pl ? 'Brokerage Name' : ''), sizePt: P.footer.spec.sizePt }]));
+      }
+
+      page.appendChild(estateText(P.backName.rect, pw, ph, scale,
+        { family: famFor2(spec, P.backName.spec.font), align: 'left' },
+        [{ text: P.backName.value || (pl ? 'Agent Name' : ''), sizePt: P.backName.spec.sizePt }]));
+      var bc = P.backContact.lines.slice();
+      if (!bc.length && pl) bc = ['TITLE / CREDENTIALS', 'Bus: 000-000-0000   Cell: 000-000-0000', 'email@example.com', '000 Street, City'];
+      page.appendChild(estateText(P.backContact.rect, pw, ph, scale,
+        { family: famFor2(spec, P.backContact.spec.font), align: 'left', vAlign: 'flex-start', leadingPt: P.backContact.spec.leadingPt },
+        bc.map(function (t) { return { text: t, sizePt: P.backContact.spec.sizePt }; })));
+
+      // description: justified, auto-fit font (data-fit -> fitTexts), clips
+      // at the box bottom so it never spills onto the metal bar
+      var dsp = P.description.spec;
+      var descEl = buildText(P.description.rect, pw, ph, scale, {
+        family: famFor2(spec, dsp.font), sizePt: dsp.fitMax || 12,
+        align: 'justify', color: '#fff',
+        text: P.description.value || (pl ? '房源描述 Property description…' : ''),
+        cls: 'fsb-text--desc',
+      });
+      // buildText lays out as a flex column; for a justified block that
+      // shrink-wraps the text into a narrow ragged column. Force a plain
+      // block so the copy fills the box width and `text-align: justify` bites.
+      descEl.style.display = 'block';
+      descEl.setAttribute('data-fit', '1');
+      descEl.setAttribute('data-fit-min', String(dsp.fitMin || 8));
+      descEl.setAttribute('data-fit-max', String(dsp.fitMax || 14));
+      descEl.setAttribute('data-fit-scale', String(scale));
+      descEl.setAttribute('data-fit-lead', String(dsp.fitLead || 1.3));
+      page.appendChild(descEl);
+
+    } else {
+      spec.page2.panelFrame.forEach(function (pf) {
+        var f = el('div');
+        setBox(f, pf.rect, pw, ph);
+        f.style.cssText += ';border:' + wf + 'px solid #fff;box-sizing:border-box;pointer-events:none;';
+        page.appendChild(f);
+      });
+      spec.page2.slots.forEach(function (s) { page.appendChild(buildSlot(project, s.id, s.rect, pw, ph, interactive)); });
+    }
+  }
+
+  // ================================================================
   //  renderPage
   // ================================================================
   function renderPage(pageNum, project, opts) {
@@ -448,6 +639,13 @@
     page.style.cssText = 'position:relative;overflow:hidden;width:' + pw + 'px;height:' + ph + 'px;color:' +
       tokenColor(theme, 'ink') + ';font-variant-numeric:lining-nums;';
     page.style.background = theme.bg.css || tokenColor(theme, 'bg');
+
+    if (spec.layout === 'jason') {
+      renderEstate(page, pageNum, spec, project, pw, ph, scale, opts, interactive);
+      page._fsb = { pageNum: pageNum, scale: scale, pw: pw, ph: ph,
+        interactive: interactive, admin: admin, placeholders: !!opts.placeholders };
+      return page;
+    }
 
     if (pageNum === 1) {
       // LEFT column -- photo slots

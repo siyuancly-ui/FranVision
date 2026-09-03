@@ -21,6 +21,7 @@
   'use strict';
 
   var G = root ? root.FSB_V2_GEOMETRY : require('./geometry.js');
+  var E = root ? root.FSB_V2_GEOMETRY_ESTATE : require('./geometry-estate.js');
   var THEMES = root ? root.FSB_V2_THEMES : require('./themes.js');
   var M = root ? root.FSB_V2_MODULES : require('./modules.js');
   var LAY = root ? root.FSB_V2_LAYOUT : require('./layout-engine.js');
@@ -58,14 +59,60 @@
     }, []);
   }
   function slotIds(project) {
+    var theme = THEMES[(project || {}).colorTheme];
+    if (theme && theme.layout === 'jason') return E.slotIds.slice();
     var p2 = G.page2.slots.map(function (s) { return s.id; });
     return leftSlotIds(project, pickLeftVariant(project)).concat(['p1R-hero']).concat(p2);
+  }
+
+  // ================= Estate layout (single agent) ==================
+  function contactBits(ai) {
+    var out = [];
+    if (nonEmpty(ai.brokerageOffice)) out.push('Bus: ' + ai.brokerageOffice);
+    if (nonEmpty(ai.cellPhone)) out.push('Cell: ' + ai.cellPhone);
+    return out.join('   ');
+  }
+  function composeEstate(project, theme) {
+    var p1 = E.page1, p2 = E.page2;
+    var ai = project.agentInfo || {};
+    var g = function (path) { return get(project, path) || ''; };
+    return {
+      layout: 'jason',
+      theme: theme,
+      geometry: E,
+      artwork: E.artwork,          // renderer resolves the bg asset from theme.bg.asset
+      page1: {
+        collageFrame: p1.collageFrame,
+        collage: p1.collage,
+        hero: p1.hero,
+        headshot: p1.headshot,
+        logo: p1.logo,
+        description: { rect: p1.description.rect, spec: p1.description, value: g('propertyInfo.description') },
+        address: { rect: p1.address.rect, spec: p1.address,
+          line1: g('propertyInfo.address'), line2: g('propertyInfo.city') },
+        chevronName: { rect: p1.chevronName.rect, spec: p1.chevronName,
+          line1: g('agentInfo.name'), line2: g('agentInfo.credentials') },
+        chevronPhone: { rect: p1.chevronPhone.rect, spec: p1.chevronPhone, value: g('agentInfo.cellPhone') },
+        qr: { rect: p1.qr.rect, value: g('propertyInfo.onlineTourUrl'),
+          caption: { rect: p1.qrCaption.rect, spec: p1.qrCaption, text: p1.qrCaption.text } },
+        backName: { rect: p1.backName.rect, spec: p1.backName, value: g('agentInfo.name') },
+        backContact: { rect: p1.backContact.rect, spec: p1.backContact, lines: [
+          g('agentInfo.credentials'),
+          contactBits(ai),
+          [g('agentInfo.email'), g('agentInfo.website')].filter(Boolean).join('   '),
+          g('agentInfo.brokerageAddress'),
+        ].filter(function (s) { return String(s).trim() !== ''; }) },
+        footer: { rect: p1.footer.rect, spec: p1.footer, value: g('agentInfo.brokerage') },
+      },
+      page2: { panelFrame: p2.panelFrame, slots: p2.slots },
+    };
   }
 
   // ---- compose ---------------------------------------------------
   function compose(project) {
     project = project || {};
     var theme = THEMES[project.colorTheme] || THEMES.navy;
+    if (theme.layout === 'jason') return composeEstate(project, theme);
     var leftVariant = pickLeftVariant(project);
     var agentVariant = pickAgentVariant(project);
     var iconKeys = iconRowKeys(project);
@@ -147,7 +194,7 @@
       topPhotoStyle: 'wide', // wide | paired  (only when description present)
       propertyInfo: { address: '', city: '', description: '',
         bedrooms: '', bathrooms: '', garage: '', onlineTourUrl: '' },
-      agentInfo: { name: '', credentials: '', cellPhone: '', email: '',
+      agentInfo: { name: '', credentials: '', cellPhone: '', email: '', website: '',
         brokerage: '', brokerageOffice: '', brokerageAddress: '',
         headshotPhotoId: null, brokerageLogoPhotoId: null },
       agentInfo2: null,
