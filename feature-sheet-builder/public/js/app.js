@@ -233,8 +233,8 @@
     var msg = app.adminToken
       ? ['Submit this design for printing?\nOnce submitted it is locked. You can re-open it to make changes and submit again.',
          '确认将当前版本提交打印？\n提交后会锁定；管理员可重新打开修改后再次提交。']
-      : ['Submit this design for printing?\nOnce submitted it is locked and sent to print. To make further changes, please contact Franky.',
-         '确认提交打印？\n提交后将锁定并送印；之后如需修改，请联系 Franky。'];
+      : ['Confirm & submit for printing?\nOnce submitted, the design is locked and sent to the print shop — it can no longer be changed!',
+         '确认提交打印？\n提交后将锁定并发送给印刷店打印，无法再修改！'];
     util.confirmDialog(
       msg,
       { okText: 'Confirm & Submit  确认提交', cancelText: 'Not yet  暂不' }
