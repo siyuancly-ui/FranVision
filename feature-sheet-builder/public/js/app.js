@@ -41,10 +41,19 @@
   };
   app.slotsUsingPhoto = function (photoId) {
     if (!photoId || !app.project) return 0;
+    // Only count slots that exist in the CURRENT layout (colorTheme). Page 1
+    // slot ids differ between the standard layout (p1L-*/p1R-hero) and the
+    // Estate layout (p1-c*/p1-hero) -- switching themes leaves the other
+    // layout's now-inactive slot entries in project.pages, still holding a
+    // photoId, which must not count as "in use" (they aren't shown anywhere).
+    var validIds = window.FSB_V2.slotIds(app.project);
     var n = 0;
     ['page1', 'page2'].forEach(function (pk) {
       var slots = app.project.pages[pk].slots;
-      Object.keys(slots).forEach(function (s) { if (slots[s] && slots[s].photoId === photoId) n++; });
+      Object.keys(slots).forEach(function (s) {
+        if (validIds.indexOf(s) === -1) return;
+        if (slots[s] && slots[s].photoId === photoId) n++;
+      });
     });
     return n;
   };
