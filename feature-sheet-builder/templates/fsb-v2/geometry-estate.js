@@ -51,12 +51,16 @@
     page1: {
       // -- back cover (left) --
       collageFrame: [0.0076, 0.0473, 0.4756, 0.5665],   // white double keyline
+      // IDML's raw right-column widths (c2/c5) left them ~2-3pt tighter
+      // against the frame's right edge than the left column (c1/c3/c4) sits
+      // against the left edge -- c2.width/c5.width trimmed by 0.0025 so both
+      // sides clear the keyline by the same margin (left column's gap).
       collage: [
         { id: 'p1-c1', rect: [0.0128, 0.0568, 0.2303, 0.2429] },  // top-left
-        { id: 'p1-c2', rect: [0.2502, 0.0568, 0.2303, 0.2429] },  // top-right
+        { id: 'p1-c2', rect: [0.2502, 0.0568, 0.2278, 0.2429] },  // top-right
         { id: 'p1-c3', rect: [0.0128, 0.3114, 0.1625, 0.1414] },  // mid-left
         { id: 'p1-c4', rect: [0.0128, 0.4604, 0.1625, 0.1414] },  // low-left
-        { id: 'p1-c5', rect: [0.1826, 0.3114, 0.2979, 0.2904] },  // big-right
+        { id: 'p1-c5', rect: [0.1826, 0.3114, 0.2954, 0.2904] },  // big-right
       ],
       // justified; auto-fits (8-14pt) so the copy fills the box. Box height
       // trimmed to 0.152 (bottom 0.781) to leave a clear gap above the
