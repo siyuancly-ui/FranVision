@@ -15,8 +15,43 @@
   var CROP = window.FSB_CROP;
   // fsb-v2: geometry replaces the old single template-config
   var GEO = window.FSB_V2_GEOMETRY;
+  var THEMES = window.FSB_V2_THEMES;
   var PAGE_COUNT = GEO.page.count;          // 2
   var PAGE_WIDTH_PT = GEO.page.trimWidthPt; // 1224
+
+  // ---- page-1 photo migration across layout families -----------------
+  // Page 1's collage slot ids differ between the standard layout
+  // (p1L-1..6 / p1R-hero) and the Estate layout (p1-c1..5 / p1-hero) --
+  // page 2 ids are already shared. When colorTheme crosses that boundary,
+  // carry the photos over by position so the agent doesn't lose their
+  // selection just from picking a different colour/layout.
+  function isJasonTheme(themeId) {
+    var t = THEMES[themeId];
+    return !!(t && t.layout === 'jason');
+  }
+  var STD_COLLAGE_IDS = ['p1L-1', 'p1L-2', 'p1L-3', 'p1L-4', 'p1L-5', 'p1L-6'];
+  var ESTATE_COLLAGE_IDS = ['p1-c1', 'p1-c2', 'p1-c3', 'p1-c4', 'p1-c5'];
+  function migratePage1Slots(project, fromJason, toJason) {
+    if (fromJason === toJason) return;
+    var slots = project.pages.page1.slots;
+    var fromIds = fromJason ? ESTATE_COLLAGE_IDS : STD_COLLAGE_IDS;
+    var toIds = toJason ? ESTATE_COLLAGE_IDS : STD_COLLAGE_IDS;
+    var fromHero = fromJason ? 'p1-hero' : 'p1R-hero';
+    var toHero = toJason ? 'p1-hero' : 'p1R-hero';
+    // snapshot first -- fromIds/toIds can overlap in principle, and we
+    // don't want a just-written destination slot read back as a source.
+    var snap = {};
+    fromIds.concat([fromHero]).forEach(function (id) { if (slots[id]) snap[id] = slots[id]; });
+    fromIds.forEach(function (id, i) {
+      var dst = toIds[i]; // e.g. the standard 6-photo variant's 6th photo has no Estate slot -> dropped
+      if (dst && snap[id] && snap[id].photoId) {
+        slots[dst] = { photoId: snap[id].photoId, positionX: 0, positionY: 0, scale: 1 };
+      }
+    });
+    if (snap[fromHero] && snap[fromHero].photoId) {
+      slots[toHero] = { photoId: snap[fromHero].photoId, positionX: 0, positionY: 0, scale: 1 };
+    }
+  }
 
   var app = {
     project: null,
@@ -41,10 +76,19 @@
   };
   app.slotsUsingPhoto = function (photoId) {
     if (!photoId || !app.project) return 0;
+    // Only count slots that exist in the CURRENT layout (colorTheme). Page 1
+    // slot ids differ between the standard layout (p1L-*/p1R-hero) and the
+    // Estate layout (p1-c*/p1-hero) -- switching themes leaves the other
+    // layout's now-inactive slot entries in project.pages, still holding a
+    // photoId, which must not count as "in use" (they aren't shown anywhere).
+    var validIds = window.FSB_V2.slotIds(app.project);
     var n = 0;
     ['page1', 'page2'].forEach(function (pk) {
       var slots = app.project.pages[pk].slots;
-      Object.keys(slots).forEach(function (s) { if (slots[s] && slots[s].photoId === photoId) n++; });
+      Object.keys(slots).forEach(function (s) {
+        if (validIds.indexOf(s) === -1) return;
+        if (slots[s] && slots[s].photoId === photoId) n++;
+      });
     });
     return n;
   };
@@ -76,7 +120,13 @@
 
   // top-level project fields (colorTheme, topPhotoStyle)
   app.patchTop = function (key, value) {
-    app.project[key] = value;
+    if (key === 'colorTheme') {
+      var wasJason = isJasonTheme(app.project.colorTheme);
+      app.project[key] = value;
+      migratePage1Slots(app.project, wasJason, isJasonTheme(value));
+    } else {
+      app.project[key] = value;
+    }
     app.emit('dynamic');
     scheduleSave();
   };

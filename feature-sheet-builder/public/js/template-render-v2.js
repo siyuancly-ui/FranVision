@@ -513,7 +513,17 @@
       setBox(cf, P.collageFrame, pw, ph);
       cf.style.cssText += ';border:' + wf + 'px solid #fff;box-sizing:border-box;pointer-events:none;';
       page.appendChild(cf);
-      P.collage.forEach(function (c) { page.appendChild(buildSlot(project, c.id, c.rect, pw, ph, interactive)); });
+      // clip the collage photos to the frame's inner edge (inset by the
+      // border weight) so a slot rect that sits flush against the frame
+      // never visually spills its photo out past the white keyline.
+      var innerLeft = P.collageFrame[0] * pw + wf, innerTop = P.collageFrame[1] * ph + wf;
+      var innerRight = (P.collageFrame[0] + P.collageFrame[2]) * pw - wf;
+      var innerBottom = (P.collageFrame[1] + P.collageFrame[3]) * ph - wf;
+      var collageClip = el('div');
+      collageClip.style.cssText = 'position:absolute;left:0;top:0;width:' + pw + 'px;height:' + ph + 'px;' +
+        'clip-path:inset(' + innerTop + 'px ' + (pw - innerRight) + 'px ' + (ph - innerBottom) + 'px ' + innerLeft + 'px);';
+      page.appendChild(collageClip);
+      P.collage.forEach(function (c) { collageClip.appendChild(buildSlot(project, c.id, c.rect, pw, ph, interactive)); });
       page.appendChild(buildSlot(project, P.hero.id, P.hero.rect, pw, ph, interactive));
 
       // circular headshot: white plate + circle-clipped photo
