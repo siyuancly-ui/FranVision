@@ -6,6 +6,12 @@
 # Job Generator: local-only state, not part of the codebase
 /job-generator/test-output/
 /job-generator/.config.json
+/job-generator/node_modules/
+
+# Job Generator: real Dropbox credentials (App Key/Secret, refresh token,
+# template id) -- NEVER commit this file. .env.example documents the
+# required keys with no real values; copy it to .env and fill it in locally.
+/job-generator/.env
 
 # Feature Sheet Builder: local project + uploaded-photo storage
 /feature-sheet-builder/data/

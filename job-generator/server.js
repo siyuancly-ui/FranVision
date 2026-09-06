@@ -9,6 +9,7 @@
 //   sanitize.js          -- safe folder names
 //   job-files.js         -- Job Info.txt + job.json
 //   config-store.js      -- Job Root Folder persistence (module 6)
+//   dropbox-sync.js      -- optional, best-effort Dropbox mirror + jobId tag
 
 const http = require('http');
 const fs = require('fs');
@@ -22,6 +23,7 @@ const folderBuilder = require('./folder-builder.js');
 const pricingAdapter = require('./pricing-adapter.js');
 const jobFiles = require('./job-files.js');
 const configStore = require('./config-store.js');
+const dropboxSync = require('./dropbox-sync.js');
 
 const PORT = 4173;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -190,6 +192,21 @@ async function handleApi(req, res, urlPath) {
       const componentFolders = folderBuilder.createJobFolders(jobFolderPath, order).slice(1)
         .map((abs) => path.relative(jobFolderPath, abs));
 
+      // Local job creation above is the critical path and has already
+      // succeeded by this point. Dropbox is mirrored best-effort from here
+      // on -- syncJobFolderToDropbox() is designed to never throw, but it's
+      // wrapped in try/catch anyway (belt and suspenders) so absolutely
+      // nothing about this step can turn a successful local job creation
+      // into a failed API response. A failed/skipped sync is recorded in
+      // job.json/Job Info.txt via pendingConfirmation instead, for manual
+      // retry later.
+      let dropboxResult;
+      try {
+        dropboxResult = await dropboxSync.syncJobFolderToDropbox({ folderName, componentFolders, jobId });
+      } catch (err) {
+        dropboxResult = { attempted: true, success: false, error: 'Unexpected Dropbox sync failure: ' + err.message };
+      }
+
       const jobData = {
         jobId,
         createdAt: new Date().toISOString(),
@@ -202,6 +219,7 @@ async function handleApi(req, res, urlPath) {
         price,
         folderName,
         componentFolders,
+        dropboxResult,
       };
       const written = jobFiles.writeJobFiles(jobFolderPath, jobData);
       const pendingConfirmation = jobFiles.computePendingConfirmation(jobData);
@@ -214,6 +232,7 @@ async function handleApi(req, res, urlPath) {
         jobInfoPath: written.infoPath,
         jobJsonPath: written.jsonPath,
         price,
+        dropbox: dropboxResult,
         pendingConfirmation,
       });
     }

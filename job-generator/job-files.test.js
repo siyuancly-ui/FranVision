@@ -76,6 +76,24 @@ test('can flag both photographer AND virtual staging at once', () => {
   assert.strictEqual(computePendingConfirmation(jobData).length, 2);
 });
 
+test('flags a failed Dropbox sync', () => {
+  const jobData = makeJobData({ dropboxResult: { attempted: true, success: false, error: 'network error' } });
+  const pending = computePendingConfirmation(jobData);
+  assert.strictEqual(pending.length, 1);
+  assert.ok(pending[0].includes('Dropbox sync did not complete'));
+  assert.ok(pending[0].includes('network error'));
+});
+
+test('does NOT flag a successful Dropbox sync', () => {
+  const jobData = makeJobData({ dropboxResult: { attempted: true, success: true } });
+  assert.deepStrictEqual(computePendingConfirmation(jobData), []);
+});
+
+test('does NOT flag anything when Dropbox sync was never attempted (dropboxResult undefined)', () => {
+  const jobData = makeJobData();
+  assert.deepStrictEqual(computePendingConfirmation(jobData), []);
+});
+
 // ---- buildJobInfoText / buildJobJson ----
 
 test('buildJobInfoText includes a follow-up section when something is pending', () => {
@@ -98,6 +116,17 @@ test('buildJobJson carries pendingConfirmation as structured data', () => {
 test('buildJobJson stores amounts as integer cents', () => {
   const json = buildJobJson(makeJobData());
   assert.strictEqual(Number.isInteger(json.pricing.totalCents), true);
+});
+
+test('buildJobJson carries the Dropbox sync result for later retry', () => {
+  const dropboxResult = { attempted: true, success: false, error: 'network error' };
+  const json = buildJobJson(makeJobData({ dropboxResult }));
+  assert.deepStrictEqual(json.dropbox, dropboxResult);
+});
+
+test('buildJobJson stores dropbox: null when sync was never attempted', () => {
+  const json = buildJobJson(makeJobData());
+  assert.strictEqual(json.dropbox, null);
 });
 
 // ---- writeJobFiles (fs) ----

@@ -11,6 +11,8 @@
 //   order: { propertyType, photography, addons },   // same shape pricing-adapter/folder-builder use
 //   price: <result of pricing-adapter.calculatePrice(order)>,
 //   folderName, componentFolders: [...],
+//   dropboxResult: <result of dropbox-sync.js#syncJobFolderToDropbox(), or
+//                   undefined if that step was never attempted>,
 // }
 
 const fs = require('fs');
@@ -22,7 +24,7 @@ const { centsToDisplay, config } = require('./pricing-adapter.js');
 // often decided after the shoot), but need to be caught and filled in
 // before the job is finalized/invoiced. Returns an array of human-
 // readable strings; empty array means nothing is pending.
-function computePendingConfirmation({ photographerName, order }) {
+function computePendingConfirmation({ photographerName, order, dropboxResult }) {
   const pending = [];
   if (!photographerName || !String(photographerName).trim()) {
     pending.push('Photographer Name not filled in yet.');
@@ -31,6 +33,12 @@ function computePendingConfirmation({ photographerName, order }) {
   const stagingQty = Number(addons.virtual_staging_qty) || 0;
   if (addons.virtual_staging && stagingQty <= 0) {
     pending.push('Virtual Staging quantity not confirmed yet (currently priced at $0 for this line -- update before invoicing).');
+  }
+  // Dropbox sync is best-effort (see dropbox-sync.js) -- local job creation
+  // always succeeds regardless, but a failed/skipped sync needs a human to
+  // notice and either configure Dropbox or retry it manually.
+  if (dropboxResult && !dropboxResult.success) {
+    pending.push('Dropbox sync did not complete -- retry manually: ' + dropboxResult.error);
   }
   return pending;
 }
@@ -107,6 +115,9 @@ function buildJobJson(jobData) {
       jobFolderName: jobData.folderName,
       componentFolders: jobData.componentFolders,
     },
+    // Recorded so a failed/skipped sync can be found and retried later
+    // without re-deriving it from scratch -- see dropbox-sync.js.
+    dropbox: jobData.dropboxResult || null,
     pendingConfirmation: computePendingConfirmation(jobData),
   };
 }
