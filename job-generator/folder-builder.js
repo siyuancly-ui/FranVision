@@ -16,6 +16,7 @@
 //     3 Image          <- same condition as 2 Video (video-editing stock images)
 //   Revisions           <- always, empty
 //   Home Report         <- always
+//   Local Report        <- always, empty (added 2026-09-07)
 //   MLS                 <- always
 //   Floorplan           <- Floor Plan OR Site Plan selected (Site Plan merges in, no separate folder)
 //   Virtual Staging     <- Virtual Staging selected
@@ -56,7 +57,7 @@ function getComponentFolders(order) {
   const stagingQty = Number(addons.virtual_staging_qty) || 0;
   const wantsVirtualStaging = !!addons.virtual_staging || stagingQty > 0;
 
-  const folders = ['0 RAW/1 Raws', 'Revisions', 'Home Report', 'MLS'];
+  const folders = ['0 RAW/1 Raws', 'Revisions', 'Home Report', 'Local Report', 'MLS'];
 
   if (isLuxury) {
     folders.push('0 RAW/4 Raw HDR');
