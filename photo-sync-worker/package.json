@@ -1,0 +1,17 @@
+{
+  "name": "franvision-photo-sync",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker that mirrors compressed thumbnails of Dropbox job photos into Supabase for the FranVision Gallery and Feature Sheet Builder.",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "node --test",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^4.129.1"
+  }
+}
