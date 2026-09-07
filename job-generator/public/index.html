@@ -142,6 +142,13 @@
   .result-box.error { background: var(--error-bg); border: 1px solid var(--error-border); color: #7a1f1f; }
   .result-box .path { font-family: ui-monospace, monospace; word-break: break-all; margin: 6px 0; }
   .pending-note { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .section-divider { max-width: 1200px; margin: 8px auto 0; padding: 0 24px; border-top: 1px solid var(--border); padding-top: 20px; }
+  .section-title { font-size: 15px; margin: 0 0 6px; color: var(--ink); }
+  .sync-summary { font-size: 13.5px; }
+  .sync-summary .fail-list { margin: 8px 0 0; padding-left: 18px; color: #7a1f1f; }
+  .sync-summary .conflict-list { margin: 8px 0 0; padding-left: 18px; color: #6b510f; }
+  .sync-btn-row { display: flex; gap: 10px; margin-top: 16px; }
+  .sync-btn-row .create-btn { margin-top: 0; }
 </style>
 </head>
 <body>
@@ -259,6 +266,27 @@
       <div id="create-blocked-hint" class="pending-note"></div>
       <div id="create-result"></div>
     </div>
+  </div>
+</div>
+
+<div class="section-divider">
+  <h2 class="section-title">Sync an Existing Job with Dropbox</h2>
+  <p class="field-hint">For a job you already created (not the one above). <strong>Push</strong> uploads local changes to Dropbox; <strong>Pull</strong> downloads Dropbox changes to local. A file changed on both sides since the last sync is never guessed at -- it's left alone and listed as a conflict for you to resolve by hand. Deletions are mirrored too (removing a file on one side removes it from the other next Push/Pull), unless the other side also changed since the last sync, which is likewise reported as a conflict rather than silently deleted.</p>
+</div>
+<div class="layout" style="grid-template-columns: 1fr;">
+  <div class="panel">
+    <div class="field-row">
+      <label class="field-label" for="sync-folder">Job Folder</label>
+      <div class="stub-row">
+        <input type="text" id="sync-folder" placeholder="/path/to/an existing Job folder">
+        <button class="browse-btn" type="button" id="sync-browse-btn" title="Opens a native macOS folder picker">Browse&hellip;</button>
+      </div>
+    </div>
+    <div class="sync-btn-row">
+      <button class="create-btn" id="push-btn" disabled>Push to Dropbox</button>
+      <button class="create-btn" id="pull-btn" disabled>Pull from Dropbox</button>
+    </div>
+    <div id="sync-result"></div>
   </div>
 </div>
 
@@ -669,6 +697,84 @@
     refreshFolderPreview();
     updateCreateButtonState();
   });
+
+  // ---- Sync an Existing Job with Dropbox (file-sync.js) ----
+  // Entirely separate flow from Create Job above -- this operates on a
+  // job folder that already exists (picked or typed in directly), not the
+  // one being drafted in the panels above. Two explicit directions (Push/
+  // Pull), never a single auto-merge -- see file-sync.js's header for why.
+
+  function renderSyncResult(result) {
+    const out = el('sync-result');
+    if (result.skipped) {
+      out.innerHTML = '<div class="result-box error">' + result.error + '</div>';
+      return;
+    }
+    if (result.totalLocalFiles === undefined) {
+      out.innerHTML = '<div class="result-box error">' + (result.error || 'Sync failed.') + '</div>';
+      return;
+    }
+    const movedLabel = result.direction === 'pull'
+      ? result.downloadedCount + ' downloaded'
+      : result.uploadedCount + ' uploaded';
+    const failHtml = result.failed && result.failed.length
+      ? '<ul class="fail-list">' + result.failed.map((f) => '<li>' + f.relativePath + ' -- ' + f.error + '</li>').join('') + '</ul>'
+      : '';
+    const conflictHtml = result.conflicts && result.conflicts.length
+      ? '<div style="margin-top:8px;">⚠ ' + result.conflicts.length + ' conflict(s) -- changed on both sides, left untouched:</div>' +
+        '<ul class="conflict-list">' + result.conflicts.map((c) => '<li>' + c.relativePath + ' -- ' + c.reason + '</li>').join('') + '</ul>'
+      : '';
+    out.innerHTML =
+      '<div class="result-box ' + (result.success ? 'success' : 'error') + '">' +
+      '<div class="sync-summary">' +
+      '<div>' + movedLabel + ', ' + result.deletedCount + ' deleted' +
+      (result.failed && result.failed.length ? ', ' + result.failed.length + ' failed' : '') + '.</div>' +
+      conflictHtml +
+      failHtml +
+      '</div></div>';
+  }
+
+  function updateSyncButtonsState() {
+    const hasFolder = !!el('sync-folder').value.trim();
+    el('push-btn').disabled = !hasFolder;
+    el('pull-btn').disabled = !hasFolder;
+  }
+
+  el('sync-folder').addEventListener('input', updateSyncButtonsState);
+
+  el('sync-browse-btn').addEventListener('click', async () => {
+    el('sync-browse-btn').disabled = true;
+    try {
+      const res = await fetch('/api/pick-folder', { method: 'POST' });
+      const result = await res.json();
+      if (!result.cancelled && result.path) {
+        el('sync-folder').value = result.path;
+        updateSyncButtonsState();
+      }
+    } finally {
+      el('sync-browse-btn').disabled = false;
+    }
+  });
+
+  async function runSync(route, actionLabel) {
+    const jobFolderPath = el('sync-folder').value.trim();
+    if (!jobFolderPath) return;
+    el('push-btn').disabled = true;
+    el('pull-btn').disabled = true;
+    el('sync-result').innerHTML = '<div class="empty-hint">' + actionLabel + '&hellip; this can take a while for a large or first-time folder.</div>';
+    try {
+      const res = await fetch(route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jobFolderPath }) });
+      const result = await res.json();
+      renderSyncResult(result);
+    } catch (err) {
+      el('sync-result').innerHTML = '<div class="result-box error">' + err.message + '</div>';
+    } finally {
+      updateSyncButtonsState();
+    }
+  }
+
+  el('push-btn').addEventListener('click', () => runSync('/api/push-job-files', 'Pushing to Dropbox'));
+  el('pull-btn').addEventListener('click', () => runSync('/api/pull-job-files', 'Pulling from Dropbox'));
 
   refreshPricing();
   refreshCommission(true);

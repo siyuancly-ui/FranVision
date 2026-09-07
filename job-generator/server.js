@@ -11,6 +11,7 @@
 //   config-store.js      -- Job Root Folder persistence (module 6)
 //   dropbox-sync.js      -- optional, best-effort Dropbox mirror + jobId tag
 //   commission-engine.js -- Photographer Commission (independent of pricing)
+//   file-sync.js         -- one-way local -> Dropbox FILE sync for an existing job
 
 const http = require('http');
 const fs = require('fs');
@@ -27,6 +28,7 @@ const configStore = require('./config-store.js');
 const dropboxSync = require('./dropbox-sync.js');
 const commissionEngine = require('./commission-engine.js');
 const commissionConfig = require('./commission-config.js');
+const fileSync = require('./file-sync.js');
 
 const PORT = 4173;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -279,6 +281,38 @@ async function handleApi(req, res, urlPath) {
         dropbox: dropboxResult,
         pendingConfirmation,
       });
+    }
+
+    // Two-way file sync for an EXISTING job folder -- separate from job
+    // creation above, and separate from dropbox-sync.js (which only
+    // builds the empty folder skeleton once, at creation time). Two
+    // explicit directions, matching the two buttons in the UI -- there is
+    // no single "auto-merge both ways" action (see file-sync.js's header
+    // for why: silently merging both directions risks quietly clobbering
+    // someone's edit). A file changed on both sides since the last sync
+    // is reported as a conflict and left untouched on both sides rather
+    // than guessed at. Can take a long time for a large first-time sync
+    // (many/large files); these requests simply run to completion and
+    // return one final summary rather than streaming progress -- there is
+    // no progress UI yet.
+    if (urlPath === '/api/push-job-files' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      if (!body.jobFolderPath || typeof body.jobFolderPath !== 'string') {
+        return sendJson(res, 400, { error: 'jobFolderPath (string) is required.' });
+      }
+      const dropboxJobFolderName = path.basename(body.jobFolderPath);
+      const result = await fileSync.pushJobFilesToDropbox({ jobFolderPath: body.jobFolderPath, dropboxJobFolderName });
+      return sendJson(res, 200, result);
+    }
+
+    if (urlPath === '/api/pull-job-files' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      if (!body.jobFolderPath || typeof body.jobFolderPath !== 'string') {
+        return sendJson(res, 400, { error: 'jobFolderPath (string) is required.' });
+      }
+      const dropboxJobFolderName = path.basename(body.jobFolderPath);
+      const result = await fileSync.pullJobFilesFromDropbox({ jobFolderPath: body.jobFolderPath, dropboxJobFolderName });
+      return sendJson(res, 200, result);
     }
 
     sendJson(res, 404, { error: 'Unknown API route: ' + urlPath });
