@@ -10,6 +10,7 @@
 //   job-files.js         -- Job Info.txt + job.json
 //   config-store.js      -- Job Root Folder persistence (module 6)
 //   dropbox-sync.js      -- optional, best-effort Dropbox mirror + jobId tag
+//   commission-engine.js -- Photographer Commission (independent of pricing)
 
 const http = require('http');
 const fs = require('fs');
@@ -24,6 +25,8 @@ const pricingAdapter = require('./pricing-adapter.js');
 const jobFiles = require('./job-files.js');
 const configStore = require('./config-store.js');
 const dropboxSync = require('./dropbox-sync.js');
+const commissionEngine = require('./commission-engine.js');
+const commissionConfig = require('./commission-config.js');
 
 const PORT = 4173;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -135,6 +138,27 @@ async function handleApi(req, res, urlPath) {
       return sendJson(res, 200, result);
     }
 
+    // Live Commission Breakdown preview -- entirely independent of
+    // /api/price above (commission-engine.js never imports pricing/).
+    // checkedItemIds is optional: omit it (or send null) to get the
+    // computed defaults for the current order, e.g. on first load or
+    // right after Property/Service Selection changes; send the UI's
+    // current checkbox state on every subsequent edit (checkbox toggle,
+    // Travel amount) so the server always re-prices from the real,
+    // possibly user-overridden, selection -- same "server recomputes,
+    // never trusts a client total" rule /api/create-job applies to price.
+    if (urlPath === '/api/commission' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      const result = commissionEngine.computeCommission({
+        photographerName: body.photographerName,
+        order: body.order || {},
+        checkedItemIds: body.checkedItemIds,
+        travelCents: body.travelCents,
+        config: commissionConfig,
+      });
+      return sendJson(res, 200, result);
+    }
+
     if (urlPath === '/api/plan' && req.method === 'POST') {
       const body = await readJsonBody(req);
       // The client's Job Root Folder field is authoritative for its own
@@ -180,6 +204,24 @@ async function handleApi(req, res, urlPath) {
         return sendJson(res, 400, { error: 'Pricing is not valid for this selection.', price: rawPrice });
       }
 
+      // Recompute commission server-side too -- same "never trust a
+      // client-supplied total" rule as price above, and entirely
+      // independent from it (commission-engine.js never touches
+      // pricingAdapter/rawPrice). Photographer Name is optional (see
+      // Client Information panel / pendingConfirmation) -- when it's
+      // still blank, commission is left undefined rather than computed as
+      // an all-zero breakdown, so Job Info.txt correctly says "not
+      // calculated yet" instead of implying $0 commission was decided.
+      const commission = body.photographerName && String(body.photographerName).trim()
+        ? commissionEngine.computeCommission({
+            photographerName: body.photographerName,
+            order,
+            checkedItemIds: (body.commission && body.commission.checkedItemIds) || [],
+            travelCents: body.commission && body.commission.travelCents,
+            config: commissionConfig,
+          })
+        : undefined;
+
       const jobId = idGenerator.getNextJobId(effectiveRootFolder);
       const folderName = sanitize.buildJobFolderName({
         shootDate: body.shootDate, address: body.address, clientName: body.clientName,
@@ -220,6 +262,7 @@ async function handleApi(req, res, urlPath) {
         folderName,
         componentFolders,
         dropboxResult,
+        commission,
       };
       const written = jobFiles.writeJobFiles(jobFolderPath, jobData);
       const pendingConfirmation = jobFiles.computePendingConfirmation(jobData);
@@ -232,6 +275,7 @@ async function handleApi(req, res, urlPath) {
         jobInfoPath: written.infoPath,
         jobJsonPath: written.jsonPath,
         price,
+        commission,
         dropbox: dropboxResult,
         pendingConfirmation,
       });
