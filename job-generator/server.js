@@ -9,6 +9,9 @@
 //   sanitize.js          -- safe folder names
 //   job-files.js         -- Job Info.txt + job.json
 //   config-store.js      -- Job Root Folder persistence (module 6)
+//   dropbox-sync.js      -- optional, best-effort Dropbox mirror + jobId tag
+//   commission-engine.js -- Photographer Commission (independent of pricing)
+//   file-sync.js         -- one-way local -> Dropbox FILE sync for an existing job
 
 const http = require('http');
 const fs = require('fs');
@@ -22,6 +25,10 @@ const folderBuilder = require('./folder-builder.js');
 const pricingAdapter = require('./pricing-adapter.js');
 const jobFiles = require('./job-files.js');
 const configStore = require('./config-store.js');
+const dropboxSync = require('./dropbox-sync.js');
+const commissionEngine = require('./commission-engine.js');
+const commissionConfig = require('./commission-config.js');
+const fileSync = require('./file-sync.js');
 
 const PORT = 4173;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -133,6 +140,27 @@ async function handleApi(req, res, urlPath) {
       return sendJson(res, 200, result);
     }
 
+    // Live Commission Breakdown preview -- entirely independent of
+    // /api/price above (commission-engine.js never imports pricing/).
+    // checkedItemIds is optional: omit it (or send null) to get the
+    // computed defaults for the current order, e.g. on first load or
+    // right after Property/Service Selection changes; send the UI's
+    // current checkbox state on every subsequent edit (checkbox toggle,
+    // Travel amount) so the server always re-prices from the real,
+    // possibly user-overridden, selection -- same "server recomputes,
+    // never trusts a client total" rule /api/create-job applies to price.
+    if (urlPath === '/api/commission' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      const result = commissionEngine.computeCommission({
+        photographerName: body.photographerName,
+        order: body.order || {},
+        checkedItemIds: body.checkedItemIds,
+        travelCents: body.travelCents,
+        config: commissionConfig,
+      });
+      return sendJson(res, 200, result);
+    }
+
     if (urlPath === '/api/plan' && req.method === 'POST') {
       const body = await readJsonBody(req);
       // The client's Job Root Folder field is authoritative for its own
@@ -178,6 +206,24 @@ async function handleApi(req, res, urlPath) {
         return sendJson(res, 400, { error: 'Pricing is not valid for this selection.', price: rawPrice });
       }
 
+      // Recompute commission server-side too -- same "never trust a
+      // client-supplied total" rule as price above, and entirely
+      // independent from it (commission-engine.js never touches
+      // pricingAdapter/rawPrice). Photographer Name is optional (see
+      // Client Information panel / pendingConfirmation) -- when it's
+      // still blank, commission is left undefined rather than computed as
+      // an all-zero breakdown, so Job Info.txt correctly says "not
+      // calculated yet" instead of implying $0 commission was decided.
+      const commission = body.photographerName && String(body.photographerName).trim()
+        ? commissionEngine.computeCommission({
+            photographerName: body.photographerName,
+            order,
+            checkedItemIds: (body.commission && body.commission.checkedItemIds) || [],
+            travelCents: body.commission && body.commission.travelCents,
+            config: commissionConfig,
+          })
+        : undefined;
+
       const jobId = idGenerator.getNextJobId(effectiveRootFolder);
       const folderName = sanitize.buildJobFolderName({
         shootDate: body.shootDate, address: body.address, clientName: body.clientName,
@@ -189,6 +235,21 @@ async function handleApi(req, res, urlPath) {
       // silently changes what the next job defaults to.
       const componentFolders = folderBuilder.createJobFolders(jobFolderPath, order).slice(1)
         .map((abs) => path.relative(jobFolderPath, abs));
+
+      // Local job creation above is the critical path and has already
+      // succeeded by this point. Dropbox is mirrored best-effort from here
+      // on -- syncJobFolderToDropbox() is designed to never throw, but it's
+      // wrapped in try/catch anyway (belt and suspenders) so absolutely
+      // nothing about this step can turn a successful local job creation
+      // into a failed API response. A failed/skipped sync is recorded in
+      // job.json/Job Info.txt via pendingConfirmation instead, for manual
+      // retry later.
+      let dropboxResult;
+      try {
+        dropboxResult = await dropboxSync.syncJobFolderToDropbox({ folderName, componentFolders, jobId });
+      } catch (err) {
+        dropboxResult = { attempted: true, success: false, error: 'Unexpected Dropbox sync failure: ' + err.message };
+      }
 
       const jobData = {
         jobId,
@@ -202,6 +263,8 @@ async function handleApi(req, res, urlPath) {
         price,
         folderName,
         componentFolders,
+        dropboxResult,
+        commission,
       };
       const written = jobFiles.writeJobFiles(jobFolderPath, jobData);
       const pendingConfirmation = jobFiles.computePendingConfirmation(jobData);
@@ -214,8 +277,42 @@ async function handleApi(req, res, urlPath) {
         jobInfoPath: written.infoPath,
         jobJsonPath: written.jsonPath,
         price,
+        commission,
+        dropbox: dropboxResult,
         pendingConfirmation,
       });
+    }
+
+    // Two-way file sync for an EXISTING job folder -- separate from job
+    // creation above, and separate from dropbox-sync.js (which only
+    // builds the empty folder skeleton once, at creation time). Two
+    // explicit directions, matching the two buttons in the UI -- there is
+    // no single "auto-merge both ways" action (see file-sync.js's header
+    // for why: silently merging both directions risks quietly clobbering
+    // someone's edit). A file changed on both sides since the last sync
+    // is reported as a conflict and left untouched on both sides rather
+    // than guessed at. Can take a long time for a large first-time sync
+    // (many/large files); these requests simply run to completion and
+    // return one final summary rather than streaming progress -- there is
+    // no progress UI yet.
+    if (urlPath === '/api/push-job-files' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      if (!body.jobFolderPath || typeof body.jobFolderPath !== 'string') {
+        return sendJson(res, 400, { error: 'jobFolderPath (string) is required.' });
+      }
+      const dropboxJobFolderName = path.basename(body.jobFolderPath);
+      const result = await fileSync.pushJobFilesToDropbox({ jobFolderPath: body.jobFolderPath, dropboxJobFolderName });
+      return sendJson(res, 200, result);
+    }
+
+    if (urlPath === '/api/pull-job-files' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      if (!body.jobFolderPath || typeof body.jobFolderPath !== 'string') {
+        return sendJson(res, 400, { error: 'jobFolderPath (string) is required.' });
+      }
+      const dropboxJobFolderName = path.basename(body.jobFolderPath);
+      const result = await fileSync.pullJobFilesFromDropbox({ jobFolderPath: body.jobFolderPath, dropboxJobFolderName });
+      return sendJson(res, 200, result);
     }
 
     sendJson(res, 404, { error: 'Unknown API route: ' + urlPath });

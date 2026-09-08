@@ -1,0 +1,12 @@
+# Copy to `.dev.vars` for `wrangler dev` (gitignored). In production these
+# are set with `wrangler secret put <NAME>` instead -- never commit real values.
+
+DROPBOX_APP_KEY=
+DROPBOX_APP_SECRET=
+DROPBOX_REFRESH_TOKEN=
+
+SUPABASE_URL=https://papaswihicvajzcubbri.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=
+
+# Bearer token that protects POST /admin/* . Make it long and random.
+ADMIN_TOKEN=

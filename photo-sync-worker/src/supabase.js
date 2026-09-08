@@ -1,0 +1,80 @@
+// Thin Supabase client (raw fetch): Storage upload for thumbnails, PostgREST
+// RPC for the atomic photo functions, and the single-row sync-state table
+// with a lease lock. Uses the service-role key -- bypasses RLS.
+
+export function createSupabase(env) {
+  const BASE = String(env.SUPABASE_URL || '').replace(/\/+$/, '');
+  const KEY = env.SUPABASE_SERVICE_ROLE_KEY;
+  const authHeaders = { apikey: KEY, Authorization: `Bearer ${KEY}` };
+
+  async function readJson(res) {
+    const text = await res.text();
+    if (!res.ok) {
+      const err = new Error(`supabase ${res.status}: ${text}`);
+      err.status = res.status;
+      throw err;
+    }
+    return text ? JSON.parse(text) : null;
+  }
+
+  return {
+    // photos/<jobId>/<photoId>_thumb.jpg  (x-upsert => create or overwrite)
+    async uploadThumb(jobId, photoId, bytes) {
+      const path = `photos/${encodeURIComponent(jobId)}/${photoId}_thumb.jpg`;
+      const res = await fetch(`${BASE}/storage/v1/object/${path}`, {
+        method: 'POST',
+        headers: { ...authHeaders, 'Content-Type': 'image/jpeg', 'x-upsert': 'true', 'cache-control': '3600' },
+        body: bytes,
+      });
+      return readJson(res);
+    },
+
+    async rpc(fn, args) {
+      const res = await fetch(`${BASE}/rest/v1/rpc/${fn}`, {
+        method: 'POST',
+        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify(args || {}),
+      });
+      return readJson(res);
+    },
+
+    async getSyncState() {
+      const res = await fetch(`${BASE}/rest/v1/photo_sync_state?id=eq.default&select=*`, { headers: authHeaders });
+      const rows = await readJson(res);
+      return Array.isArray(rows) ? rows[0] || null : rows;
+    },
+
+    async patchSyncState(fields) {
+      const res = await fetch(`${BASE}/rest/v1/photo_sync_state?id=eq.default`, {
+        method: 'PATCH',
+        headers: { ...authHeaders, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ ...fields, updated_at: new Date().toISOString() }),
+      });
+      return readJson(res);
+    },
+
+    // Atomic lease: a single UPDATE that only matches when the lock is free
+    // or expired. Returns true iff this caller took the lock.
+    async acquireLease(ttlMs) {
+      const until = new Date(Date.now() + ttlMs).toISOString();
+      const nowIso = encodeURIComponent(new Date().toISOString());
+      const q = `${BASE}/rest/v1/photo_sync_state?id=eq.default&or=(locked_until.is.null,locked_until.lt.${nowIso})`;
+      const res = await fetch(q, {
+        method: 'PATCH',
+        headers: { ...authHeaders, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify({ locked_until: until }),
+      });
+      const rows = await readJson(res);
+      return Array.isArray(rows) && rows.length > 0;
+    },
+
+    async releaseLease() {
+      const res = await fetch(`${BASE}/rest/v1/photo_sync_state?id=eq.default`, {
+        method: 'PATCH',
+        headers: { ...authHeaders, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ locked_until: null }),
+      });
+      return readJson(res);
+    },
+  };
+}

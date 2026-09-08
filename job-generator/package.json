@@ -1,0 +1,15 @@
+{
+  "name": "franvision-job-generator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FranVision Job Generator -- local server that creates a standardized job folder structure (and, optionally, a mirrored Dropbox copy tagged with the Job ID).",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "for f in *.test.js; do node \"$f\" || exit 1; done"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "dropbox": "^10.46.0"
+  }
+}

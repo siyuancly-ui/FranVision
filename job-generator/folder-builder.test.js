@@ -30,15 +30,14 @@ function sortedSet(arr) {
 
 test('Standard photography, no add-ons: baseline four folders only', () => {
   const order = { propertyType: 'condo', photography: 'standard', addons: {} };
-  assert.deepStrictEqual(sortedSet(getComponentFolders(order)), sortedSet(['0 RAW/1 Raws', 'Revisions', 'Home Report', 'MLS']));
+  assert.deepStrictEqual(sortedSet(getComponentFolders(order)), sortedSet(['0 RAW/1 Raws', 'Revisions', 'Home Report', 'Local Report', 'MLS']));
 });
 
-test('Luxury photography: adds Raw HDR + top-level Twilight', () => {
+test('Luxury photography: adds Raw HDR, no dedicated Twilight folder (removed 2026-09-06)', () => {
   const order = { propertyType: 'condo', photography: 'luxury', addons: {} };
   const folders = getComponentFolders(order);
   assert.ok(folders.includes('0 RAW/4 Raw HDR'));
-  assert.ok(folders.includes('Twilight'));
-  assert.ok(!folders.includes('0 RAW/Twilight'), 'Twilight must be top-level, not nested under 0 RAW');
+  assert.ok(!folders.some((f) => /twilight/i.test(f)));
 });
 
 test('Walkthrough Video: raw Video+Image folders plus finished Video, no VLOG', () => {
@@ -81,10 +80,11 @@ test('Site Plan selected (without floor_plan flag): still produces Floorplan, no
   assert.ok(!folders.some((f) => /site plan/i.test(f)));
 });
 
-test('3D Virtual Tour selected: 3D Tour folder, no raw subfolder anywhere', () => {
+test('3D Virtual Tour selected: no dedicated folder (removed 2026-09-06) -- still just the baseline four', () => {
   const order = { propertyType: 'condo', photography: 'standard', addons: { three_d_tour: true } };
   const folders = getComponentFolders(order);
-  assert.ok(folders.includes('3D Tour'));
+  assert.ok(!folders.some((f) => /3d/i.test(f)));
+  assert.deepStrictEqual(sortedSet(folders), sortedSet(['0 RAW/1 Raws', 'Revisions', 'Home Report', 'Local Report', 'MLS']));
 });
 
 test('Virtual Staging: checkbox alone with qty 0 still creates the folder (photo count often unknown yet -- intentional)', () => {
@@ -105,7 +105,7 @@ test('Feature Sheets selected: Feature Sheets folder', () => {
 test('Drone Photos selected: no dedicated folder at all', () => {
   const order = { propertyType: 'condo', photography: 'standard', addons: { drone_photos: true } };
   const folders = getComponentFolders(order);
-  assert.deepStrictEqual(sortedSet(folders), sortedSet(['0 RAW/1 Raws', 'Revisions', 'Home Report', 'MLS']));
+  assert.deepStrictEqual(sortedSet(folders), sortedSet(['0 RAW/1 Raws', 'Revisions', 'Home Report', 'Local Report', 'MLS']));
 });
 
 test('Everything selected at once: full folder set, each exactly once', () => {
@@ -127,8 +127,8 @@ test('Everything selected at once: full folder set, each exactly once', () => {
   const folders = getComponentFolders(order);
   const expected = [
     '0 RAW/1 Raws', '0 RAW/4 Raw HDR', '0 RAW/2 Video', '0 RAW/3 Image',
-    'Twilight', 'Revisions', 'Home Report', 'MLS', 'Floorplan',
-    '3D Tour', 'Virtual Staging', 'Feature Sheets', 'Video', 'VLOG',
+    'Revisions', 'Home Report', 'Local Report', 'MLS', 'Floorplan',
+    'Virtual Staging', 'Feature Sheets', 'Video', 'VLOG',
   ];
   assert.deepStrictEqual(sortedSet(folders), sortedSet(expected));
   // no duplicates
@@ -145,7 +145,7 @@ test('createJobFolders actually creates the job folder and every component folde
   const root = makeTmpDir();
   try {
     const jobFolder = path.join(root, '2026.08.27 12 Cozens Dr_Jane Smith');
-    const order = { propertyType: 'condo', photography: 'luxury', addons: { walkthrough_video: true, floor_plan: true } };
+    const order = { propertyType: 'condo', photography: 'luxury', addons: { walkthrough_video: true, floor_plan: true, three_d_tour: true } };
     const created = createJobFolders(jobFolder, order);
 
     assert.ok(fs.existsSync(jobFolder) && fs.statSync(jobFolder).isDirectory());
@@ -153,9 +153,11 @@ test('createJobFolders actually creates the job folder and every component folde
     assert.ok(fs.existsSync(path.join(jobFolder, '0 RAW', '4 Raw HDR')));
     assert.ok(fs.existsSync(path.join(jobFolder, '0 RAW', '2 Video')));
     assert.ok(fs.existsSync(path.join(jobFolder, '0 RAW', '3 Image')));
-    assert.ok(fs.existsSync(path.join(jobFolder, 'Twilight')));
+    assert.ok(!fs.existsSync(path.join(jobFolder, 'Twilight')));
+    assert.ok(!fs.existsSync(path.join(jobFolder, '3D Tour')));
     assert.ok(fs.existsSync(path.join(jobFolder, 'Revisions')));
     assert.ok(fs.existsSync(path.join(jobFolder, 'Home Report')));
+    assert.ok(fs.existsSync(path.join(jobFolder, 'Local Report')));
     assert.ok(fs.existsSync(path.join(jobFolder, 'MLS')));
     assert.ok(fs.existsSync(path.join(jobFolder, 'Floorplan')));
     assert.ok(fs.existsSync(path.join(jobFolder, 'Video')));

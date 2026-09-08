@@ -14,12 +14,11 @@
 //     4 Raw HDR        <- Luxury tier only
 //     2 Video          <- Walkthrough Video OR Vlog Video selected
 //     3 Image          <- same condition as 2 Video (video-editing stock images)
-//   Twilight            <- Luxury tier only (top-level, NOT under 0 RAW)
 //   Revisions           <- always, empty
 //   Home Report         <- always
+//   Local Report        <- always, empty (added 2026-09-07)
 //   MLS                 <- always
 //   Floorplan           <- Floor Plan OR Site Plan selected (Site Plan merges in, no separate folder)
-//   3D Tour             <- 3D Virtual Tour selected (finished only, no raw subfolder)
 //   Virtual Staging     <- Virtual Staging selected
 //   Feature Sheets      <- Feature Sheets selected
 //   Video               <- Walkthrough Video selected (finished)
@@ -27,6 +26,12 @@
 //
 // Drone Photos has no dedicated folder -- it's treated exactly like the
 // base photography service and flows through 1 Raws / MLS / Home Report.
+//
+// Twilight and 3D Tour deliberately have NO dedicated folder (2026-09-06
+// change -- they used to) -- Luxury tier still gets 0 RAW/4 Raw HDR, and
+// 3D Virtual Tour is still a real priced addon in pricing-config.js, but
+// neither gets its own folder anymore. Do not re-add these without
+// re-confirming -- this was an explicit request, not an oversight.
 
 const fs = require('fs');
 const path = require('path');
@@ -52,11 +57,10 @@ function getComponentFolders(order) {
   const stagingQty = Number(addons.virtual_staging_qty) || 0;
   const wantsVirtualStaging = !!addons.virtual_staging || stagingQty > 0;
 
-  const folders = ['0 RAW/1 Raws', 'Revisions', 'Home Report', 'MLS'];
+  const folders = ['0 RAW/1 Raws', 'Revisions', 'Home Report', 'Local Report', 'MLS'];
 
   if (isLuxury) {
     folders.push('0 RAW/4 Raw HDR');
-    folders.push('Twilight');
   }
   if (wantsVideoRaw) {
     folders.push('0 RAW/2 Video');
@@ -65,7 +69,8 @@ function getComponentFolders(order) {
   if (wantsWalkthrough) folders.push('Video');
   if (wantsVlog) folders.push('VLOG');
   if (wantsFloorplan) folders.push('Floorplan');
-  if (addons.three_d_tour) folders.push('3D Tour');
+  // three_d_tour intentionally does NOT add a folder anymore -- see the
+  // file header comment above (2026-09-06).
   if (wantsVirtualStaging) folders.push('Virtual Staging');
   if (addons.feature_sheets) folders.push('Feature Sheets');
 

@@ -11,6 +11,11 @@
 //   order: { propertyType, photography, addons },   // same shape pricing-adapter/folder-builder use
 //   price: <result of pricing-adapter.calculatePrice(order)>,
 //   folderName, componentFolders: [...],
+//   dropboxResult: <result of dropbox-sync.js#syncJobFolderToDropbox(), or
+//                   undefined if that step was never attempted>,
+//   commission: <result of commission-engine.js#computeCommission(), or
+//                undefined if it was never computed (e.g. no photographer
+//                entered yet)>,
 // }
 
 const fs = require('fs');
@@ -22,7 +27,7 @@ const { centsToDisplay, config } = require('./pricing-adapter.js');
 // often decided after the shoot), but need to be caught and filled in
 // before the job is finalized/invoiced. Returns an array of human-
 // readable strings; empty array means nothing is pending.
-function computePendingConfirmation({ photographerName, order }) {
+function computePendingConfirmation({ photographerName, order, dropboxResult }) {
   const pending = [];
   if (!photographerName || !String(photographerName).trim()) {
     pending.push('Photographer Name not filled in yet.');
@@ -32,12 +37,47 @@ function computePendingConfirmation({ photographerName, order }) {
   if (addons.virtual_staging && stagingQty <= 0) {
     pending.push('Virtual Staging quantity not confirmed yet (currently priced at $0 for this line -- update before invoicing).');
   }
+  // Dropbox sync is best-effort (see dropbox-sync.js) -- local job creation
+  // always succeeds regardless, but a failed/skipped sync needs a human to
+  // notice and either configure Dropbox or retry it manually.
+  if (dropboxResult && !dropboxResult.success) {
+    pending.push('Dropbox sync did not complete -- retry manually: ' + dropboxResult.error);
+  }
   return pending;
 }
 
 function serviceSelectionSummary(price) {
   if (!price || price.status !== 'ok') return '(no valid pricing selection)';
   return price.lineItems.map((li) => li.label).join(', ');
+}
+
+// Renders the "Commission Breakdown:" section for Job Info.txt. Entirely
+// independent from the client-facing pricing section above it -- reads
+// only jobData.commission (see commission-engine.js), never jobData.price.
+function buildCommissionLines(commission) {
+  const lines = ['Commission Breakdown:'];
+  if (!commission) {
+    lines.push('  (not calculated -- Photographer not entered yet)');
+    return lines;
+  }
+  if (commission.exempt) {
+    lines.push('  ' + (commission.photographer || 'Photographer') + ' is commission-exempt -- $0.');
+    return lines;
+  }
+  const checkedItems = commission.allItems.filter((item) => item.checked);
+  if (!checkedItems.length && !commission.travelCents) {
+    lines.push('  (no commission items selected)');
+    return lines;
+  }
+  checkedItems.forEach((item) => {
+    lines.push('  ' + item.label.padEnd(40) + centsToDisplay(item.amountCents));
+  });
+  if (commission.travelCents) {
+    lines.push('  ' + 'Travel'.padEnd(40) + centsToDisplay(commission.travelCents));
+  }
+  lines.push('  ' + '-'.repeat(50));
+  lines.push('  ' + 'Total Commission'.padEnd(40) + centsToDisplay(commission.totalCents));
+  return lines;
 }
 
 function buildJobInfoText(jobData) {
@@ -71,6 +111,8 @@ function buildJobInfoText(jobData) {
   } else {
     lines.push('  ' + (p && p.reason ? p.reason : 'No valid pricing.'));
   }
+  lines.push('');
+  lines.push(...buildCommissionLines(jobData.commission));
   const pending = computePendingConfirmation(jobData);
   if (pending.length) {
     lines.push('');
@@ -83,13 +125,30 @@ function buildJobInfoText(jobData) {
   return lines.join('\n');
 }
 
+// Builds job.json's "commission" field in the exact shape requested:
+// { items: [...], travel_cents, total_cents }. Independent of jobData.price
+// -- reads only jobData.commission (see commission-engine.js). Defaults to
+// the all-zero shape when commission was never computed (e.g. no
+// Photographer entered yet) rather than omitting the key, so downstream
+// tooling can always rely on job.json having a `commission` object.
+function buildCommissionJson(commission) {
+  if (!commission) return { items: [], travel_cents: 0, total_cents: 0 };
+  const items = commission.exempt ? [] : commission.allItems
+    .filter((item) => item.checked)
+    .map(({ id, label, amountCents }) => ({ id, label, amountCents }));
+  return { items, travel_cents: commission.travelCents || 0, total_cents: commission.totalCents || 0 };
+}
+
 function buildJobJson(jobData) {
   const p = jobData.price;
   return {
     jobId: jobData.jobId,
     createdAt: jobData.createdAt,
     client: { name: jobData.clientName },
-    photographer: { name: jobData.photographerName },
+    // Flat string, not an object -- the Photographer Commission module
+    // (commission-engine.js) keys directly off this same value.
+    photographer: jobData.photographerName || '',
+    commission: buildCommissionJson(jobData.commission),
     property: { address: jobData.address, propertyType: jobData.propertyType },
     shootDate: jobData.shootDate,
     services: jobData.order,
@@ -107,6 +166,9 @@ function buildJobJson(jobData) {
       jobFolderName: jobData.folderName,
       componentFolders: jobData.componentFolders,
     },
+    // Recorded so a failed/skipped sync can be found and retried later
+    // without re-deriving it from scratch -- see dropbox-sync.js.
+    dropbox: jobData.dropboxResult || null,
     pendingConfirmation: computePendingConfirmation(jobData),
   };
 }
@@ -119,4 +181,4 @@ function writeJobFiles(jobFolderAbsolutePath, jobData) {
   return { infoPath, jsonPath };
 }
 
-module.exports = { buildJobInfoText, buildJobJson, writeJobFiles, computePendingConfirmation };
+module.exports = { buildJobInfoText, buildJobJson, writeJobFiles, computePendingConfirmation, buildCommissionJson, buildCommissionLines };
