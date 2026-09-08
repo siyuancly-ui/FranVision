@@ -116,6 +116,26 @@ export function createDropbox(env) {
       return rpc(env, CONTENT, 'files/get_thumbnail_batch', arg);
     },
 
+    // Single-file thumbnail -- fallback when a batch entry fails or the
+    // batch endpoint rejects a size. Returns raw bytes (Uint8Array); the
+    // image is the response BODY, metadata is in the Dropbox-API-Result
+    // header (ignored here).
+    async getThumbnailV2(path, size) {
+      const arg = { resource: { '.tag': 'path', path }, format: 'jpeg', size, mode: 'bestfit' };
+      const doCall = async (token) =>
+        fetch(`${CONTENT}/files/get_thumbnail_v2`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Dropbox-API-Arg': JSON.stringify(arg) },
+        });
+      let res = await doCall(await getToken(env));
+      if (res.status === 401) res = await doCall(await getToken(env, true));
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`dropbox get_thumbnail_v2 ${res.status}: ${text}`);
+      }
+      return new Uint8Array(await res.arrayBuffer());
+    },
+
     async filesUpload(path, bytes) {
       const doCall = async (token) =>
         fetch(`${CONTENT}/files/upload`, {

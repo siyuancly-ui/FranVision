@@ -8,24 +8,40 @@ const ENV = {
   DOWNLOAD_SET_FOLDERS: 'MLS',
   DOWNLOAD_SUBFOLDER: 'MLS for download',
   THUMB_SIZE: 'w1024h768',
+  DOWNLOAD_THUMB_SIZE: 'w2048h1536',
   DROPBOX_TEMPLATE_ID: 'ptid:TEST',
   MAX_DELTA_ENTRIES_PER_RUN: '2000',
 };
 
-function fakeThumb(path) {
-  return btoa('thumb:' + path);
+function fakeThumb(path, size) {
+  return btoa(`thumb:${size}:${path}`);
+}
+function base64ToBytesLocal(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+function bytesToText(bytes) {
+  let s = '';
+  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  return s;
 }
 
 function makeDbx(over = {}) {
-  const calls = { uploads: [], deletes: [], thumbBatch: [], metadata: [] };
+  const calls = { uploads: [], deletes: [], thumbBatch: [], thumbV2: [], metadata: [] };
   return {
     calls,
-    async getThumbnailBatch(paths) {
-      calls.thumbBatch.push(paths);
-      return { entries: paths.map((p) => ({ '.tag': 'success', thumbnail: fakeThumb(p) })) };
+    async getThumbnailBatch(paths, size) {
+      calls.thumbBatch.push({ paths, size });
+      return { entries: paths.map((p) => ({ '.tag': 'success', thumbnail: fakeThumb(p, size) })) };
+    },
+    async getThumbnailV2(path, size) {
+      calls.thumbV2.push({ path, size });
+      return base64ToBytesLocal(fakeThumb(path, size));
     },
     async filesUpload(path, bytes) {
-      calls.uploads.push({ path, len: bytes.length });
+      calls.uploads.push({ path, len: bytes.length, text: bytesToText(bytes) });
       return { path_display: path };
     },
     async filesDelete(path) {
@@ -99,8 +115,11 @@ test('processPhotoBatch: MLS photo -> thumb + download copy + rpc', async () => 
   assert.equal(res.skipped, 0);
   assert.equal(sb.calls.thumbs.length, 2);
 
-  // download copy only for the MLS one
+  // download copy only for the MLS one, and it uses the BIGGER render
   assert.deepEqual(dbx.calls.uploads.map((u) => u.path), ['/JobA/MLS for download/a.jpg']);
+  assert.equal(dbx.calls.uploads[0].text, 'thumb:w2048h1536:/JobA/MLS/a.jpg');
+  assert.ok(dbx.calls.thumbBatch.some((b) => b.size === 'w1024h768'), 'Supabase thumb at w1024h768');
+  assert.ok(dbx.calls.thumbBatch.some((b) => b.size === 'w2048h1536'), 'delivery copy at w2048h1536');
 
   const recA = sb.calls.rpc.find((c) => c.args.p_photo.filename === 'a.jpg').args.p_photo;
   assert.equal(recA.folder, 'MLS');
@@ -114,6 +133,60 @@ test('processPhotoBatch: MLS photo -> thumb + download copy + rpc', async () => 
   const recB = sb.calls.rpc.find((c) => c.args.p_photo.filename === 'b.png').args.p_photo;
   assert.equal(recB.width, 800);
   assert.equal(recB.downloadDropboxPath, undefined);
+});
+
+test('processPhotoBatch: delivery copy falls back to get_thumbnail_v2 when the batch entry fails', async () => {
+  const dbx = makeDbx({
+    async getThumbnailBatch(paths, size) {
+      this.calls.thumbBatch.push({ paths, size });
+      // the big delivery size is rejected per-entry; the small one is fine
+      if (size === 'w2048h1536') {
+        return { entries: paths.map(() => ({ '.tag': 'failure', failure: { '.tag': 'unsupported_size' } })) };
+      }
+      return { entries: paths.map((p) => ({ '.tag': 'success', thumbnail: fakeThumb(p, size) })) };
+    },
+  });
+  const sb = makeSb();
+  const res = await processPhotoBatch(ENV, { dbx, sb }, {
+    jobId: 'FV-1', jobFolderPath: '/JobA', items: [upsertItem()],
+  });
+  assert.equal(res.ok, 1);
+  assert.deepEqual(dbx.calls.thumbV2, [{ path: '/JobA/MLS/a.jpg', size: 'w2048h1536' }]);
+  assert.equal(dbx.calls.uploads[0].path, '/JobA/MLS for download/a.jpg');
+  assert.equal(dbx.calls.uploads[0].text, 'thumb:w2048h1536:/JobA/MLS/a.jpg');
+});
+
+test('processPhotoBatch: delivery-copy failure does not fail the photo', async () => {
+  const dbx = makeDbx({
+    async getThumbnailBatch(paths, size) {
+      this.calls.thumbBatch.push({ paths, size });
+      if (size === 'w2048h1536') throw new Error('dropbox 500');
+      return { entries: paths.map((p) => ({ '.tag': 'success', thumbnail: fakeThumb(p, size) })) };
+    },
+    async getThumbnailV2() { throw new Error('dropbox 500 again'); },
+  });
+  const sb = makeSb();
+  const res = await processPhotoBatch(ENV, { dbx, sb }, {
+    jobId: 'FV-1', jobFolderPath: '/JobA', items: [upsertItem()],
+  });
+  assert.equal(res.ok, 1); // Gallery record still saved
+  assert.equal(dbx.calls.uploads.length, 0); // no delivery copy written
+});
+
+test('processPhotoBatch: only successful photos get a delivery copy', async () => {
+  const dbx = makeDbx();
+  let n = 0;
+  const sb = makeSb({ async uploadThumb() { n++; if (n === 1) throw new Error('storage boom'); } });
+  await processPhotoBatch(ENV, { dbx, sb }, {
+    jobId: 'FV-1',
+    jobFolderPath: '/JobA',
+    items: [
+      upsertItem(),
+      upsertItem({ path: '/JobA/MLS/c.jpg', relPathFromJob: 'MLS/c.jpg', filename: 'c.jpg', id: 'id:3' }),
+    ],
+  });
+  // a.jpg failed its Supabase upload -> no delivery copy; only c.jpg gets one
+  assert.deepEqual(dbx.calls.uploads.map((u) => u.path), ['/JobA/MLS for download/c.jpg']);
 });
 
 test('processPhotoBatch: null dims trigger a get_metadata refetch', async () => {

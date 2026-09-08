@@ -34,9 +34,12 @@ Cron (every 2 min) ────────────────────�
 - **`SYNC_FOLDERS`** (`MLS, Virtual Staging, Floorplan, Local Report`): only
   images (`.jpg/.jpeg/.png/.webp`) under these sub-folders of a job folder
   are mirrored. `0 RAW`, `Home Report`, videos, PDFs, etc. are ignored.
-- **`DOWNLOAD_SET_FOLDERS`** (`MLS`): these also get the 1024px JPEG written
-  back into Dropbox at `<job>/MLS for download/<name>.jpg` as a downloadable
-  delivery set. The same compressed bytes are reused — one compression.
+- **`DOWNLOAD_SET_FOLDERS`** (`MLS`): these also get a **larger** render
+  (`DOWNLOAD_THUMB_SIZE`, `w2048h1536` — a 3:2 landscape → 2048×1365,
+  ~0.4–0.9 MB) written back into Dropbox at `<job>/MLS for download/<name>.jpg`
+  as a human-downloadable delivery set. Two compressions per MLS photo:
+  `THUMB_SIZE` for Supabase/Gallery, `DOWNLOAD_THUMB_SIZE` for Dropbox. If the
+  batch endpoint rejects the size, it falls back to per-file `get_thumbnail_v2`.
 - **Self-heal**: a Dropbox-side delete flags the photo `status:"pending_review"`
   in Supabase (nothing is removed) and deletes the derived `MLS for download`
   copy. Re-uploading a file with the **same name** in the same folder → same
@@ -142,9 +145,6 @@ Zero runtime dependencies — Dropbox and Supabase are called with raw `fetch`.
 
 ## Not in v1 (see DESIGN.md §10)
 
-- The 1620×1080 delivery set (option 2) — only if 1024 proves too soft for
-  final MLS delivery; needs a real resize pipeline, not the Dropbox thumbnail
-  API.
 - Video / VLOG links.
 - Storage retention/cleanup for the Supabase free tier (1 GB).
 - A human-facing view of `pending_review` photos (Gallery / FSB UI concern).

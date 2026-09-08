@@ -54,8 +54,13 @@
     // Comma-separated, case-insensitive, surrounding spaces trimmed.
     "SYNC_FOLDERS": "MLS,Virtual Staging,Floorplan,Local Report",
 
-    // Dropbox get_thumbnail size. w1024h768 is the batch endpoint's max.
+    // Dropbox get_thumbnail size for the Gallery / Supabase thumbnail.
     "THUMB_SIZE": "w1024h768",
+
+    // Bigger render for the downloadable "MLS for download" delivery set
+    // written back to Dropbox. w2048h1536 is Dropbox's largest (a 3:2
+    // landscape comes out 2048x1365, ~0.4-0.9 MB).
+    "DOWNLOAD_THUMB_SIZE": "w2048h1536",
 
     // PropertyGroupTemplate that carries the hidden `jobId` on each job
     // folder (registered by the Job Generator setup script).

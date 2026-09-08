@@ -114,6 +114,9 @@ export function readConfig(env) {
     downloadSetFolders: parseFolderList(env.DOWNLOAD_SET_FOLDERS),
     downloadSubfolder: env.DOWNLOAD_SUBFOLDER || 'MLS for download',
     thumbSize: env.THUMB_SIZE || 'w1024h768',
+    // Bigger render for the downloadable delivery set written back to
+    // Dropbox. Dropbox tops out at w2048h1536 (a 3:2 landscape -> 2048x1365).
+    downloadThumbSize: env.DOWNLOAD_THUMB_SIZE || 'w2048h1536',
     templateId: env.DROPBOX_TEMPLATE_ID,
     maxDeltaEntries: Number.isFinite(Number(env.MAX_DELTA_ENTRIES_PER_RUN))
       ? Number(env.MAX_DELTA_ENTRIES_PER_RUN)
@@ -232,6 +235,7 @@ export async function processPhotoBatch(env, deps, msg) {
   let ok = 0;
   let healed = 0;
   let skipped = 0;
+  const succeeded = []; // items whose Gallery record was saved -> eligible for a delivery copy
 
   // ---- upserts: thumbnail (batched 25) -> storage + optional download copy -> rpc
   for (const part of chunk(upserts, 25)) {
@@ -295,24 +299,47 @@ export async function processPhotoBatch(env, deps, msg) {
 
         const res = await sb.rpc('photos_upsert', { p_project_id: jobId, p_photo: record });
         ok++;
+        succeeded.push(item);
         if (res && res.healed) {
           healed++;
           log({ evt: 'photo_healed', jobId, photoId: pid, path: item.path });
         }
-
-        // Best-effort: the downloadable compressed copy written back into
-        // Dropbox. A failure here does NOT fail the photo -- the Gallery
-        // record is already saved and the next sync/backfill retries this.
-        if (downloadDropboxPath) {
-          try {
-            await dbx.filesUpload(downloadDropboxPath, bytes);
-          } catch (err) {
-            log({ evt: 'download_copy_failed', jobId, path: downloadDropboxPath, error: String(err && err.message || err) });
-          }
-        }
       } catch (err) {
         skipped++;
         log({ evt: 'photo_error', jobId, path: item.path, error: String(err && err.message || err) });
+      }
+    }
+  }
+
+  // ---- delivery set: a bigger (w2048h1536) render written back to Dropbox
+  // as the human-downloadable "MLS for download" copy. Separate pass, own
+  // thumbnail request -- the Gallery/Supabase side stays on the small
+  // thumbSize. Entirely best-effort: the Gallery records are already
+  // saved above; a failure here is logged and picked up next sync/backfill.
+  const deliveryItems = succeeded.filter((i) => folderMatches(i.subFolder, cfg.downloadSetFolders));
+  for (const part of chunk(deliveryItems, 25)) {
+    let dbatch = null;
+    try {
+      dbatch = await dbx.getThumbnailBatch(part.map((i) => i.path), cfg.downloadThumbSize);
+    } catch (err) {
+      log({ evt: 'delivery_batch_failed', jobId, size: cfg.downloadThumbSize, error: String(err && err.message || err) });
+    }
+    const dresults = (dbatch && dbatch.entries) || [];
+    for (let k = 0; k < part.length; k++) {
+      const item = part[k];
+      const dr = dresults[k] || {};
+      const dest = downloadCopyPath(jobFolderPath, cfg.downloadSubfolder, item.filename);
+      try {
+        let bytes;
+        if (dr['.tag'] === 'success' && dr.thumbnail) {
+          bytes = base64ToBytes(dr.thumbnail);
+        } else {
+          // batch entry failed (or whole batch errored) -> single fallback
+          bytes = await dbx.getThumbnailV2(item.path, cfg.downloadThumbSize);
+        }
+        await dbx.filesUpload(dest, bytes);
+      } catch (err) {
+        log({ evt: 'download_copy_failed', jobId, path: dest, error: String(err && err.message || err) });
       }
     }
   }
