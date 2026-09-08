@@ -3,7 +3,7 @@
 // pattern as pricing/engine.test.js).
 
 const assert = require('assert');
-const { sanitizeSegment, buildJobFolderName } = require('./sanitize.js');
+const { sanitizeSegment, buildJobFolderName, formatDateForFolderName } = require('./sanitize.js');
 
 let passed = 0;
 let failed = 0;
@@ -71,25 +71,53 @@ test('does not flag a name that merely starts with a reserved word', () => {
   assert.strictEqual(sanitizeSegment('CONference Room'), 'CONference Room');
 });
 
-test('buildJobFolderName: normal case', () => {
+test('buildJobFolderName: normal case -- no leading zero on month/day', () => {
   assert.strictEqual(
     buildJobFolderName({ shootDate: '2026/08/27', address: '12 Cozens Dr, Markham', clientName: 'Jane Smith' }),
-    '2026.08.27 12 Cozens Dr, Markham_Jane Smith'
+    '2026.8.27 12 Cozens Dr, Markham_Jane Smith'
   );
 });
 
 test('buildJobFolderName: sanitizes illegal characters in address/client', () => {
   assert.strictEqual(
     buildJobFolderName({ shootDate: '2026/08/27', address: '12/14 Main St', clientName: 'A/B Realty' }),
-    '2026.08.27 12-14 Main St_A-B Realty'
+    '2026.8.27 12-14 Main St_A-B Realty'
   );
 });
 
 test('buildJobFolderName: missing pieces fall back to placeholders', () => {
   assert.strictEqual(
     buildJobFolderName({ shootDate: '2026/08/27', address: '', clientName: '' }),
-    '2026.08.27 Unknown Address_Unknown Client'
+    '2026.8.27 Unknown Address_Unknown Client'
   );
+});
+
+test('buildJobFolderName: strips leading zero from both single-digit month AND day', () => {
+  assert.strictEqual(
+    buildJobFolderName({ shootDate: '2026/09/08', address: '1 Test Ave', clientName: 'Client' }),
+    '2026.9.8 1 Test Ave_Client'
+  );
+});
+
+test('buildJobFolderName: leaves an already-two-digit month/day untouched', () => {
+  assert.strictEqual(
+    buildJobFolderName({ shootDate: '2026/12/25', address: '1 Test Ave', clientName: 'Client' }),
+    '2026.12.25 1 Test Ave_Client'
+  );
+});
+
+test('formatDateForFolderName: strips both leading zeros', () => {
+  assert.strictEqual(formatDateForFolderName('2026/01/01'), '2026.1.1');
+});
+
+test('formatDateForFolderName: accepts dash separators too', () => {
+  assert.strictEqual(formatDateForFolderName('2026-09-08'), '2026.9.8');
+});
+
+test('formatDateForFolderName: falls back to a plain separator swap on unexpected input rather than throwing', () => {
+  assert.strictEqual(formatDateForFolderName('not a date'), 'not a date');
+  assert.strictEqual(formatDateForFolderName(''), '');
+  assert.doesNotThrow(() => formatDateForFolderName(null));
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

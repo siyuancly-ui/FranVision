@@ -39,6 +39,25 @@ const path = require('path');
 const { downloadFile: sdkDownloadFile } = require('dropbox');
 const dropboxSync = require('./dropbox-sync.js');
 
+// Names folder-builder.js can produce as a job's OWN top-level component
+// folder (the first path segment of getComponentFolders()' output --
+// nested ones like '0 RAW/1 Raws' still start with '0 RAW'). A genuine
+// job folder is always named "<date> <address>_<client>", so if Push/Pull
+// is pointed at a folder whose name is literally one of THESE instead,
+// that's almost certainly a mis-click (a job's own subfolder, e.g. "0 RAW"
+// or "MLS", picked instead of the job folder itself) -- found the hard
+// way (2026-09-08): doing this creates an unrelated, disconnected
+// top-level folder in Dropbox named "0 RAW" or "MLS", sitting among every
+// other real job folder with nothing tying it back to the actual job.
+const KNOWN_COMPONENT_FOLDER_NAMES = new Set([
+  '0 RAW', 'Revisions', 'Home Report', 'Local Report', 'MLS',
+  'Floorplan', 'Virtual Staging', 'Feature Sheets', 'Video', 'VLOG',
+]);
+
+function looksLikeAComponentFolderNotAJobFolder(jobFolderPath) {
+  return KNOWN_COMPONENT_FOLDER_NAMES.has(path.basename(jobFolderPath));
+}
+
 const MANIFEST_FILENAME = '.dropbox-sync-manifest.json';
 
 // job.json and Job Info.txt (see job-files.js) are deliberately LOCAL-ONLY
@@ -306,6 +325,12 @@ async function pushJobFilesToDropbox({ jobFolderPath, dropboxJobFolderName, clie
   if (!dropboxSync.isConfigured()) {
     return { attempted: false, success: false, skipped: true, error: 'Dropbox is not configured (see job-generator/.env.example). Nothing was pushed.' };
   }
+  if (looksLikeAComponentFolderNotAJobFolder(jobFolderPath)) {
+    return {
+      attempted: false, success: false,
+      error: 'This looks like one of a job\'s OWN subfolders ("' + path.basename(jobFolderPath) + '"), not the job\'s top-level folder. Pick the job folder itself (named "<date> <address>_<client>", containing job.json) -- pushing a subfolder like this would create an unrelated top-level folder in Dropbox with no connection to the actual job.',
+    };
+  }
 
   try {
     const dbx = client || dropboxSync.getClient();
@@ -366,6 +391,12 @@ async function pushJobFilesToDropbox({ jobFolderPath, dropboxJobFolderName, clie
 async function pullJobFilesFromDropbox({ jobFolderPath, dropboxJobFolderName, client, downloadImpl }) {
   if (!dropboxSync.isConfigured()) {
     return { attempted: false, success: false, skipped: true, error: 'Dropbox is not configured (see job-generator/.env.example). Nothing was pulled.' };
+  }
+  if (looksLikeAComponentFolderNotAJobFolder(jobFolderPath)) {
+    return {
+      attempted: false, success: false,
+      error: 'This looks like one of a job\'s OWN subfolders ("' + path.basename(jobFolderPath) + '"), not the job\'s top-level folder. Pick the job folder itself (named "<date> <address>_<client>", containing job.json) -- pulling into a subfolder like this would create an unrelated top-level folder in Dropbox with no connection to the actual job.',
+    };
   }
 
   try {
@@ -429,9 +460,11 @@ async function pullJobFilesFromDropbox({ jobFolderPath, dropboxJobFolderName, cl
 module.exports = {
   MANIFEST_FILENAME,
   LOCAL_ONLY_FILENAMES,
+  KNOWN_COMPONENT_FOLDER_NAMES,
   DEFAULT_SINGLE_SHOT_MAX_BYTES,
   DEFAULT_CHUNK_SIZE,
   isExcludedName,
+  looksLikeAComponentFolderNotAJobFolder,
   walkFiles,
   listDropboxFiles,
   readManifest,
