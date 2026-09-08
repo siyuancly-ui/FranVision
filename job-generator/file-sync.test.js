@@ -22,6 +22,7 @@ const {
   downloadFile,
   pushJobFilesToDropbox,
   pullJobFilesFromDropbox,
+  looksLikeAComponentFolderNotAJobFolder,
   MANIFEST_FILENAME,
 } = fileSync;
 
@@ -129,6 +130,26 @@ test('writeManifest then readManifest round-trips', () => {
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// ---- looksLikeAComponentFolderNotAJobFolder (pure) ----
+// Regression coverage for a real mistake (2026-09-08): pointing Push/Pull
+// at a job's own subfolder (e.g. "0 RAW", "MLS") instead of the job's
+// top-level folder created a disconnected top-level Dropbox folder named
+// "0 RAW"/"MLS" with no relation to the actual job.
+
+test('looksLikeAComponentFolderNotAJobFolder: true for every known component folder name', () => {
+  ['0 RAW', 'Revisions', 'Home Report', 'Local Report', 'MLS', 'Floorplan', 'Virtual Staging', 'Feature Sheets', 'Video', 'VLOG'].forEach((name) => {
+    assert.strictEqual(looksLikeAComponentFolderNotAJobFolder('/Users/x/Some Job/' + name), true, name);
+  });
+});
+
+test('looksLikeAComponentFolderNotAJobFolder: false for a real job folder name', () => {
+  assert.strictEqual(looksLikeAComponentFolderNotAJobFolder('/Users/x/Desktop/2026.09.07 186 Bachman Drive_Swan Si'), false);
+});
+
+test('looksLikeAComponentFolderNotAJobFolder: false for a nested raw subfolder (only checks the final segment)', () => {
+  assert.strictEqual(looksLikeAComponentFolderNotAJobFolder('/Users/x/Some Job/0 RAW/1 Raws'), false);
 });
 
 // ---- planPush (pure) ----
@@ -355,6 +376,28 @@ await testAsync('pushJobFilesToDropbox: skips cleanly when Dropbox is not config
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+await testAsync('pushJobFilesToDropbox: refuses a component-subfolder path instead of silently pushing to the wrong Dropbox location', async () => {
+  await withFakeDropboxEnv(async () => {
+    const uploaded = [];
+    const fakeDbx = makeFakeDbx({ remoteFiles: [], onUpload: (arg) => { uploaded.push(arg.path); return { result: { rev: 'r1', size: 1 } }; } });
+    const result = await pushJobFilesToDropbox({ jobFolderPath: '/Users/x/Some Job/0 RAW', dropboxJobFolderName: '0 RAW', client: fakeDbx });
+    assert.strictEqual(result.attempted, false);
+    assert.strictEqual(result.success, false);
+    assert.ok(result.error.includes('subfolders'));
+    assert.strictEqual(uploaded.length, 0); // never even tried
+  });
+});
+
+await testAsync('pullJobFilesFromDropbox: refuses a component-subfolder path instead of silently pulling into the wrong local location', async () => {
+  await withFakeDropboxEnv(async () => {
+    const fakeDbx = makeFakeDbx({ remoteFiles: [{ relativePath: 'x.jpg', size: 1, rev: 'r1' }] });
+    const result = await pullJobFilesFromDropbox({ jobFolderPath: '/Users/x/Some Job/MLS', dropboxJobFolderName: 'MLS', client: fakeDbx });
+    assert.strictEqual(result.attempted, false);
+    assert.strictEqual(result.success, false);
+    assert.ok(result.error.includes('subfolders'));
+  });
 });
 
 await testAsync('pushJobFilesToDropbox: uploads a new file end-to-end and records both-side manifest state', async () => {
