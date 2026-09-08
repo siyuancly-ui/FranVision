@@ -43,8 +43,12 @@ FranVision 的长期目标：基于 **Wix + Velo** 搭建一套自己的地产�
 - 待办：原样复制进 Velo 的 backend 文件即可，几乎不用改动
 
 ### 3.3 Feature Sheet Builder
-- 独立网站，跑在 **Cloudflare Worker**（当前域名是 Cloudflare 分配的默认域名，非自定义域名）
-- 数据库用 **Supabase**：只有一张 `projects` 表（`id` = projectId，`data` 是 jsonb 大字段，里面塞了 propertyInfo/agentInfo/photos数组/colorTheme 等所有信息），照片文件存 Supabase **Storage** 的 `photos` bucket（原图 `<projectId>/<photoId>.<ext>`，缩略图 `<projectId>/<photoId>_thumb.jpg`）
+> 具体实现、后端细节、模板系统、部署方式见 `feature-sheet-builder/CLAUDE.md`——那边随代码更新，本节只留高层摘要与未来方向。
+
+- 独立网站，已**开发完成并部署上线、在用**（还没做进 Wix iframe）。跑在 Cloudflare 上，是一个 **assets-only Worker**（纯静态托管，无 compute），worker 名 `franvision`（2026-09-03 由 `feature-sheet-generator` 改名），当前地址 `https://franvision.frankystudio-6f3.workers.dev/`（Cloudflare 默认子域名，自定义域名待配）。部署：推 `main` 触发 Cloudflare 自动构建，或 `bash deploy.sh` 兜底
+- 数据库用 **Supabase**：只有一张 `projects` 表（`id` = projectId，`data` 是 jsonb 大字段，里面塞了 propertyInfo/agentInfo/photos数组/colorTheme/confirmed 等所有信息），照片文件存 Supabase **Storage** 的 `photos` bucket（原图 `<projectId>/<photoId>.<ext>`，浏览器端生成的缩略图 `<projectId>/<photoId>_thumb.jpg`，提交送印的 PDF `submissions/<projectId>.pdf`）。另有**两个 Edge Function**：`list-projects`（管理端/回收站，`ADMIN_TOKEN` 把关）、`notify-submission`（"Confirm & Submit" 用 Resend 给工作室发邮件）
+- 还有一套**本地磁盘开发后端**（`server.js` + `storage.js` + `./data/`），由 `public/js/config.js` 有无 Supabase 凭证决定用哪个，URL 带 `?local=1` 可强制走本地。已具备软删除回收站、复制、清空图库、管理端列表等操作
+- 模板系统是 **`fsb-v2`**（`templates/fsb-v2/`：geometry + themes + modules + layout-engine + registry，由 `template-render-v2.js` 渲染），提供 **7 个主题、2 个版式家族**：标准版（藏蓝/白大理石/酒红，共用一套 geometry，支持第二经纪、bed/bath/garage 图标行、有无房源描述两种左栏）与华邸版（Estate 华邸藏蓝/酒红/墨绿/深灰，单经纪，`geometry-estate.js`）。旧的单模板 `jason-fs-v1` 仍在代码树里但已是**未加载的遗留代码**
 - **现状**：照片是在 Feature Sheet Builder 网站里**独立手动上传**的，跟 Dropbox 完全没有关联，属于优先做出一个能独立使用的工具而选择的过渡方案
 - **终态目标（已确认）**：Feature Sheet Builder 的独立上传功能以后要**取消**，全系统只保留 Dropbox 一个上传入口，Feature Sheet Builder 变成纯读取方
 - **未来整合方向**：
@@ -61,7 +65,7 @@ FranVision 的长期目标：基于 **Wix + Velo** 搭建一套自己的地产�
 | 存什么 | 存在哪 | 说明 |
 |---|---|---|
 | 素材原始文件（HD照片、各比例MLS照片、视频、Floor Plan原图） | **Dropbox**（唯一上传入口） | 已按 Job 分好文件夹，固定命名规则（日期+地址+客户姓名） |
-| 展示用轻量数据（缩略图、Feature Sheet Builder 选图用的小图） | **Supabase** | 与 Feature Sheet Builder 共享同一张 `projects` 表；Gallery 也读这里 |
+| 展示用轻量数据（缩略图、Feature Sheet Builder 选图用的小图） | **Supabase** | **目标（尚未实现）**：做成全系统共享的展示层，Gallery 也读这里。**现状**：`projects` 表目前专属 Feature Sheet Builder，缩略图是上传时浏览器端 canvas 生成、存进同一个 `photos` 桶，还没有 Gallery、也没有任何共享读取 |
 | Job/客户/支付状态等结构化业务数据 | **Wix Data (CMS)** | Jobs 集合、客户信息、支付状态、Wave Invoice 编号等 |
 
 **为什么不把照片迁移进 Wix Data**：Wix Data 单条记录上限约 512KB，权限控制粒度粗，大文件配额跟网站付费方案绑定，都不适合承载"按付款状态动态变化的媒体访问控制"这个需求，Supabase（RLS + Storage 私有桶）和 Dropbox（专业文件仓库）分别更适合各自的角色。
@@ -79,9 +83,9 @@ FranVision 的长期目标：基于 **Wix + Velo** 搭建一套自己的地产�
   - 已在 `job-generator/.env` 配置好，`dropbox-sync.js` 每次建 Job 时自动贴标签
 - Dropbox 文件 ID 在"覆盖替换文件内容""移动/改名"时保持不变；但"删除后重新上传"会产生全新 ID，关联会断——**这个自愈机制（断链先挂起标记，同文件夹出现同名新文件时自动按文件名重新匹配，匹配不上转人工确认）是「Dropbox → Supabase 缩略图同步管道」（见七、进度快照里的下一步任务，独立 Cloudflare Worker，`photo-sync-worker` 分支）自己需要具备的能力，不是 Job Generator 的职责——Job Generator 本身不存这种 dropboxFileId 引用，也没有断链检测代码。2026-09-08 核实：job-generator 代码库里目前没有任何自动重新匹配逻辑；这个机制在 Worker 那边是否已经实现，需要去那个模块自己确认，本文档未验证。**
 
-**低分辨率选图 ↔ 高清成品图联动机制**：
-- 每张照片的 Supabase 记录里存一个 `dropboxFileId` 字段，指向 Dropbox 里的高清原图
-- 日常选图/浏览走 Supabase 小图，加载快；只有"生成 PDF"这个动作才会去 Dropbox 拉取被选中那几张的高清原图，不影响日常体验
+**低分辨率选图 ↔ 高清成品图联动机制（设想，尚未实现）**：
+- 设想：每张照片的 Supabase 记录里存一个 `dropboxFileId` 字段指向 Dropbox 高清原图；日常选图走 Supabase 小图，只有"生成 PDF"才去 Dropbox 拉被选中那几张的高清原图
+- **现状**：Feature Sheet Builder 的照片元数据里没有 `dropboxFileId`（只有 `photoId/filename/ext/width/height/hasThumb/bytes/uploadedAt/role?`）；PDF 导出是把浏览器里渲染好的 DOM 光栅化，图片走的是**和编辑器同一份 Supabase `photos` 桶原图**，全程不碰 Dropbox。这套联动要等"取消独立上传、改由 Dropbox 供图"之后才谈得上
 
 **Dropbox API 接入现状（已完成一次性设置）**：
 - 已创建 Dropbox App，选择 **Full Dropbox** 权限（因为文件夹分散在账号各处，不是全塞在一个 App Folder 里）
@@ -125,7 +129,7 @@ FranVision 的长期目标：基于 **Wix + Velo** 搭建一套自己的地产�
 ## 六、整体开发路线图（Wix 侧，宏观）
 
 ```
-阶段1（进行中）：Feature Sheet Builder 独立嵌入
+阶段1：Feature Sheet Builder（工具本身已完成上线，剩「嵌入 Wix iframe」这一步）
 阶段2：接入 Jobs 数据表（Job Generator 的价值在此兑现）
 阶段3：Gallery + 下载权限
 阶段4：Invoice/Payment（Pricing Engine 的价值在此兑现）
@@ -141,6 +145,7 @@ Gallery + PaymentGate 模块内部的详细 7 阶段规划，见 `docs/Gallery_P
 ✅ Wix Studio 网站已建好（免费方案）
 ✅ Job Generator：Dropbox 建文件夹骨架 + 贴隐藏 jobId 标签、双向 Push/Pull 文件同步（含冲突检测/删除镜像）都已完成——**具体进度以 `job-generator/CLAUDE.md` 为准，此处不再逐条更新**
 ✅ Dropbox API 一次性设置完成（App、权限、refresh token、Property Template 全部就绪）
+✅ Feature Sheet Builder：已部署上线在用（Cloudflare assets-only Worker + Supabase），含独立上传/选图裁切、预览、PDF 导出、Confirm & Submit 邮件、管理端 + 软删除回收站、fsb-v2 模板系统（7 主题 / 标准+华邸两版式）——**具体进度以 `feature-sheet-builder/CLAUDE.md` 为准**；剩「嵌入 Wix iframe」「上传功能下线」「管理端并入统一系统」未做
 🔲 **下一步在做**：新建一个独立的 Cloudflare Worker，实现 Dropbox → Supabase 缩略图自动同步管道（含 Dropbox Webhook 监听、Cloudflare Image Resizing 生成缩略图、自愈机制）
 🔲 待做：Gallery 展示层 UI、下载权限判断、Wave/Gmail 支付自动化、Feature Sheet Builder 上传功能下线与管理端整合
 
@@ -176,5 +181,5 @@ Claude Code 会自动叠加读取从当前目录往上的所有 CLAUDE.md，所�
 
 以下内容目前的记忆和对话记录里没有覆盖到，建议你之后补充：
 - Job Generator、Pricing Engine 的具体代码实现细节（字段名、函数签名等）——这些应该已经在各自仓库的 CLAUDE.md 里，如果还没有，建议尽快让对应的 Claude Code 会话补上
-- Feature Sheet Builder 具体的页面/交互设计细节
+- ~~Feature Sheet Builder 具体的页面/交互设计细节~~ → 已由 `feature-sheet-builder/CLAUDE.md` 覆盖（架构、双后端、模板系统、部署）
 - Dropbox 同步 Worker 的实际开发进度（本文档写就时，这部分刚开始规划，可能已经有新进展）
