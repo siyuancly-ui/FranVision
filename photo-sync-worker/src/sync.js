@@ -264,7 +264,20 @@ export async function processPhotoBatch(env, deps, msg) {
           ? downloadCopyPath(jobFolderPath, cfg.downloadSubfolder, item.filename)
           : undefined;
 
-        const { width, height } = item.dims || { width: null, height: null };
+        // Dropbox generates media_info asynchronously after upload, so the
+        // delta entry often has no dimensions yet. By the time this runs
+        // (webhook -> queue, ~10-30s later) a fresh get_metadata usually
+        // has them. Best-effort: never fail the photo over missing dims.
+        let { width, height } = item.dims || { width: null, height: null };
+        if (width == null || height == null) {
+          try {
+            const md = await dbx.getMetadata(item.path, { includeMediaInfo: true });
+            ({ width, height } = dimsFromMediaInfo(md.media_info));
+          } catch (err) {
+            log({ evt: 'dims_refetch_failed', jobId, path: item.path, error: String(err && err.message || err) });
+          }
+        }
+
         const record = {
           photoId: pid,
           filename: item.filename,

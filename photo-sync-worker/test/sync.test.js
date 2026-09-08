@@ -32,8 +32,11 @@ function makeDbx(over = {}) {
       calls.deletes.push(path);
       return {};
     },
-    async getMetadata(path) {
-      calls.metadata.push(path);
+    async getMetadata(path, opts = {}) {
+      calls.metadata.push({ path, opts });
+      if (opts.includeMediaInfo) {
+        return { media_info: { '.tag': 'metadata', metadata: { dimensions: { width: 4000, height: 3000 } } } };
+      }
       return { property_groups: [{ template_id: ENV.DROPBOX_TEMPLATE_ID, fields: [{ name: 'jobId', value: 'FV-1' }] }] };
     },
     ...over,
@@ -88,7 +91,7 @@ test('processPhotoBatch: MLS photo -> thumb + download copy + rpc', async () => 
     jobFolderPath: '/JobA',
     items: [
       upsertItem(),
-      upsertItem({ path: '/JobA/Floorplan/b.png', subFolder: 'Floorplan', relPathFromJob: 'Floorplan/b.png', filename: 'b.png', id: 'id:2', rev: 'r2', dims: { width: null, height: null } }),
+      upsertItem({ path: '/JobA/Floorplan/b.png', subFolder: 'Floorplan', relPathFromJob: 'Floorplan/b.png', filename: 'b.png', id: 'id:2', rev: 'r2', dims: { width: 800, height: 600 } }),
     ],
   });
 
@@ -109,8 +112,33 @@ test('processPhotoBatch: MLS photo -> thumb + download copy + rpc', async () => 
   assert.equal(recA.downloadDropboxPath, '/JobA/MLS for download/a.jpg');
 
   const recB = sb.calls.rpc.find((c) => c.args.p_photo.filename === 'b.png').args.p_photo;
-  assert.equal(recB.width, null);
+  assert.equal(recB.width, 800);
   assert.equal(recB.downloadDropboxPath, undefined);
+});
+
+test('processPhotoBatch: null dims trigger a get_metadata refetch', async () => {
+  const dbx = makeDbx();
+  const sb = makeSb();
+  await processPhotoBatch(ENV, { dbx, sb, now: () => 'T' }, {
+    jobId: 'FV-1',
+    jobFolderPath: '/JobA',
+    items: [upsertItem({ dims: { width: null, height: null } })],
+  });
+  const rec = sb.calls.rpc.find((c) => c.fn === 'photos_upsert').args.p_photo;
+  assert.equal(rec.width, 4000);
+  assert.equal(rec.height, 3000);
+  assert.ok(dbx.calls.metadata.some((m) => m.opts && m.opts.includeMediaInfo));
+});
+
+test('processPhotoBatch: present dims are used as-is, no refetch', async () => {
+  const dbx = makeDbx();
+  const sb = makeSb();
+  await processPhotoBatch(ENV, { dbx, sb }, {
+    jobId: 'FV-1', jobFolderPath: '/JobA', items: [upsertItem()],
+  });
+  const rec = sb.calls.rpc.find((c) => c.fn === 'photos_upsert').args.p_photo;
+  assert.equal(rec.width, 100);
+  assert.ok(!dbx.calls.metadata.some((m) => m.opts && m.opts.includeMediaInfo));
 });
 
 test('processPhotoBatch: delete -> mark pending + drop download copy', async () => {

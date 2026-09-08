@@ -91,11 +91,12 @@ export function createDropbox(env) {
       return rpc(env, API, 'files/list_folder/continue', { cursor });
     },
 
-    async getMetadata(path, { withPropertyGroups = false } = {}) {
+    async getMetadata(path, { withPropertyGroups = false, includeMediaInfo = false } = {}) {
       const arg = { path };
       if (withPropertyGroups && TEMPLATE_ID) {
         arg.include_property_groups = { '.tag': 'filter_some', filter_some: [TEMPLATE_ID] };
       }
+      if (includeMediaInfo) arg.include_media_info = true;
       return rpc(env, API, 'files/get_metadata', arg);
     },
 

@@ -113,7 +113,7 @@ Webhook 验证用 `DROPBOX_APP_SECRET` 对请求体做 HMAC-SHA256，比对 `X-D
    - `photoId = base64url(sha256(jobId + '/' + 相对 job 文件夹路径)).slice(0,22)`。
    - `PUT {SUPABASE_URL}/storage/v1/object/photos/{jobId}/{photoId}_thumb.jpg`，`x-upsert: true`，service role key。
    - **若该照片子目录 ∈ `DOWNLOAD_SET_FOLDERS`（即 `MLS`）**：把同一份 1024 字节 `files/upload`（`mode=overwrite`，自动建父目录）到 `/<jobFolder>/<DOWNLOAD_SUBFOLDER>/<原文件名>.jpg`，记录里带上 `downloadDropboxPath`。压缩只做这一次，两个目的地共用。
-   - 组装记录（§3.1），`width/height` 取自 `entry.media_info.metadata.dimensions`。
+   - 组装记录（§3.1）。`width/height` 先取 delta entry 的 `media_info.metadata.dimensions`；Dropbox 上传后 media_info 是**异步生成**的，delta 里常常还没有 → 此时补调一次 `get_metadata`（`include_media_info=true`）重取；仍拿不到就存 `null`，绝不因此让照片失败。
    - 调 `photos_upsert(jobId, 记录)`。若命中 `pending_review` 且 `dropboxFileId` 变化 → 视为自愈，记日志。
 4. `deletes`：同公式算 `photoId` → 调 `photos_mark_pending(jobId, photoId)`。
    - **若属 `DOWNLOAD_SET_FOLDERS`**：`files/delete_v2` 硬删 `/<jobFolder>/<DOWNLOAD_SUBFOLDER>/<原文件名>.jpg`（纯派生物；`not_found` 忽略）。Supabase 记录仍照常置 `pending_review`。
