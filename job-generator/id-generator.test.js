@@ -11,6 +11,7 @@ const {
   nextSequenceFromExistingIds,
   collectExistingJobIds,
   getNextJobId,
+  findExistingJob,
 } = require('./id-generator.js');
 
 let passed = 0;
@@ -119,6 +120,66 @@ test('getNextJobId end-to-end against a real folder', () => {
 
 test('getNextJobId starts fresh on an empty/nonexistent root', () => {
   assert.strictEqual(getNextJobId('/no/such/path/at/all', new Date(2026, 7, 26)), 'FVS-20260826-001');
+});
+
+// ---- findExistingJob ----
+
+test('findExistingJob: null when no folder with that canonical name exists', () => {
+  const root = makeTmpDir();
+  try {
+    assert.strictEqual(findExistingJob(root, '2026.9.20 1 Main St_Jane'), null);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('findExistingJob: returns jobId/createdAt/previousTotalCents/order for a real job', () => {
+  const root = makeTmpDir();
+  const name = '2026.9.20 1 Main St_Jane';
+  try {
+    fs.mkdirSync(path.join(root, name));
+    fs.writeFileSync(path.join(root, name, 'job.json'), JSON.stringify({
+      jobId: 'FVS-20260920-002',
+      createdAt: '2026-09-20T10:00:00.000Z',
+      pricing: { totalCents: 11074 },
+      services: { photography: 'standard', addons: { floor_plan: true } },
+    }));
+    const found = findExistingJob(root, name);
+    assert.strictEqual(found.jobId, 'FVS-20260920-002');
+    assert.strictEqual(found.createdAt, '2026-09-20T10:00:00.000Z');
+    assert.strictEqual(found.previousTotalCents, 11074);
+    assert.deepStrictEqual(found.order, { photography: 'standard', addons: { floor_plan: true } });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('findExistingJob: { unreadable: true } when the folder exists but job.json is missing or malformed', () => {
+  const root = makeTmpDir();
+  try {
+    fs.mkdirSync(path.join(root, 'no-json'));
+    assert.strictEqual(findExistingJob(root, 'no-json').unreadable, true);
+
+    fs.mkdirSync(path.join(root, 'bad-json'));
+    fs.writeFileSync(path.join(root, 'bad-json', 'job.json'), 'not json at all');
+    assert.strictEqual(findExistingJob(root, 'bad-json').unreadable, true);
+
+    fs.mkdirSync(path.join(root, 'no-id'));
+    fs.writeFileSync(path.join(root, 'no-id', 'job.json'), JSON.stringify({ createdAt: 'x' }));
+    assert.strictEqual(findExistingJob(root, 'no-id').unreadable, true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('findExistingJob: null when a FILE (not a directory) has that name', () => {
+  const root = makeTmpDir();
+  try {
+    fs.writeFileSync(path.join(root, 'notafolder'), 'x');
+    assert.strictEqual(findExistingJob(root, 'notafolder'), null);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

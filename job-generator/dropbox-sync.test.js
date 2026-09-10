@@ -16,6 +16,7 @@ const {
   isPropertyGroupAlreadyExistsError,
   isConfigured,
   syncJobFolderToDropbox,
+  updateJobFoldersOnDropbox,
 } = dropboxSync;
 
 let passed = 0;
@@ -241,6 +242,69 @@ await testAsync('syncJobFolderToDropbox: a property-tag failure never throws, co
     assert.strictEqual(result.success, false);
     assert.strictEqual(result.propertiesTagged, false);
     assert.ok(result.error.indexOf('tagging') !== -1);
+  });
+});
+
+await testAsync('updateJobFoldersOnDropbox: skips cleanly when not configured', async () => {
+  const saved = process.env.DROPBOX_APP_KEY;
+  delete process.env.DROPBOX_APP_KEY;
+  try {
+    const result = await updateJobFoldersOnDropbox({ folderName: 'Job', foldersToCreate: [], foldersToPrune: [] });
+    assert.strictEqual(result.attempted, false);
+    assert.strictEqual(result.skipped, true);
+  } finally {
+    if (saved !== undefined) process.env.DROPBOX_APP_KEY = saved;
+  }
+});
+
+await testAsync('updateJobFoldersOnDropbox: creates new folders and prunes only the EMPTY no-longer-wanted ones', async () => {
+  const created = [];
+  const deleted = [];
+  const fakeDbx = {
+    filesCreateFolderV2: async ({ path }) => { created.push(path); return { result: {} }; },
+    filesListFolder: async ({ path }) => ({
+      // "Video" still has a file on Dropbox -> must be kept; "Floorplan" is empty -> pruned.
+      result: { entries: path.endsWith('/Video') ? [{ name: 'walk.mp4' }] : [] },
+    }),
+    filesDeleteV2: async ({ path }) => { deleted.push(path); return { result: {} }; },
+  };
+  await withFakeCredentials(async () => {
+    const result = await updateJobFoldersOnDropbox({
+      folderName: 'Job', client: fakeDbx,
+      foldersToCreate: ['Feature Sheets'],
+      foldersToPrune: ['Video', 'Floorplan'],
+    });
+    assert.strictEqual(result.success, true);
+    assert.deepStrictEqual(created, ['/Job/Feature Sheets']);
+    assert.deepStrictEqual(deleted, ['/Job/Floorplan']);
+    assert.deepStrictEqual(result.foldersRemoved, ['/Job/Floorplan']);
+    assert.deepStrictEqual(result.foldersKeptWithFiles, ['/Job/Video']);
+  });
+});
+
+await testAsync('updateJobFoldersOnDropbox: a path_not_found on prune is not an error', async () => {
+  const fakeDbx = {
+    filesCreateFolderV2: async () => ({ result: {} }),
+    filesListFolder: async () => { const e = new Error('x'); e.error = { error_summary: 'path/not_found/..' }; throw e; },
+    filesDeleteV2: async () => ({ result: {} }),
+  };
+  await withFakeCredentials(async () => {
+    const result = await updateJobFoldersOnDropbox({ folderName: 'Job', client: fakeDbx, foldersToCreate: [], foldersToPrune: ['Gone'] });
+    assert.strictEqual(result.success, true);
+    assert.deepStrictEqual(result.foldersRemoved, []);
+  });
+});
+
+await testAsync('updateJobFoldersOnDropbox: never throws -- a real failure comes back as success:false', async () => {
+  const fakeDbx = {
+    filesCreateFolderV2: async () => { const e = new Error('boom'); e.error = { error_summary: 'internal_error/..' }; throw e; },
+    filesListFolder: async () => ({ result: { entries: [] } }),
+    filesDeleteV2: async () => ({ result: {} }),
+  };
+  await withFakeCredentials(async () => {
+    const result = await updateJobFoldersOnDropbox({ folderName: 'Job', client: fakeDbx, foldersToCreate: ['MLS'], foldersToPrune: [] });
+    assert.strictEqual(result.success, false);
+    assert.ok(result.errors.length >= 1);
   });
 });
 

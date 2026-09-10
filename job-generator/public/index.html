@@ -74,7 +74,7 @@
   fieldset:last-child { margin-bottom: 0; }
   legend { font-size: 12.5px; font-weight: 600; margin-bottom: 8px; padding: 0; }
   label.field-label { display: block; font-size: 12.5px; font-weight: 600; margin: 0 0 4px; }
-  input[type="text"], input[type="number"] {
+  input[type="text"], input[type="number"], textarea {
     width: 100%;
     padding: 7px 9px;
     border: 1px solid var(--border);
@@ -82,6 +82,7 @@
     font-size: 14px;
     font-family: inherit;
   }
+  textarea { resize: vertical; }
   .field-row { margin-bottom: 14px; }
   .field-row:last-child { margin-bottom: 0; }
   .field-hint { font-size: 12px; color: var(--muted); margin-top: 3px; }
@@ -149,6 +150,39 @@
   .sync-summary .conflict-list { margin: 8px 0 0; padding-left: 18px; color: #6b510f; }
   .sync-btn-row { display: flex; gap: 10px; margin-top: 16px; }
   .sync-btn-row .create-btn { margin-top: 0; }
+  .image-chip-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .image-chip {
+    display: flex; align-items: center; gap: 6px;
+    background: #f2efe8; border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px 8px; font-size: 12.5px; max-width: 220px;
+  }
+  .image-chip .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .image-chip .remove {
+    cursor: pointer; color: var(--muted); font-weight: 700; line-height: 1;
+    border: none; background: none; padding: 0; font-size: 14px;
+  }
+  .image-chip .remove:hover { color: #7a1f1f; }
+  .draft-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .draft-row:last-child { border-bottom: none; }
+  .draft-row .info { font-size: 13.5px; cursor: pointer; }
+  .draft-row .info:hover .primary { color: var(--accent); }
+  .draft-row .info .primary { font-weight: 600; }
+  .draft-row .info .meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .draft-row .actions { display: flex; gap: 8px; flex-shrink: 0; }
+  .draft-row .actions button { padding: 5px 10px; font-size: 12.5px; }
+  .current-draft-banner {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    background: #fbf4e6; border: 1px solid var(--accent); border-radius: 8px;
+    padding: 8px 12px; font-size: 13px; margin-bottom: 14px;
+  }
+  .action-btn-row { display: flex; gap: 10px; margin-top: 16px; }
+  .action-btn-row button { flex: 1; margin-top: 0; }
+  .draft-btn {
+    padding: 12px; background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    font-size: 15px; font-weight: 600; cursor: pointer;
+  }
+  .draft-btn:hover:not(:disabled) { background: #a37b2a; }
+  .draft-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>
 </head>
 <body>
@@ -157,6 +191,17 @@
   <h1>FranVision Job Generator</h1>
   <p>Pricing is computed by the real Pricing Skill (<code>pricing/engine.js</code>) via API -- this page never calculates a price itself.</p>
 </header>
+
+<div class="section-divider" style="border-top:none;">
+  <h2 class="section-title">Job Drafts</h2>
+  <p class="field-hint">For a shoot that isn't locked in yet -- date confirmed but time TBD, package still being negotiated, a reschedule risk, or who's shooting it still undecided. Saving a draft only writes a small local record here in Job Generator (and, once Shoot Time is set, a draft calendar file) -- no job folder, job.json, or Dropbox mirror is created until you click Create Job below.</p>
+</div>
+<div class="layout" style="grid-template-columns: 1fr;">
+  <div class="panel">
+    <div id="drafts-list"></div>
+    <div id="drafts-empty-hint" class="empty-hint">No saved drafts.</div>
+  </div>
+</div>
 
 <div class="layout">
   <!-- LEFT: inputs -->
@@ -190,8 +235,17 @@
       <h2><span class="step-num">3</span>Shoot Date</h2>
       <div class="field-row">
         <label class="field-label" for="shootDate">Shoot Date</label>
-        <input type="text" id="shootDate" placeholder="yyyy/mm/dd">
-        <div class="field-hint">Format: yyyy/mm/dd (e.g. 2026/08/27)</div>
+        <div class="stub-row">
+          <input type="text" id="shootDate" placeholder="yyyy/mm/dd">
+          <button class="browse-btn" type="button" id="shootdate-today-btn">Today</button>
+        </div>
+        <div class="field-hint" id="shootdate-hint">Format: yyyy/mm/dd</div>
+      </div>
+      <div class="field-row">
+        <label class="field-label" for="shootTime">Shoot Time (optional)</label>
+        <input type="text" id="shootTime" placeholder="HH:MM" inputmode="numeric" maxlength="5">
+        <div class="field-hint">24-hour, e.g. 14:30 for 2:30 PM. Just type the digits — the colon is added for you. Only needed to auto-generate a calendar file for this shoot (see Shoot Notes below); leave blank to skip.</div>
+        <div id="shootTime-error" class="field-hint" style="color:#7a1f1f;"></div>
       </div>
     </div>
 
@@ -229,23 +283,46 @@
         <div class="field-hint">Positive or negative. Applied to the subtotal before HST. Same field as pricing/tester.html.</div>
       </fieldset>
     </div>
+
+    <div class="panel">
+      <h2><span class="step-num">5</span>Shoot Notes (optional)</h2>
+      <div class="field-hint" style="margin-bottom:8px;">Feeds an auto-generated calendar file (.ics) for this shoot -- saved locally in this job's folder only, never uploaded to Dropbox or written into job.json/Job Info.txt. Requires a Shoot Time above; nothing is saved if that's left blank.</div>
+      <div class="field-row">
+        <label class="field-label" for="shoot-notes-text">Notes for the shoot</label>
+        <textarea id="shoot-notes-text" rows="4" placeholder="Lockbox/gate code, access instructions, anything the photographer needs on-site..."></textarea>
+      </div>
+      <div class="field-row">
+        <label class="field-label" for="shoot-notes-images">Screenshots / access info images (optional)</label>
+        <input type="file" id="shoot-notes-images" accept="image/jpeg,image/png,image/heic,image/heif,image/webp,image/gif" multiple>
+        <div class="field-hint">Up to 10 images, 15MB each -- e.g. a screenshot of the agent's instructions, a photo of the lockbox. Embedded into the calendar file as attachments (they show up on the event in Apple Calendar; Google Calendar / Outlook ignore them).</div>
+        <div id="shoot-notes-preview" class="image-chip-list"></div>
+        <div id="shoot-notes-error" class="field-hint" style="color:#7a1f1f;"></div>
+      </div>
+    </div>
   </div>
 
   <!-- RIGHT: pricing + create -->
   <div>
     <div class="panel">
-      <h2><span class="step-num">5</span>Pricing Breakdown</h2>
+      <h2><span class="step-num">6</span>Pricing Breakdown</h2>
       <div id="pricing-body"></div>
     </div>
 
     <div class="panel">
-      <h2><span class="step-num">6</span>Photographer Commission</h2>
+      <h2><span class="step-num">7</span>Photographer Commission</h2>
       <div class="field-hint" style="margin-bottom:10px;">Uses the Photographer Name entered above. Entirely independent from the Pricing Breakdown -- this is what FranVision pays the photographer, not what the client is charged.</div>
       <div id="commission-body"></div>
     </div>
 
     <div class="panel">
-      <h2><span class="step-num">7</span>Create Job</h2>
+      <h2><span class="step-num">8</span>Save Draft &amp; Create Job</h2>
+
+      <div id="draft-banner" class="current-draft-banner" style="display:none;">
+        <span id="draft-banner-text"></span>
+        <button type="button" class="browse-btn" id="draft-clear-btn">Start New</button>
+      </div>
+
+      <div class="field-hint" style="margin-bottom:12px;"><strong>Save as Draft</strong> keeps an editable copy here (no folder, no Dropbox, no Job ID) while the shoot isn't locked in. <strong>Create Job</strong> is the real thing — folder, job.json, Dropbox. If a job for this same Shoot Date + Address + Client already exists, Create Job <strong>updates</strong> it instead of making a second one.</div>
 
       <div class="field-row">
         <label class="field-label" for="rootFolder">Job Root Folder</label>
@@ -262,7 +339,11 @@
 
       <div id="folder-preview" class="folder-preview"></div>
 
-      <button class="create-btn" id="create-btn" disabled>Create Job</button>
+      <div class="action-btn-row">
+        <button type="button" class="draft-btn" id="save-draft-btn">Save as Draft</button>
+        <button class="create-btn" id="create-btn" disabled>Create Job</button>
+      </div>
+      <div id="save-draft-result" class="field-hint" style="margin-top:8px;"></div>
       <div id="create-blocked-hint" class="pending-note"></div>
       <div id="create-result"></div>
     </div>
@@ -343,10 +424,290 @@
       address: el('address').value.trim(),
       propertyType: document.querySelector('input[name="propertyType"]:checked').value,
       shootDate: el('shootDate').value.trim(),
+      shootTime: el('shootTime').value.trim(),
       rootFolder: el('rootFolder').value.trim(),
       order: readOrder(),
+      notes: el('shoot-notes-text').value,
     };
   }
+
+  // ---- Shoot Notes: access-info images (calendar-file.js) ----
+  // Each entry is either { kind: 'file', file: File } -- a freshly-picked
+  // upload, not yet base64 (converting up front would waste work if the
+  // user removes it or never submits) -- or { kind: 'saved', filename,
+  // dataBase64 } -- an image that came back from loading a Draft
+  // (draft-store.js), already on disk there, shown as an attached chip
+  // without asking the user to re-select it. Both kinds get normalized to
+  // {filename, dataBase64} right before a Save Draft/Create Job request.
+  // Limits mirror calendar-file.js's server-side ones exactly; the server
+  // re-validates regardless (never trust the client), this is purely for
+  // fast feedback before the round trip.
+  const SHOOT_NOTES_MAX_IMAGES = 10;
+  const SHOOT_NOTES_MAX_IMAGE_BYTES = 15 * 1024 * 1024;
+  const SHOOT_NOTES_MAX_TOTAL_BYTES = 60 * 1024 * 1024;
+  let shootNotesImages = [];
+
+  function imageEntryName(entry) { return entry.kind === 'file' ? entry.file.name : entry.filename; }
+  function imageEntrySize(entry) { return entry.kind === 'file' ? entry.file.size : Math.floor(entry.dataBase64.length * 3 / 4); }
+
+  function renderShootNotesImages() {
+    const list = el('shoot-notes-preview');
+    list.innerHTML = '';
+    shootNotesImages.forEach((entry, i) => {
+      const chip = document.createElement('div');
+      chip.className = 'image-chip';
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = imageEntryName(entry);
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'remove';
+      remove.textContent = '×';
+      remove.title = 'Remove';
+      remove.addEventListener('click', () => {
+        shootNotesImages.splice(i, 1);
+        renderShootNotesImages();
+      });
+      chip.appendChild(name);
+      chip.appendChild(remove);
+      list.appendChild(chip);
+    });
+  }
+
+  function validateShootNotesImagesClientSide() {
+    if (shootNotesImages.length > SHOOT_NOTES_MAX_IMAGES) {
+      return 'Too many images (' + shootNotesImages.length + ') -- max ' + SHOOT_NOTES_MAX_IMAGES + '.';
+    }
+    const totalBytes = shootNotesImages.reduce((sum, entry) => sum + imageEntrySize(entry), 0);
+    if (totalBytes > SHOOT_NOTES_MAX_TOTAL_BYTES) {
+      return 'Images total ' + (totalBytes / (1024 * 1024)).toFixed(1) + 'MB, max ' + (SHOOT_NOTES_MAX_TOTAL_BYTES / (1024 * 1024)) + 'MB combined.';
+    }
+    const tooLarge = shootNotesImages.find((entry) => imageEntrySize(entry) > SHOOT_NOTES_MAX_IMAGE_BYTES);
+    if (tooLarge) {
+      return imageEntryName(tooLarge) + ' is too large (' + (imageEntrySize(tooLarge) / (1024 * 1024)).toFixed(1) + 'MB, max ' + (SHOOT_NOTES_MAX_IMAGE_BYTES / (1024 * 1024)) + 'MB).';
+    }
+    return '';
+  }
+
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        // reader.result is "data:<mime>;base64,<data>" -- strip the prefix.
+        const commaIndex = reader.result.indexOf(',');
+        resolve(commaIndex === -1 ? reader.result : reader.result.slice(commaIndex + 1));
+      };
+      reader.onerror = () => reject(reader.error || new Error('Failed to read ' + file.name));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // Normalizes every current image entry (freshly-picked File or already-
+  // saved base64 from a loaded draft) into the {filename, dataBase64}
+  // shape both /api/create-job and /api/drafts expect.
+  function resolveImagesForSubmit() {
+    return Promise.all(shootNotesImages.map(async (entry) => entry.kind === 'file'
+      ? { filename: entry.file.name, dataBase64: await fileToBase64(entry.file) }
+      : { filename: entry.filename, dataBase64: entry.dataBase64 }));
+  }
+
+  el('shoot-notes-images').addEventListener('change', function () {
+    shootNotesImages = shootNotesImages.concat(Array.from(this.files).map((file) => ({ kind: 'file', file })));
+    this.value = ''; // allow re-selecting the same file later, and lets "change" fire again
+    const problem = validateShootNotesImagesClientSide();
+    el('shoot-notes-error').textContent = problem;
+    renderShootNotesImages();
+  });
+
+  // ---- Job Drafts (draft-store.js) ----
+  // Entirely separate from Create Job's folder/job.json/Dropbox side
+  // effects -- a draft only ever writes its own small local record (plus,
+  // once Shoot Time is set, a draft calendar file) under
+  // job-generator/drafts/. null/falsy currentDraftId means "this form is
+  // a brand-new, unsaved entry, not tied to any draft yet".
+  let currentDraftId = null;
+  let currentDraftCreatedAt = null;
+
+  function updateDraftBanner() {
+    const banner = el('draft-banner');
+    if (!currentDraftId) { banner.style.display = 'none'; return; }
+    banner.style.display = '';
+    el('draft-banner-text').textContent = 'Editing a saved draft -- Create Job will finalize it and remove the draft.';
+  }
+
+  function clearCurrentDraft() {
+    currentDraftId = null;
+    currentDraftCreatedAt = null;
+    updateDraftBanner();
+  }
+
+  // Sets every form control from an `order` object (readOrder()'s exact
+  // shape) -- the inverse of readOrder(), used to restore a loaded draft.
+  function applyOrderToForm(order) {
+    order = order || {};
+    el(order.propertyType === 'house' ? 'pt-house' : 'pt-condo').checked = true;
+    el(order.photography === 'luxury' ? 'ph-luxury' : 'ph-standard').checked = true;
+    const addons = order.addons || {};
+    addonIds.forEach((id) => { el('addon-' + id).checked = !!addons[id]; });
+    el('virtual_staging_qty').disabled = !el('addon-virtual_staging').checked;
+    el('virtual_staging_qty').value = addons.virtual_staging_qty || 0;
+    el('manual-adjustment').value = order.manualAdjustmentCents ? (order.manualAdjustmentCents / 100).toFixed(2) : '';
+  }
+
+  // Clears every field back to a brand-new, empty form and disconnects
+  // from any draft that was loaded -- used by the "Start New" banner
+  // button so re-opening a draft never leaves stale fields behind.
+  function resetForm() {
+    clearCurrentDraft();
+    el('clientName').value = '';
+    el('photographerName').value = '';
+    el('address').value = '';
+    el('shootDate').value = '';
+    el('shootTime').value = '';
+    el('shootTime-error').textContent = '';
+    el('shoot-notes-text').value = '';
+    shootNotesImages = [];
+    renderShootNotesImages();
+    el('shoot-notes-error').textContent = '';
+    el('save-draft-result').textContent = '';
+    applyOrderToForm({});
+    selectedCandidateIndex = 0;
+    commissionCheckedIds = null;
+    commissionTravelCents = 0;
+    refreshPricing();
+    refreshCommission(true);
+    updateCreateButtonState();
+    refreshFolderPreview();
+  }
+
+  function draftTimeLabel(draft) {
+    if (!draft.shootDate) return 'date TBD';
+    return draft.shootDate + (draft.shootTime ? ' ' + draft.shootTime : ' (time TBD)');
+  }
+
+  function renderDraftsList(drafts) {
+    const list = el('drafts-list');
+    list.innerHTML = '';
+    el('drafts-empty-hint').style.display = drafts.length ? 'none' : '';
+    drafts.forEach((draft) => {
+      const row = document.createElement('div');
+      row.className = 'draft-row';
+
+      const info = document.createElement('div');
+      info.className = 'info';
+      info.innerHTML =
+        '<div class="primary">' + (draft.clientName || '(no client name yet)') + (draft.address ? ' -- ' + draft.address : '') + '</div>' +
+        '<div class="meta">' + draftTimeLabel(draft) + ' &middot; saved ' + new Date(draft.updatedAt).toLocaleString() + '</div>';
+      info.addEventListener('click', () => loadDraft(draft.draftId));
+
+      const actions = document.createElement('div');
+      actions.className = 'actions';
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'browse-btn';
+      delBtn.textContent = 'Delete';
+      delBtn.addEventListener('click', () => deleteDraftUI(draft.draftId));
+      actions.appendChild(delBtn);
+
+      row.appendChild(info);
+      row.appendChild(actions);
+      list.appendChild(row);
+    });
+  }
+
+  async function refreshDraftsList() {
+    const res = await fetch('/api/drafts');
+    const data = await res.json();
+    renderDraftsList(data.drafts || []);
+  }
+
+  async function deleteDraftUI(draftId) {
+    if (!confirm('Delete this draft? This cannot be undone.')) return;
+    await fetch('/api/drafts/' + draftId, { method: 'DELETE' });
+    if (draftId === currentDraftId) clearCurrentDraft();
+    refreshDraftsList();
+  }
+
+  async function loadDraft(draftId) {
+    const res = await fetch('/api/drafts/' + draftId);
+    if (!res.ok) { refreshDraftsList(); return; }
+    const data = await res.json();
+
+    currentDraftId = data.draftId;
+    currentDraftCreatedAt = data.createdAt;
+    updateDraftBanner();
+
+    el('clientName').value = data.clientName || '';
+    el('photographerName').value = data.photographerName || '';
+    el('address').value = data.address || '';
+    el('shootDate').value = data.shootDate || '';
+    el('shootTime').value = data.shootTime || '';
+    el('shootTime-error').textContent = '';
+    el('shoot-notes-text').value = data.notes || '';
+    applyOrderToForm(data.order);
+    selectedCandidateIndex = Number.isInteger(data.chosenCandidateIndex) ? data.chosenCandidateIndex : 0;
+
+    shootNotesImages = (data.images || []).map((img) => ({ kind: 'saved', filename: img.filename, dataBase64: img.dataBase64 }));
+    renderShootNotesImages();
+    el('shoot-notes-error').textContent = '';
+    el('save-draft-result').textContent = '';
+
+    await refreshPricing();
+    await refreshCommission(true);
+    // refreshCommission(true) just rendered the SERVER'S DEFAULT selection
+    // for this photographer/order -- overwrite the DOM with the draft's
+    // actual saved overrides (if any), then re-derive from that so the
+    // displayed total matches exactly what was saved, not the defaults.
+    if (data.photographerName) {
+      const checkedIds = (data.commission && data.commission.checkedItemIds) || [];
+      const travelCents = (data.commission && data.commission.travelCents) || 0;
+      document.querySelectorAll('[id^="commission-item-"]').forEach((box) => {
+        box.checked = checkedIds.includes(box.id.replace('commission-item-', ''));
+      });
+      const travelInput = document.getElementById('commission-travel');
+      if (travelInput) travelInput.value = travelCents ? (travelCents / 100).toFixed(2) : '';
+      await refreshCommission(false);
+    }
+
+    updateCreateButtonState();
+    refreshFolderPreview();
+  }
+
+  async function saveDraft() {
+    const problem = validateShootNotesImagesClientSide();
+    if (problem) { el('shoot-notes-error').textContent = problem; return; }
+    updateShootTimeError();
+    if (el('shootTime-error').textContent) return;
+
+    const inputs = readJobInputs();
+    if (latestPrice && latestPrice.status === 'ambiguous') inputs.chosenCandidateIndex = selectedCandidateIndex;
+    inputs.commission = { checkedItemIds: commissionCheckedIds || [], travelCents: commissionTravelCents };
+    if (currentDraftId) inputs.draftId = currentDraftId;
+    if (currentDraftCreatedAt) inputs.createdAt = currentDraftCreatedAt;
+
+    el('save-draft-btn').disabled = true;
+    el('save-draft-result').textContent = shootNotesImages.length ? 'Preparing images…' : 'Saving…';
+    try {
+      inputs.images = await resolveImagesForSubmit();
+      const res = await fetch('/api/drafts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(inputs) });
+      const result = await res.json();
+      if (!res.ok) {
+        el('save-draft-result').textContent = result.error || 'Failed to save draft.';
+        return;
+      }
+      currentDraftId = result.draftId;
+      updateDraftBanner();
+      el('save-draft-result').textContent = 'Draft saved' + (result.calendar ? ' (calendar file updated)' : '') + '.';
+      refreshDraftsList();
+    } catch (err) {
+      el('save-draft-result').textContent = err.message;
+    } finally {
+      el('save-draft-btn').disabled = false;
+    }
+  }
+
+  el('save-draft-btn').addEventListener('click', saveDraft);
+  el('draft-clear-btn').addEventListener('click', resetForm);
 
   function renderLineItems(container, lineItems) {
     const table = document.createElement('table');
@@ -434,15 +795,63 @@
     refreshFolderPreview();
   }
 
+  // Fires on every keystroke in Client Name/Address/Shoot Date (see the
+  // 'input' listeners below) -- a sequence guard is needed for the same
+  // reason refreshCommission() has commissionRequestSeq: fast typing can
+  // fire several overlapping requests, and network responses are not
+  // guaranteed to resolve in the order they were sent, so a slightly
+  // older response could otherwise land after a newer one and show a
+  // stale (mid-keystroke) folder name/Job ID.
+  let folderPreviewRequestSeq = 0;
+  // Set from /api/plan: the Job ID this Create Job click would UPDATE
+  // (same Shoot Date + Address + Client as an existing job), or null for
+  // a brand-new job. Drives the button label + the result message.
+  let matchesExistingJob = null;
+
   async function refreshFolderPreview() {
+    const thisRequestSeq = ++folderPreviewRequestSeq;
     const inputs = readJobInputs();
-    if (!inputs.rootFolder) { el('folder-preview').innerHTML = ''; return; }
+    if (!inputs.rootFolder) { el('folder-preview').innerHTML = ''; matchesExistingJob = null; updateCreateButtonLabel(); return; }
     const res = await fetch('/api/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(inputs) });
     const plan = await res.json();
+    if (thisRequestSeq !== folderPreviewRequestSeq) return; // a newer request has since started -- this response is stale
+
+    matchesExistingJob = plan.matchesExistingJob || null;
+    updateCreateButtonLabel();
+
+    let head;
+    if (plan.existingFolderUnreadable) {
+      head = '<div style="color:#7a1f1f;">⚠ A folder named <code>' + plan.folderName + '</code> already exists but its job.json can\'t be read. Create Job will refuse until it\'s fixed by hand.</div>';
+    } else if (matchesExistingJob) {
+      head = '<div style="color:#6b510f;">↻ Matches existing job <code>' + matchesExistingJob + '</code> — Create Job will <strong>update</strong> it (same Job ID).</div>';
+      // Price delta vs. what this job was last saved with.
+      const now = currentSelectedTotalCents();
+      if (Number.isInteger(plan.existingTotalCents) && now !== null && now !== plan.existingTotalCents) {
+        head += '<div style="color:#6b510f;">Price will change: saved ' + centsToDisplay(plan.existingTotalCents) + ' &rarr; current selection ' + centsToDisplay(now) + '.</div>';
+      }
+    } else {
+      head = '<div>Job ID (preview): <code>' + plan.jobIdPreview + '</code></div>';
+    }
     el('folder-preview').innerHTML =
-      '<div>Job ID (preview): <code>' + plan.jobIdPreview + '</code></div>' +
+      head +
       '<div>Folder: <code>' + plan.folderName + '</code></div>' +
       '<ul>' + plan.componentFolders.map((f) => '<li>' + f + '</li>').join('') + '</ul>';
+  }
+
+  // The total for the currently-selected services -- 'ok' price directly,
+  // the chosen candidate when 'ambiguous', or null when there's no valid
+  // price yet.
+  function currentSelectedTotalCents() {
+    if (!latestPrice) return null;
+    if (latestPrice.status === 'ok') return latestPrice.totalCents;
+    if (latestPrice.status === 'ambiguous' && latestPrice.candidates && latestPrice.candidates[selectedCandidateIndex]) {
+      return latestPrice.candidates[selectedCandidateIndex].totalCents;
+    }
+    return null;
+  }
+
+  function updateCreateButtonLabel() {
+    el('create-btn').textContent = matchesExistingJob ? 'Update ' + matchesExistingJob : 'Create Job';
   }
 
   // Commission Breakdown -- entirely separate round trip from
@@ -570,6 +979,14 @@
     } else if (!window.JobValidate || !window.JobValidate.isValidShootDate(inputs.shootDate)) {
       reasons.push('Shoot Date (must be valid yyyy/mm/dd)');
     }
+    // Shoot Time is optional (blank just skips the calendar file) -- but if
+    // something IS typed, it must be well-formed rather than silently
+    // ignored, so a typo doesn't quietly produce "no calendar" with no
+    // explanation (this is exactly how the old type="time" input's AM/PM
+    // segment could end up blank and fail silently -- see shootTime-error).
+    if (inputs.shootTime && (!window.JobValidate || !window.JobValidate.isValidShootTime(inputs.shootTime))) {
+      reasons.push('Shoot Time (must be HH:MM 24-hour, e.g. 14:30, or left blank)');
+    }
     if (!inputs.rootFolder) reasons.push('Job Root Folder');
     const priceOk = latestPrice && (
       (latestPrice.status === 'ok' && latestPrice.lineItems.length > 0) ||
@@ -588,15 +1005,30 @@
   }
 
   async function createJob() {
+    const shootNotesProblem = validateShootNotesImagesClientSide();
+    if (shootNotesProblem) {
+      el('shoot-notes-error').textContent = shootNotesProblem;
+      return;
+    }
+
     const inputs = readJobInputs();
     if (latestPrice && latestPrice.status === 'ambiguous') {
       inputs.chosenCandidateIndex = selectedCandidateIndex;
     }
     inputs.commission = { checkedItemIds: commissionCheckedIds || [], travelCents: commissionTravelCents };
+    // If this job started life as a Draft, finalizing it deletes that
+    // draft record server-side (see draft-store.js) -- no separate draft
+    // history is kept once the real job.json/Job Info.txt exist.
+    if (currentDraftId) inputs.draftId = currentDraftId;
     el('create-result').innerHTML = '';
     el('create-btn').disabled = true;
 
     try {
+      if (shootNotesImages.length) {
+        el('create-result').innerHTML = '<div class="empty-hint">Preparing images&hellip;</div>';
+      }
+      inputs.images = await resolveImagesForSubmit();
+
       const res = await fetch('/api/create-job', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(inputs) });
       const result = await res.json();
 
@@ -610,13 +1042,57 @@
           result.pendingConfirmation.map((msg) => '<li>' + msg + '</li>').join('') + '</ul></div>'
         : '';
 
+      const calendarHtml = result.calendar
+        ? '<div>Calendar file saved: Shoot Schedule.ics' + (result.calendar.imageCount ? ' (' + result.calendar.imageCount + ' image(s) embedded as attachments)' : '') + '.</div>'
+        : (result.mode === 'updated' ? '<div>No Shoot Time — calendar file not generated.</div>' : '');
+
+      const isUpdate = result.mode === 'updated';
+      let updateHtml = '';
+      if (isUpdate) {
+        if (Number.isInteger(result.previousTotalCents) && result.previousTotalCents !== (result.price && result.price.totalCents)) {
+          updateHtml += '<div>Total changed: ' + centsToDisplay(result.previousTotalCents) + ' &rarr; ' + centsToDisplay(result.price.totalCents) + '.</div>';
+        }
+        if (result.foldersAdded && result.foldersAdded.length) {
+          updateHtml += '<div>Folders added: ' + result.foldersAdded.join(', ') + '.</div>';
+        }
+        if (result.foldersRemoved && result.foldersRemoved.length) {
+          updateHtml += '<div>Empty folders removed: ' + result.foldersRemoved.join(', ') + '.</div>';
+        }
+        if (result.foldersKeptWithFiles && result.foldersKeptWithFiles.length) {
+          updateHtml += '<div style="color:#6b510f;">Kept locally (no longer a selected service, but contains files): ' + result.foldersKeptWithFiles.join(', ') + '.</div>';
+        }
+        const dp = result.dropboxPrune;
+        if (dp && dp.attempted) {
+          if (dp.foldersRemoved && dp.foldersRemoved.length) updateHtml += '<div>Dropbox: pruned ' + dp.foldersRemoved.length + ' empty folder(s).</div>';
+          if (dp.foldersKeptWithFiles && dp.foldersKeptWithFiles.length) updateHtml += '<div style="color:#6b510f;">Dropbox: kept ' + dp.foldersKeptWithFiles.length + ' folder(s) that still have files there.</div>';
+        }
+      }
+
       el('create-result').innerHTML =
         '<div class="result-box success">' +
-        '<div><strong>Job created: ' + result.jobId + '</strong></div>' +
+        '<div><strong>Job ' + (isUpdate ? 'updated' : 'created') + ': ' + result.jobId + '</strong></div>' +
         '<div class="path">' + result.jobFolderPath + '</div>' +
-        '<div>Job Info.txt and job.json written.</div>' +
+        '<div>Job Info.txt and job.json ' + (isUpdate ? 'rewritten' : 'written') + '.</div>' +
+        updateHtml +
+        calendarHtml +
         pendingHtml +
         '</div>';
+
+      // Clear Shoot Time + Shoot Notes so the form is ready for the next job.
+      el('shootTime').value = '';
+      el('shootTime-error').textContent = '';
+      el('shoot-notes-text').value = '';
+      shootNotesImages = [];
+      renderShootNotesImages();
+      el('shoot-notes-error').textContent = '';
+
+      // The draft (if any) this job was finalized from is gone server-side --
+      // disconnect the form from it and refresh the Drafts list.
+      clearCurrentDraft();
+      refreshDraftsList();
+      // The job folder now exists -- re-run the preview so the button
+      // becomes "Update FVS-…" (a further tweak + click would update it).
+      refreshFolderPreview();
     } catch (err) {
       el('create-result').innerHTML = '<div class="result-box error">' + err.message + '</div>';
     } finally {
@@ -640,6 +1116,43 @@
 
   ['clientName', 'address', 'shootDate'].forEach((id) => {
     el(id).addEventListener('input', () => { updateCreateButtonState(); refreshFolderPreview(); });
+  });
+
+  // "Today" helper for Shoot Date -- fills yyyy/mm/dd for the local date.
+  function todayYmd() {
+    const d = new Date();
+    return d.getFullYear() + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0');
+  }
+  el('shootdate-hint').textContent = 'Format: yyyy/mm/dd  —  today is ' + todayYmd();
+  el('shootdate-today-btn').addEventListener('click', () => {
+    el('shootDate').value = todayYmd();
+    updateCreateButtonState();
+    refreshFolderPreview();
+  });
+
+  function updateShootTimeError() {
+    const value = el('shootTime').value.trim();
+    const valid = !value || (window.JobValidate && window.JobValidate.isValidShootTime(value));
+    el('shootTime-error').textContent = valid ? '' : 'Must be HH:MM, 24-hour (e.g. 14:30 for 2:30 PM) -- or leave blank to skip the calendar file.';
+  }
+  // Light input mask: strip non-digits, cap at 4, and drop the colon in
+  // as soon as the two hour digits are typed -- so the field reads
+  // "14:" the instant you finish the hour, making it obvious you don't
+  // type the colon yourself (rather than it only appearing at the 3rd
+  // digit). `deleting` suppresses the auto-colon so Backspace can walk
+  // "14:" back to "14" -> "1" instead of the colon re-sticking.
+  function maskShootTime(raw, deleting) {
+    const digits = String(raw).replace(/\D/g, '').slice(0, 4);
+    if (digits.length < 2) return digits;
+    if (digits.length === 2) return deleting ? digits : digits + ':';
+    return digits.slice(0, 2) + ':' + digits.slice(2);
+  }
+  el('shootTime').addEventListener('input', function (e) {
+    const deleting = !!(e && e.inputType && e.inputType.indexOf('delete') !== -1);
+    const masked = maskShootTime(this.value, deleting);
+    if (masked !== this.value) this.value = masked;
+    updateShootTimeError();
+    updateCreateButtonState();
   });
   // Photographer Name drives commission-engine.js's exempt/rate lookup, so
   // changing it re-derives fresh commission defaults (a different
@@ -778,6 +1291,7 @@
 
   refreshPricing();
   refreshCommission(true);
+  refreshDraftsList();
 })();
 </script>
 

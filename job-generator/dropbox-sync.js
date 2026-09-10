@@ -219,6 +219,82 @@ async function syncJobFolderToDropbox({ folderName, componentFolders, jobId, cli
   }
 }
 
+// ---- Job UPDATE: add newly-needed folders, prune no-longer-needed EMPTY
+// ones (see DESIGN-job-update.md) ----
+//
+// Only touches folder structure -- the hidden jobId property tag is left
+// alone (the Job ID never changes on an update). Same never-throw
+// contract as syncJobFolderToDropbox. A folder that is no longer part of
+// the selected services but still has files ON DROPBOX is left in place
+// and reported in `foldersKeptWithFiles` -- Dropbox emptiness is judged
+// independently from local emptiness (the caller checks local itself).
+async function updateJobFoldersOnDropbox({ folderName, foldersToCreate, foldersToPrune, client }) {
+  if (!isConfigured()) {
+    return { attempted: false, success: false, skipped: true, error: 'Dropbox is not configured -- local update is unaffected.' };
+  }
+
+  const topLevelPath = '/' + folderName;
+  try {
+    const dbx = client || getClient();
+
+    // Create: expand to include any missing intermediate dirs, shallow-first.
+    const createDirs = expandFolderPaths(folderName, foldersToCreate || [])
+      .filter((rel) => rel !== folderName); // the job folder itself already exists
+    const foldersCreated = [];
+    const errors = [];
+    for (const rel of createDirs) {
+      try {
+        await dbx.filesCreateFolderV2({ path: '/' + rel });
+        foldersCreated.push('/' + rel);
+      } catch (err) {
+        if (isFolderAlreadyExistsError(err)) foldersCreated.push('/' + rel);
+        else errors.push({ path: '/' + rel, error: extractDropboxErrorMessage(err) });
+      }
+    }
+
+    // Prune: delete each no-longer-wanted component folder, but only if
+    // it has no entries on Dropbox.
+    const foldersRemoved = [];
+    const foldersKeptWithFiles = [];
+    for (const rel of foldersToPrune || []) {
+      const dropboxPath = topLevelPath + '/' + rel;
+      try {
+        const listing = await dbx.filesListFolder({ path: dropboxPath });
+        const isEmpty = !listing.result || !listing.result.entries || listing.result.entries.length === 0;
+        if (!isEmpty) { foldersKeptWithFiles.push(dropboxPath); continue; }
+        await dbx.filesDeleteV2({ path: dropboxPath });
+        foldersRemoved.push(dropboxPath);
+      } catch (err) {
+        // path_not_found -> nothing to prune, not an error.
+        const msg = extractDropboxErrorMessage(err);
+        if (typeof msg === 'string' && msg.indexOf('not_found') !== -1) continue;
+        errors.push({ path: dropboxPath, error: msg });
+      }
+    }
+
+    const success = errors.length === 0;
+    return {
+      attempted: true,
+      success,
+      foldersCreated,
+      foldersRemoved,
+      foldersKeptWithFiles,
+      errors,
+      error: success ? null : errors.length + ' Dropbox folder operation(s) failed during update.',
+    };
+  } catch (err) {
+    return {
+      attempted: true,
+      success: false,
+      foldersCreated: [],
+      foldersRemoved: [],
+      foldersKeptWithFiles: [],
+      errors: [],
+      error: 'Unexpected Dropbox update failure: ' + extractDropboxErrorMessage(err),
+    };
+  }
+}
+
 module.exports = {
   TEMPLATE_NAME,
   isConfigured,
@@ -228,4 +304,5 @@ module.exports = {
   isFolderAlreadyExistsError,
   isPropertyGroupAlreadyExistsError,
   syncJobFolderToDropbox,
+  updateJobFoldersOnDropbox,
 };

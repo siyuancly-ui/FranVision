@@ -193,6 +193,34 @@ test('buildJobJson stores dropbox: null when sync was never attempted', () => {
   assert.strictEqual(json.dropbox, null);
 });
 
+test('buildJobJson: updatedAt defaults to createdAt, and is carried through on an update', () => {
+  const created = buildJobJson(makeJobData());
+  assert.strictEqual(created.updatedAt, created.createdAt);
+
+  const updated = buildJobJson(makeJobData({ updatedAt: '2026-09-10T12:00:00.000Z' }));
+  assert.strictEqual(updated.createdAt, '2026-08-27T16:17:48.447Z');
+  assert.strictEqual(updated.updatedAt, '2026-09-10T12:00:00.000Z');
+});
+
+test('buildJobInfoText: shows an "Updated:" line only when updatedAt differs from createdAt', () => {
+  assert.ok(!buildJobInfoText(makeJobData()).includes('Updated:'));
+  const text = buildJobInfoText(makeJobData({ updatedAt: '2026-09-10T12:00:00.000Z' }));
+  assert.ok(text.includes('Updated: 2026-09-10T12:00:00.000Z'));
+});
+
+// Shoot Notes text/images and the generated calendar file (calendar-file.js)
+// are deliberately NOT part of job.json/Job Info.txt -- see job-files.js's
+// jobData jsdoc and calendar-file.js's module comment.
+test('buildJobJson/buildJobInfoText: never mention notes, images, or the calendar file', () => {
+  const json = buildJobJson(makeJobData());
+  assert.strictEqual(json.notes, undefined);
+  assert.strictEqual(json.shootNotesImages, undefined);
+  assert.strictEqual(json.calendar, undefined);
+  const text = buildJobInfoText(makeJobData());
+  assert.ok(!text.includes('Shoot Notes:'));
+  assert.ok(!text.includes('Shoot Info'));
+});
+
 // ---- writeJobFiles (fs) ----
 
 test('writeJobFiles writes both files with matching jobId', () => {

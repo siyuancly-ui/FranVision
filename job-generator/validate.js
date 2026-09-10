@@ -30,5 +30,15 @@
     return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
   }
 
-  return { isValidShootDate, SHOOT_DATE_REGEX };
+  // Strictly "HH:MM", 24-hour. This is optional everywhere it's used (see
+  // calendar-file.js) -- an empty string is a valid "not provided", callers
+  // check for that themselves before calling this.
+  const SHOOT_TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+  function isValidShootTime(input) {
+    if (typeof input !== 'string') return false;
+    return SHOOT_TIME_REGEX.test(input.trim());
+  }
+
+  return { isValidShootDate, SHOOT_DATE_REGEX, isValidShootTime, SHOOT_TIME_REGEX };
 });

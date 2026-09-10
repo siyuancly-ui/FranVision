@@ -6,7 +6,9 @@
 //
 // jobData shape (everything the UI collects, already validated):
 // {
-//   jobId, createdAt (ISO string),
+//   jobId, createdAt (ISO string), updatedAt (ISO string; == createdAt on
+//     first creation, bumped when Create Job re-runs as an UPDATE of an
+//     existing job -- see DESIGN-job-update.md),
 //   clientName, photographerName, address, propertyType, shootDate,
 //   order: { propertyType, photography, addons },   // same shape pricing-adapter/folder-builder use
 //   price: <result of pricing-adapter.calculatePrice(order)>,
@@ -17,6 +19,11 @@
 //                undefined if it was never computed (e.g. no photographer
 //                entered yet)>,
 // }
+//
+// Deliberately does NOT include the Shoot Notes text/images collected in
+// the UI, or the calendar-file result -- see calendar-file.js. Neither is
+// mirrored into Job Info.txt or job.json; their only purpose is the
+// generated .ics file.
 
 const fs = require('fs');
 const path = require('path');
@@ -121,6 +128,9 @@ function buildJobInfoText(jobData) {
   }
   lines.push('');
   lines.push('Created: ' + jobData.createdAt);
+  if (jobData.updatedAt && jobData.updatedAt !== jobData.createdAt) {
+    lines.push('Updated: ' + jobData.updatedAt);
+  }
   lines.push('');
   return lines.join('\n');
 }
@@ -144,6 +154,7 @@ function buildJobJson(jobData) {
   return {
     jobId: jobData.jobId,
     createdAt: jobData.createdAt,
+    updatedAt: jobData.updatedAt || jobData.createdAt,
     client: { name: jobData.clientName },
     // Flat string, not an object -- the Photographer Commission module
     // (commission-engine.js) keys directly off this same value.

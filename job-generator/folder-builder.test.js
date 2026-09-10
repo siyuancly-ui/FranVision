@@ -5,7 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { getComponentFolders, createJobFolders } = require('./folder-builder.js');
+const { getComponentFolders, createJobFolders, diffComponentFolders, folderHasRealFiles } = require('./folder-builder.js');
 
 let passed = 0;
 let failed = 0;
@@ -178,6 +178,77 @@ test('createJobFolders is idempotent -- re-running on an existing job folder doe
     createJobFolders(jobFolder, { propertyType: 'condo', photography: 'standard', addons: { floor_plan: true } });
     assert.ok(fs.existsSync(path.join(jobFolder, 'Floorplan')));
     assert.ok(fs.existsSync(path.join(jobFolder, '0 RAW', '1 Raws'))); // still there
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// ---- diffComponentFolders ----
+
+test('diffComponentFolders: adding Floor Plan -> Floorplan in toCreate, nothing removed', () => {
+  const before = { photography: 'standard', addons: {} };
+  const after = { photography: 'standard', addons: { floor_plan: true } };
+  const diff = diffComponentFolders(after, before);
+  assert.deepStrictEqual(diff.toCreate, ['Floorplan']);
+  assert.deepStrictEqual(diff.toRemove, []);
+});
+
+test('diffComponentFolders: dropping Walkthrough while keeping Vlog removes only the finished Video folder', () => {
+  const before = { photography: 'standard', addons: { walkthrough_video: true, vlog_video: true } };
+  const after = { photography: 'standard', addons: { vlog_video: true } };
+  const diff = diffComponentFolders(after, before);
+  // '0 RAW/2 Video' and '0 RAW/3 Image' are shared by both videos -> kept.
+  assert.deepStrictEqual(diff.toCreate, []);
+  assert.deepStrictEqual(diff.toRemove, ['Video']);
+});
+
+test('diffComponentFolders: dropping Luxury removes 0 RAW/4 Raw HDR but never 0 RAW itself', () => {
+  const before = { photography: 'luxury', addons: {} };
+  const after = { photography: 'standard', addons: {} };
+  const diff = diffComponentFolders(after, before);
+  assert.deepStrictEqual(diff.toRemove, ['0 RAW/4 Raw HDR']);
+  assert.ok(!diff.toRemove.includes('0 RAW'));
+});
+
+test('diffComponentFolders: toRemove is deepest-path-first', () => {
+  const before = { photography: 'standard', addons: { walkthrough_video: true } };
+  const after = { photography: 'standard', addons: {} };
+  const diff = diffComponentFolders(after, before);
+  // '0 RAW/2 Video' / '0 RAW/3 Image' (depth 2) must come before 'Video' (depth 1).
+  const depths = diff.toRemove.map((p) => p.split('/').length);
+  assert.deepStrictEqual(depths.slice().sort((a, b) => b - a), depths);
+});
+
+test('diffComponentFolders: identical orders -> empty diff', () => {
+  const order = { photography: 'luxury', addons: { floor_plan: true, feature_sheets: true } };
+  const diff = diffComponentFolders(order, order);
+  assert.deepStrictEqual(diff, { toCreate: [], toRemove: [] });
+});
+
+// ---- folderHasRealFiles ----
+
+test('folderHasRealFiles: false for a missing dir, an empty dir, and a dir with only .DS_Store', () => {
+  const root = makeTmpDir();
+  try {
+    assert.strictEqual(folderHasRealFiles(path.join(root, 'nope')), false);
+    fs.mkdirSync(path.join(root, 'empty'));
+    assert.strictEqual(folderHasRealFiles(path.join(root, 'empty')), false);
+    fs.mkdirSync(path.join(root, 'cruft'));
+    fs.writeFileSync(path.join(root, 'cruft', '.DS_Store'), 'junk');
+    fs.writeFileSync(path.join(root, 'cruft', '.dropbox-sync-manifest.json'), '{}');
+    fs.writeFileSync(path.join(root, 'cruft', '~$draft.docx'), 'lock');
+    assert.strictEqual(folderHasRealFiles(path.join(root, 'cruft')), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('folderHasRealFiles: true for a real file, including one nested deep', () => {
+  const root = makeTmpDir();
+  try {
+    fs.mkdirSync(path.join(root, 'a', 'b', 'c'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'a', 'b', 'c', 'DSC_0001.jpg'), 'photo');
+    assert.strictEqual(folderHasRealFiles(path.join(root, 'a')), true);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

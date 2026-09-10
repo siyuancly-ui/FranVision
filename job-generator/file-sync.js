@@ -60,12 +60,18 @@ function looksLikeAComponentFolderNotAJobFolder(jobFolderPath) {
 
 const MANIFEST_FILENAME = '.dropbox-sync-manifest.json';
 
-// job.json and Job Info.txt (see job-files.js) are deliberately LOCAL-ONLY
-// -- never pushed, never pulled, never deleted on either side by this
-// module. Explicit user requirement: these two files must always exist
-// only in the local job folder, regardless of what Push/Pull does to
-// everything else in the tree.
-const LOCAL_ONLY_FILENAMES = new Set(['job.json', 'Job Info.txt']);
+// job.json / Job Info.txt (job-files.js) and Shoot Schedule.ics
+// (calendar-file.js -- the generated calendar event, with any images
+// embedded as base64 ATTACH) are deliberately LOCAL-ONLY -- never pushed,
+// pulled, or deleted on either side by this module. Explicit user
+// requirement: these must exist only in the local job folder, regardless
+// of what Push/Pull does to everything else in the tree.
+const LOCAL_ONLY_FILENAMES = new Set(['job.json', 'Job Info.txt', 'Shoot Schedule.ics']);
+
+// Pre-2026-09-10, calendar-file.js wrote a "Shoot Info" folder (holding
+// the .ics plus loose image files) instead of a single root-level .ics.
+// Still excluded here so any lingering old folder never syncs.
+const LOCAL_ONLY_FOLDER_NAMES = new Set(['Shoot Info']);
 
 // Dropbox limits: a single files/upload call must be under 150 MiB; above
 // that, an upload session (start/append/finish) is required, and each
@@ -77,7 +83,8 @@ const DEFAULT_SINGLE_SHOT_MAX_BYTES = 140 * 1024 * 1024;
 const DEFAULT_CHUNK_SIZE = 8 * 1024 * 1024; // multiple of 4 MiB
 
 function isExcludedName(name) {
-  return name === '.DS_Store' || name === MANIFEST_FILENAME || name.startsWith('~$') || LOCAL_ONLY_FILENAMES.has(name);
+  return name === '.DS_Store' || name === MANIFEST_FILENAME || name.startsWith('~$') ||
+    LOCAL_ONLY_FILENAMES.has(name) || LOCAL_ONLY_FOLDER_NAMES.has(name);
 }
 
 // Recursively lists every real file under jobFolderPath (skipping
@@ -460,6 +467,7 @@ async function pullJobFilesFromDropbox({ jobFolderPath, dropboxJobFolderName, cl
 module.exports = {
   MANIFEST_FILENAME,
   LOCAL_ONLY_FILENAMES,
+  LOCAL_ONLY_FOLDER_NAMES,
   KNOWN_COMPONENT_FOLDER_NAMES,
   DEFAULT_SINGLE_SHOT_MAX_BYTES,
   DEFAULT_CHUNK_SIZE,
