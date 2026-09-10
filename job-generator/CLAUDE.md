@@ -25,15 +25,16 @@ npm install          # only needed once, or after pulling changes to package.jso
 node server.js        # -> http://localhost:4173
 ```
 
-Or double-click `Job Generator.command` (macOS) at the repo root. There is no Windows launcher currently -- an earlier attempt (`windows-support` branch, never verified on real Windows, never pushed) was deliberately abandoned and deleted 2026-09-08 as too stale against current code; Windows support would need to be rebuilt fresh if wanted again.
+Or double-click a launcher at the repo root: **`Job Generator.command`** on macOS, **`Job Generator.bat`** on Windows (the `.bat` runs `npm install` itself on first run, opens the browser, and keeps its console window as the server — close it to stop). Both just `cd` into `job-generator/` and `node server.js`. The code itself is cross-platform Node; the only OS-specific piece is `server.js#pickFolderNative()` (the "Browse…" folder dialog) — AppleScript on macOS, a PowerShell `FolderBrowserDialog` (`-STA`, Windows PowerShell 5.1) on Windows, and a graceful "just type the path" fallback anywhere else. **The Windows launcher + picker were written on macOS and have NOT been run on a real Windows box** — treat them as best-effort until someone verifies (the previous `windows-support` branch died from exactly this untested-then-stale problem; this rebuild keeps the Windows-specific surface tiny on purpose).
 
 ## Tests
 
-No test framework — each `*.test.js` file is a self-contained script using plain Node `assert` + a hand-rolled pass/fail runner (`node <name>.test.js`). Run the whole suite:
+No test framework — each `*.test.js` file is a self-contained script using plain Node `assert` + a hand-rolled pass/fail runner (`node <name>.test.js`). Run the whole suite with `npm test` (cross-platform, via `run-tests.js`), or by hand:
 
 ```bash
 cd job-generator
-for f in *.test.js; do node "$f" || echo "FAILED: $f"; done
+for f in *.test.js; do node "$f" || echo "FAILED: $f"; done   # macOS/Linux
+node run-tests.js                                              # any OS
 ```
 
 As of 2026-09-10 this is 235 tests across 12 files, all passing. Dropbox-touching modules (`dropbox-sync.js`, `file-sync.js`) never hit the real API in tests — every async orchestrator function accepts an injectable `client` (and `downloadImpl`/`thresholds` where relevant) so tests supply a fake Dropbox client object instead. **When verifying Dropbox behavior beyond what the fake-client tests cover, you are testing against the studio's real, live production Dropbox account** (confirmed directly — hundreds of real client job folders live at the account root) — always use an obviously-fake job name, and always clean up (`filesDeleteV2`) whatever you create before finishing.
@@ -105,4 +106,4 @@ Dropbox features (`dropbox-sync.js`, `file-sync.js`) need `job-generator/.env` (
 - Push/Pull run synchronously within one HTTP request and return one final summary — no progress streaming for a large first-time sync of many/large files.
 - The chunked-upload-session path (files >140MB) is unit-tested only against a fake client (exact byte-offset/sequence assertions) — never verified against a real 140MB+ file (deliberate, to avoid burning real time/bandwidth on an expensive test).
 - **Editing an identity field (Shoot Date / Address / Client Name) of an already-created job makes a NEW job, not an edit.** Job identity IS `buildJobFolderName()`'s output (those 3 fields), so changing one changes the canonical name → no match → new folder + new Job ID; the old folder is orphaned and must be deleted by hand. Accepted limitation (see "Job Update" below and `DESIGN-job-update.md`). Everything else about a job IS editable in place — re-enter the same 3 fields and click Create Job (it becomes "Update FVS-…").
-- No Windows support currently (macOS only) -- see "Running it" above.
+- Windows support (`Job Generator.bat`, the PowerShell folder picker in `server.js`, `run-tests.js`) is written but **unverified on a real Windows machine** -- see "Running it" above.
