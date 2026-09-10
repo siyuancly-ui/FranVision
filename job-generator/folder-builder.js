@@ -94,4 +94,47 @@ function createJobFolders(jobFolderAbsolutePath, order) {
   return created;
 }
 
-module.exports = { getComponentFolders, createJobFolders };
+// Pure: which component folders a job would GAIN and which it would LOSE
+// if its order changed from oldOrder to newOrder. Both lists are
+// '/'-joined relative paths, same shape getComponentFolders returns.
+// Used by the job-UPDATE path (see DESIGN-job-update.md): `toCreate`
+// folders get made, `toRemove` folders get removed ONLY if empty (the
+// caller checks with folderHasRealFiles). A shared parent like '0 RAW'
+// is never in `toRemove` because '0 RAW/1 Raws' keeps it required.
+function diffComponentFolders(newOrder, oldOrder) {
+  const now = getComponentFolders(newOrder);
+  const before = getComponentFolders(oldOrder || {});
+  const nowSet = new Set(now);
+  const beforeSet = new Set(before);
+  return {
+    toCreate: now.filter((p) => !beforeSet.has(p)),
+    // Deepest first, so a child is removed before any (hypothetical) parent.
+    toRemove: before.filter((p) => !nowSet.has(p)).sort((a, b) => b.split('/').length - a.split('/').length),
+  };
+}
+
+const IGNORED_FILENAMES = new Set(['.DS_Store', '.dropbox-sync-manifest.json']);
+
+// Pure-ish (fs read-only): true if absDir contains any real file anywhere
+// in its subtree. .DS_Store, the sync manifest, and Office lock files
+// (~$*) don't count -- so a component folder holding only OS cruft still
+// reads as "empty" and is safe for the update path to delete. A
+// missing/unreadable directory reads as "no real files".
+function folderHasRealFiles(absDir) {
+  let entries;
+  try {
+    entries = fs.readdirSync(absDir, { withFileTypes: true });
+  } catch (err) {
+    return false;
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      if (folderHasRealFiles(path.join(absDir, entry.name))) return true;
+    } else if (!IGNORED_FILENAMES.has(entry.name) && !entry.name.startsWith('~$')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+module.exports = { getComponentFolders, createJobFolders, diffComponentFolders, folderHasRealFiles };

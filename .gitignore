@@ -8,6 +8,11 @@
 /job-generator/.config.json
 /job-generator/node_modules/
 
+# Job Generator: saved Job Drafts -- real client PII (name, address, notes,
+# lockbox codes/screenshots) for shoots not yet finalized. Local-only,
+# never synced anywhere, never committed.
+/job-generator/drafts/
+
 # Job Generator: real Dropbox credentials (App Key/Secret, refresh token,
 # template id) -- NEVER commit this file. .env.example documents the
 # required keys with no real values; copy it to .env and fill it in locally.

@@ -73,10 +73,54 @@ function getNextJobId(jobRootFolder, date) {
   return buildJobId(date, sequence);
 }
 
+// Looks for an already-created job at <jobRootFolder>/<folderName> (the
+// canonical name buildJobFolderName() produces from Shoot Date + Address
+// + Client Name). This is how "clicking Create Job again for the same
+// job" is turned into an UPDATE instead of a second Job ID -- see
+// DESIGN-job-update.md. Returns:
+//   null                                  -- no folder with that name
+//   { folderName, folderPath, jobId,      -- a real, updatable job
+//     createdAt, previousTotalCents, order }
+//   { folderName, folderPath, unreadable: true }
+//                                         -- folder exists but has no
+//                                            readable job.json; the
+//                                            caller should refuse rather
+//                                            than write a 2nd identity in
+function findExistingJob(jobRootFolder, folderName) {
+  const folderPath = path.join(jobRootFolder, folderName);
+  let stat;
+  try {
+    stat = fs.statSync(folderPath);
+  } catch (err) {
+    return null; // no folder with this canonical name
+  }
+  if (!stat.isDirectory()) return null;
+
+  let data;
+  try {
+    data = JSON.parse(fs.readFileSync(path.join(folderPath, 'job.json'), 'utf8'));
+  } catch (err) {
+    return { folderName, folderPath, unreadable: true };
+  }
+  if (!data || typeof data.jobId !== 'string') {
+    return { folderName, folderPath, unreadable: true };
+  }
+
+  return {
+    folderName,
+    folderPath,
+    jobId: data.jobId,
+    createdAt: typeof data.createdAt === 'string' ? data.createdAt : null,
+    previousTotalCents: (data.pricing && Number.isInteger(data.pricing.totalCents)) ? data.pricing.totalCents : null,
+    order: data.services || {},
+  };
+}
+
 module.exports = {
   formatDateStamp,
   buildJobId,
   nextSequenceFromExistingIds,
   collectExistingJobIds,
   getNextJobId,
+  findExistingJob,
 };

@@ -85,9 +85,14 @@ test('isExcludedName: an ordinary photo/video filename is not excluded', () => {
   assert.strictEqual(isExcludedName('DSC_0001.jpg'), false);
 });
 
-test('isExcludedName: job.json and Job Info.txt are excluded -- local-only, never synced', () => {
+test('isExcludedName: job.json, Job Info.txt, and Shoot Schedule.ics are excluded -- local-only, never synced', () => {
   assert.strictEqual(isExcludedName('job.json'), true);
   assert.strictEqual(isExcludedName('Job Info.txt'), true);
+  assert.strictEqual(isExcludedName('Shoot Schedule.ics'), true);
+});
+
+test('isExcludedName: the legacy "Shoot Info" folder is still excluded', () => {
+  assert.strictEqual(isExcludedName('Shoot Info'), true);
 });
 
 // ---- walkFiles ----
@@ -103,6 +108,22 @@ test('walkFiles: finds nested files with forward-slash relative paths, excludes 
 
     const files = walkFiles(dir);
     assert.deepStrictEqual(files.map((f) => f.relativePath), ['0 RAW/1 Raws/DSC_0001.jpg']);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('walkFiles: never descends into the "Shoot Info" folder (calendar .ics + reference images)', () => {
+  const dir = makeTmpDir();
+  try {
+    fs.mkdirSync(path.join(dir, '0 RAW'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '0 RAW', 'DSC_0001.jpg'), 'fake image data');
+    fs.mkdirSync(path.join(dir, 'Shoot Info'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'Shoot Info', 'Shoot Schedule.ics'), 'BEGIN:VCALENDAR');
+    fs.writeFileSync(path.join(dir, 'Shoot Info', 'reference.jpg'), 'fake reference image');
+
+    const files = walkFiles(dir);
+    assert.deepStrictEqual(files.map((f) => f.relativePath), ['0 RAW/DSC_0001.jpg']);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
