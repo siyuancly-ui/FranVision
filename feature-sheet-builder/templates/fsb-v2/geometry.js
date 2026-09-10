@@ -105,9 +105,13 @@
       // at scale 0.1287817; ornament content bounds x72..1461 y303..668
       // within its 1536x1024 source canvas, normalised to the 1224x792
       // page. Aspect matches templates/fsb-v2/assets/flourish-v2.svg.
+      // y = (panelBorder.top - h) / 2 = (0.072 - 0.05935) / 2 -> the
+      // ornament sits vertically centred in the 0..0.072 band with an equal
+      // ~0.0063 (~5pt) gap above it and below it, so it never touches the
+      // panel keyline (the raw IDML frame overlapped the line by ~0.0017).
       flourish: [
-        { panel: 'L', rect: [0.174634, 0.014329, 0.146142, 0.059350] },
-        { panel: 'R', rect: [0.678095, 0.014329, 0.146142, 0.059350] },
+        { panel: 'L', rect: [0.174634, 0.006325, 0.146142, 0.059350] },
+        { panel: 'R', rect: [0.678095, 0.006325, 0.146142, 0.059350] },
       ],
       // gold double keyline framing each panel's photo block
       panelBorder: [
