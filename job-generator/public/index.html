@@ -357,7 +357,7 @@
 
 <div class="section-divider">
   <h2 class="section-title">Sync an Existing Job with Dropbox</h2>
-  <p class="field-hint">For a job you already created (not the one above). <strong>Push</strong> uploads local changes to Dropbox; <strong>Pull</strong> downloads Dropbox changes to local. A file changed on both sides since the last sync is never guessed at -- it's left alone and listed as a conflict for you to resolve by hand. Deletions are mirrored too (removing a file on one side removes it from the other next Push/Pull), unless the other side also changed since the last sync, which is likewise reported as a conflict rather than silently deleted.</p>
+  <p class="field-hint">For a job you already created (not the one above). <strong>Sync to Dropbox</strong> uploads local changes to Dropbox; <strong>Sync to Local</strong> downloads Dropbox changes to local. A file changed on both sides since the last sync is never guessed at -- it's left alone and listed as a conflict for you to resolve by hand. Deletions are mirrored too (removing a file on one side removes it from the other next sync), unless the other side also changed since the last sync, which is likewise reported as a conflict rather than silently deleted.</p>
 </div>
 <div class="layout" style="grid-template-columns: 1fr;">
   <div class="panel">
@@ -369,8 +369,8 @@
       </div>
     </div>
     <div class="sync-btn-row">
-      <button class="create-btn" id="push-btn" disabled>Push to Dropbox</button>
-      <button class="create-btn" id="pull-btn" disabled>Pull from Dropbox</button>
+      <button class="create-btn" id="push-btn" disabled>Sync to Dropbox</button>
+      <button class="create-btn" id="pull-btn" disabled>Sync to Local</button>
     </div>
     <div id="sync-result"></div>
   </div>
@@ -1352,8 +1352,8 @@
     }
   }
 
-  el('push-btn').addEventListener('click', () => runSync('/api/push-job-files', 'Pushing to Dropbox'));
-  el('pull-btn').addEventListener('click', () => runSync('/api/pull-job-files', 'Pulling from Dropbox'));
+  el('push-btn').addEventListener('click', () => runSync('/api/push-job-files', 'Syncing to Dropbox'));
+  el('pull-btn').addEventListener('click', () => runSync('/api/pull-job-files', 'Syncing to Local'));
 
   refreshPricing();
   refreshCommission(true);

@@ -57,7 +57,7 @@ Every module below is plain Node (`module.exports`), most also loadable as a bro
 | `draft-store.js` | Job Drafts — save/load/delete the whole form before a shoot is finalized; reuses `calendar-file.js` unchanged, pointed at the draft's own folder |
 | `config-store.js` | Persists the default Job Root Folder to `.config.json` |
 | `dropbox-sync.js` | Best-effort: `syncJobFolderToDropbox` creates the empty Dropbox folder skeleton + tags it with a hidden `jobId` property; `updateJobFoldersOnDropbox` adds newly-needed folders and prunes no-longer-needed EMPTY ones on an update; `ensureMlsForDownloadFolder` + `createSharedLink` back `delivery-email.js` (see below) |
-| `file-sync.js` | Two-way Push/Pull of actual file *contents* for an **existing** job, any time after creation, as many times as needed |
+| `file-sync.js` | Two-way Push/Pull of actual file *contents* for an **existing** job, any time after creation, as many times as needed. Internal naming (functions, API routes, `direction` field) stays "push"/"pull" throughout the codebase; only the **UI-facing text** was renamed 2026-09-11 — buttons read "Sync to Dropbox" / "Sync to Local" and the progress/hint copy matches, because "Push/Pull" reads as git jargon to Franky (non-technical). Keep this distinction in mind: code you read still says push/pull, the screen says sync. |
 | `delivery-email.js` + `delivery-email-template.zh.txt` / `.en.txt` | Generates the two Delivery Email `.txt` files at Create/Update Job time — see the "Delivery Email" decision below |
 | `server.js` | Node `http`, zero framework, wires all of the above into a small JSON API |
 | `public/index.html` | The UI — plain JS, no framework, no build step |
