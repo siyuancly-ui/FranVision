@@ -9,6 +9,7 @@
 
 const assert = require('assert');
 const dropboxSync = require('./dropbox-sync.js');
+const folderBuilder = require('./folder-builder.js');
 const {
   expandFolderPaths,
   extractDropboxErrorMessage,
@@ -68,6 +69,36 @@ test('expandFolderPaths: orders shallowest-first (parents before children)', () 
   const result = expandFolderPaths('Job', ['0 RAW/1 Raws']);
   assert.ok(result.indexOf('Job') < result.indexOf('Job/0 RAW'));
   assert.ok(result.indexOf('Job/0 RAW') < result.indexOf('Job/0 RAW/1 Raws'));
+});
+
+// Regression test for a real Windows bug (2026-09-11): server.js used to
+// derive componentFolders by round-tripping folder-builder.js's OWN
+// output through path.join()/path.relative() (to create the local
+// folders, then convert the resulting ABSOLUTE paths back to relative
+// ones) instead of just calling folder-builder.js#getComponentFolders()
+// directly. path.join()/path.relative() use the HOST OS's native
+// separator -- '\' on Windows -- so on Windows, componentFolders came out
+// as e.g. "0 RAW\1 Raws" instead of "0 RAW/1 Raws". expandFolderPaths()
+// here splits on '/' only, so that string never split at all: Dropbox
+// would get a single oddly-named folder ("0 RAW\1 Raws", literal
+// backslash in the name) directly under the job folder instead of a
+// proper "0 RAW" parent containing "1 Raws" -- meaning "0 RAW" itself
+// never got created. Single-segment folders (Revisions, MLS, ...) were
+// unaffected, which is why only "0 RAW" looked missing to the user.
+// This test feeds expandFolderPaths folder-builder.js's REAL output
+// (never anything derived via path.join/path.relative) to prove the
+// integration between the two modules stays correct -- and to catch it
+// immediately if that boundary is ever reintroduced.
+test('expandFolderPaths: integrates correctly with folder-builder.js\'s real output (regression -- Windows "0 RAW" missing bug)', () => {
+  const order = { propertyType: 'house', photography: 'luxury', addons: { walkthrough_video: true } };
+  const componentFolders = folderBuilder.getComponentFolders(order);
+  assert.ok(componentFolders.every((p) => !p.includes('\\')), 'getComponentFolders() must never contain a backslash');
+
+  const result = expandFolderPaths('Job', componentFolders);
+  assert.ok(result.includes('Job/0 RAW'), '"0 RAW" parent folder must be its own entry, not just embedded in a longer un-split string');
+  assert.ok(result.includes('Job/0 RAW/1 Raws'));
+  assert.ok(result.includes('Job/0 RAW/4 Raw HDR'));
+  assert.ok(result.every((p) => !p.includes('\\')), 'no entry should ever contain a literal backslash');
 });
 
 // ---- error classification ----

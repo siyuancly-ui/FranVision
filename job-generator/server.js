@@ -391,9 +391,23 @@ async function handleApi(req, res, urlPath) {
       // (POST /api/root-folder), so a one-off job elsewhere never
       // silently changes what the next job defaults to.
       // createJobFolders is idempotent -- on an update it just tops up any
-      // component folders the new service selection now needs.
-      const componentFolders = folderBuilder.createJobFolders(jobFolderPath, order).slice(1)
-        .map((abs) => path.relative(jobFolderPath, abs));
+      // component folders the new service selection now needs. Its return
+      // value (absolute filesystem paths) is used only for the mkdir side
+      // effect here -- componentFolders itself comes straight from
+      // getComponentFolders(order) instead of path.relative()-ing those
+      // absolute paths back down. path.relative()/path.join() use the HOST
+      // OS's native separator ('\' on Windows), but every downstream
+      // consumer of componentFolders (dropbox-sync.js#expandFolderPaths,
+      // delivery-email.js's folder-name Set, diffComponentFolders) expects
+      // the canonical '/'-joined POSIX form folder-builder.js always
+      // produces -- found in real use on Windows (2026-09-11): "0 RAW"'s
+      // nested entries (e.g. "0 RAW\1 Raws") never split on '/', so
+      // expandFolderPaths never emitted a separate "0 RAW" parent folder to
+      // create on Dropbox at all, only oddly-named single folders with a
+      // literal backslash in the name. Single-segment folders (Revisions,
+      // MLS, ...) were unaffected, which is why only "0 RAW" looked missing.
+      folderBuilder.createJobFolders(jobFolderPath, order);
+      const componentFolders = folderBuilder.getComponentFolders(order);
 
       // UPDATE only: prune component folders that are no longer part of the
       // selected services -- but ONLY when they're empty (no real files).
