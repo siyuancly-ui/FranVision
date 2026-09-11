@@ -13,6 +13,7 @@ const os = require('os');
 const fileSync = require('./file-sync.js');
 const {
   isExcludedName,
+  isUnderExcludedTopFolder,
   walkFiles,
   readManifest,
   writeManifest,
@@ -93,6 +94,15 @@ test('isExcludedName: job.json, Job Info.txt, and Shoot Schedule.ics are exclude
 
 test('isExcludedName: the legacy "Shoot Info" folder is still excluded', () => {
   assert.strictEqual(isExcludedName('Shoot Info'), true);
+});
+
+test('isExcludedName: the Dropbox-only "MLS for download" folder is excluded', () => {
+  assert.strictEqual(isExcludedName('MLS for download'), true);
+});
+
+test('isUnderExcludedTopFolder: matches on the first path segment of a nested file', () => {
+  assert.strictEqual(isUnderExcludedTopFolder('MLS for download/DSC_0001.jpg'), true);
+  assert.strictEqual(isUnderExcludedTopFolder('MLS/DSC_0001.jpg'), false);
 });
 
 // ---- walkFiles ----
@@ -537,6 +547,32 @@ await testAsync('pullJobFilesFromDropbox: downloads a new remote file end-to-end
     assert.ok(fs.existsSync(path.join(dir, '0 RAW', 'a.jpg')));
     const manifest = readManifest(dir);
     assert.strictEqual(manifest['0 RAW/a.jpg'].dropbox.rev, 'r1');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await testAsync('pullJobFilesFromDropbox: never pulls "MLS for download" -- Dropbox-only derived Photo Sync Worker renders', async () => {
+  const dir = makeTmpDir();
+  try {
+    const fakeDbx = makeFakeDbx({
+      remoteFiles: [
+        { relativePath: 'MLS/a.jpg', size: 7, rev: 'r1' },
+        { relativePath: 'MLS for download/a.jpg', size: 7, rev: 'r2' },
+      ],
+    });
+    const fakeDownload = async (dbx, dropboxPath, dest) => {
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.writeFileSync(dest, 'content');
+    };
+
+    await withFakeDropboxEnv(async () => {
+      const result = await pullJobFilesFromDropbox({ jobFolderPath: dir, dropboxJobFolderName: 'MyJob', client: fakeDbx, downloadImpl: fakeDownload });
+      assert.strictEqual(result.downloadedCount, 1); // only MLS/a.jpg
+    });
+
+    assert.ok(fs.existsSync(path.join(dir, 'MLS', 'a.jpg')));
+    assert.ok(!fs.existsSync(path.join(dir, 'MLS for download')));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

@@ -1046,6 +1046,18 @@
         ? '<div>Calendar file saved: Shoot Schedule.ics' + (result.calendar.imageCount ? ' (' + result.calendar.imageCount + ' image(s) embedded as attachments)' : '') + '.</div>'
         : (result.mode === 'updated' ? '<div>No Shoot Time — calendar file not generated.</div>' : '');
 
+      // Delivery Email .txt files (see delivery-email.js) -- generated
+      // automatically alongside Job Info.txt/job.json. linkErrors is
+      // non-empty when a Dropbox shared link couldn't be generated for
+      // one or more deliverables (Dropbox not configured, sharing.write
+      // scope missing, etc.) -- those lines fall back to a placeholder
+      // token in the .txt rather than failing the whole job creation.
+      const de = result.deliveryEmail;
+      const deliveryEmailHtml = de && de.attempted
+        ? '<div>Delivery Email .txt files ' + (de.success ? 'generated' : 'generated with some links missing') + ' (中文 + EN).'
+          + (de.linkErrors && de.linkErrors.length ? ' Fill in manually: ' + de.linkErrors.map((e) => e.key).join(', ') + '.' : '') + '</div>'
+        : '';
+
       const isUpdate = result.mode === 'updated';
       let updateHtml = '';
       if (isUpdate) {
@@ -1075,6 +1087,7 @@
         '<div>Job Info.txt and job.json ' + (isUpdate ? 'rewritten' : 'written') + '.</div>' +
         updateHtml +
         calendarHtml +
+        deliveryEmailHtml +
         pendingHtml +
         '</div>';
 

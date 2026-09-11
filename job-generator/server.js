@@ -33,6 +33,7 @@ const commissionConfig = require('./commission-config.js');
 const fileSync = require('./file-sync.js');
 const calendarFile = require('./calendar-file.js');
 const draftStore = require('./draft-store.js');
+const deliveryEmail = require('./delivery-email.js');
 
 const PORT = 4173;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -433,6 +434,24 @@ async function handleApi(req, res, urlPath) {
         }
       }
 
+      // Delivery Email (see delivery-email.js) -- interim .txt form of the
+      // eventual client delivery page. Best-effort, same as Dropbox above:
+      // pre-create the Dropbox-only 'MLS for download' folder (so its
+      // shared link can be generated immediately, before Photo Sync
+      // Worker ever writes into it), then generate both language files.
+      // Never blocks/fails job creation -- wrapped in try/catch on top of
+      // both callees' own never-throw contract.
+      let deliveryEmailResult;
+      try {
+        await dropboxSync.ensureMlsForDownloadFolder({ folderName });
+        deliveryEmailResult = await deliveryEmail.generateDeliveryEmails({
+          jobFolderPath, folderName, clientName: body.clientName, address: body.address,
+          order, componentFolders, totalCents: price.totalCents,
+        });
+      } catch (err) {
+        deliveryEmailResult = { attempted: true, success: false, error: 'Unexpected delivery-email failure: ' + err.message };
+      }
+
       const jobData = {
         jobId,
         createdAt,
@@ -478,6 +497,7 @@ async function handleApi(req, res, urlPath) {
         commission,
         dropbox: dropboxResult,
         dropboxPrune: dropboxPruneResult || null,
+        deliveryEmail: deliveryEmailResult,
         pendingConfirmation,
       });
     }

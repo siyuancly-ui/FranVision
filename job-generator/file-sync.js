@@ -38,6 +38,7 @@ const fs = require('fs');
 const path = require('path');
 const { downloadFile: sdkDownloadFile } = require('dropbox');
 const dropboxSync = require('./dropbox-sync.js');
+const deliveryEmail = require('./delivery-email.js');
 
 // Names folder-builder.js can produce as a job's OWN top-level component
 // folder (the first path segment of getComponentFolders()' output --
@@ -60,18 +61,32 @@ function looksLikeAComponentFolderNotAJobFolder(jobFolderPath) {
 
 const MANIFEST_FILENAME = '.dropbox-sync-manifest.json';
 
-// job.json / Job Info.txt (job-files.js) and Shoot Schedule.ics
+// job.json / Job Info.txt (job-files.js), Shoot Schedule.ics
 // (calendar-file.js -- the generated calendar event, with any images
-// embedded as base64 ATTACH) are deliberately LOCAL-ONLY -- never pushed,
+// embedded as base64 ATTACH), and the two Delivery Email .txt files
+// (delivery-email.js) are deliberately LOCAL-ONLY -- never pushed,
 // pulled, or deleted on either side by this module. Explicit user
 // requirement: these must exist only in the local job folder, regardless
 // of what Push/Pull does to everything else in the tree.
-const LOCAL_ONLY_FILENAMES = new Set(['job.json', 'Job Info.txt', 'Shoot Schedule.ics']);
+const LOCAL_ONLY_FILENAMES = new Set([
+  'job.json', 'Job Info.txt', 'Shoot Schedule.ics',
+  deliveryEmail.OUTPUT_FILENAME_ZH, deliveryEmail.OUTPUT_FILENAME_EN,
+]);
 
 // Pre-2026-09-10, calendar-file.js wrote a "Shoot Info" folder (holding
 // the .ics plus loose image files) instead of a single root-level .ics.
 // Still excluded here so any lingering old folder never syncs.
 const LOCAL_ONLY_FOLDER_NAMES = new Set(['Shoot Info']);
+
+// The mirror image of LOCAL_ONLY_FOLDER_NAMES: a folder that lives on
+// DROPBOX ONLY and must never be touched by Push or Pull. Currently just
+// dropbox-sync.js's 'MLS for download' -- Photo Sync Worker's derived MLS
+// delivery renders (see its own comment there), pure derivatives of what's
+// already in 'MLS', regenerable, and never meant to exist on local disk.
+// Push must never upload into it (nothing ever will locally); Pull must
+// never download it (it would just be a redundant second copy of every
+// MLS photo, at Dropbox's expense too).
+const DROPBOX_ONLY_FOLDER_NAMES = new Set([dropboxSync.MLS_FOR_DOWNLOAD_SUBFOLDER]);
 
 // Dropbox limits: a single files/upload call must be under 150 MiB; above
 // that, an upload session (start/append/finish) is required, and each
@@ -84,7 +99,19 @@ const DEFAULT_CHUNK_SIZE = 8 * 1024 * 1024; // multiple of 4 MiB
 
 function isExcludedName(name) {
   return name === '.DS_Store' || name === MANIFEST_FILENAME || name.startsWith('~$') ||
-    LOCAL_ONLY_FILENAMES.has(name) || LOCAL_ONLY_FOLDER_NAMES.has(name);
+    LOCAL_ONLY_FILENAMES.has(name) || LOCAL_ONLY_FOLDER_NAMES.has(name) ||
+    DROPBOX_ONLY_FOLDER_NAMES.has(name);
+}
+
+// listDropboxFiles() below deals in relative FILE paths (e.g. 'MLS for
+// download/DSC_0001.jpg'), so excluding by isExcludedName(basename) alone
+// (as walkFiles() can, since it walks directory-by-directory and can skip
+// the whole subtree at the folder entry itself) would miss every file
+// nested under an excluded top-level folder. This checks the first path
+// segment instead.
+function isUnderExcludedTopFolder(relativePath) {
+  const first = relativePath.split('/')[0];
+  return LOCAL_ONLY_FOLDER_NAMES.has(first) || DROPBOX_ONLY_FOLDER_NAMES.has(first);
 }
 
 // Recursively lists every real file under jobFolderPath (skipping
@@ -147,7 +174,7 @@ async function listDropboxFiles(dbx, dropboxJobFolderName) {
   return entries
     .filter((e) => e['.tag'] === 'file')
     .map((e) => ({ relativePath: e.path_display.slice(prefix.length), size: e.size, rev: e.rev }))
-    .filter((e) => !isExcludedName(path.basename(e.relativePath)));
+    .filter((e) => !isExcludedName(path.basename(e.relativePath)) && !isUnderExcludedTopFolder(e.relativePath));
 }
 
 function readManifest(jobFolderPath) {
@@ -468,10 +495,12 @@ module.exports = {
   MANIFEST_FILENAME,
   LOCAL_ONLY_FILENAMES,
   LOCAL_ONLY_FOLDER_NAMES,
+  DROPBOX_ONLY_FOLDER_NAMES,
   KNOWN_COMPONENT_FOLDER_NAMES,
   DEFAULT_SINGLE_SHOT_MAX_BYTES,
   DEFAULT_CHUNK_SIZE,
   isExcludedName,
+  isUnderExcludedTopFolder,
   looksLikeAComponentFolderNotAJobFolder,
   walkFiles,
   listDropboxFiles,

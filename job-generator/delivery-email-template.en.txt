@@ -1,0 +1,36 @@
+Hi {{CLIENT_NAME}},
+
+Your listing deliverables for {{PROPERTY_ADDRESS}} are ready — thank you for your patience.
+
+All in One for MLS Virtual Tour URL:
+{{ALL_IN_ONE_LINK}}
+
+You can use the All-in-One link above to preview and share the listing online.
+
+Please note that the All-in-One website is for preview and sharing only. All downloadable files will be provided separately through Dropbox after payment.
+
+Payment
+Total amount due: {{TOTAL_AMOUNT}} (tax included). You can complete the payment by E-Transfer or Credit Card.
+
+E-Transfer: Please send the payment to:
+frankstudio@mail.com
+After the transfer is completed, please send the payment screenshot or confirmation to Franky.
+
+Credit Card: Please use the Wave payment link below:
+{{WAVE_LINK}}
+
+After the credit card payment is completed, please also let Franky know so we can confirm the payment and provide the download links.
+
+The download links are below ⬇
+Please copy and paste the links into your browser if needed.
+Depending on the services included in your order, the following files are available:
+{{LINE:HDR}}HDR High-Resolution Photos: {{HDR_LINK}}
+{{LINE:MLS}}MLS Photos: {{MLS_LINK}}
+{{LINE:VIDEO}}Video: {{VIDEO_LINK}}
+{{LINE:FLOORPLAN}}Floor Plan / Site Plan: {{FLOORPLAN_LINK}}
+{{LINE:LOCAL_REPORT}}Local Report: {{LOCAL_REPORT_LINK}}
+{{LINE:HOME_REPORT}}Home Report: {{HOME_REPORT_LINK}}
+
+Thank you!
+Franky
+FranVision Media

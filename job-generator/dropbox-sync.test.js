@@ -308,6 +308,98 @@ await testAsync('updateJobFoldersOnDropbox: never throws -- a real failure comes
   });
 });
 
+// ---- ensureMlsForDownloadFolder (delivery-email.js's link source) ----
+
+await testAsync('ensureMlsForDownloadFolder: skips cleanly when not configured', async () => {
+  const saved = process.env.DROPBOX_APP_KEY;
+  delete process.env.DROPBOX_APP_KEY;
+  try {
+    const result = await dropboxSync.ensureMlsForDownloadFolder({ folderName: 'Job' });
+    assert.strictEqual(result.attempted, false);
+    assert.strictEqual(result.skipped, true);
+  } finally {
+    if (saved !== undefined) process.env.DROPBOX_APP_KEY = saved;
+  }
+});
+
+await testAsync('ensureMlsForDownloadFolder: creates the top-level "MLS for download" folder', async () => {
+  const created = [];
+  const fakeDbx = { filesCreateFolderV2: async ({ path }) => { created.push(path); return { result: {} }; } };
+  await withFakeCredentials(async () => {
+    const result = await dropboxSync.ensureMlsForDownloadFolder({ folderName: 'Job', client: fakeDbx });
+    assert.strictEqual(result.success, true);
+    assert.deepStrictEqual(created, ['/Job/MLS for download']);
+  });
+});
+
+await testAsync('ensureMlsForDownloadFolder: already-exists is success, not an error', async () => {
+  const fakeDbx = {
+    filesCreateFolderV2: async () => { const e = new Error('x'); e.error = { error_summary: 'path/conflict/folder/..' }; throw e; },
+  };
+  await withFakeCredentials(async () => {
+    const result = await dropboxSync.ensureMlsForDownloadFolder({ folderName: 'Job', client: fakeDbx });
+    assert.strictEqual(result.success, true);
+  });
+});
+
+await testAsync('ensureMlsForDownloadFolder: never throws -- a real failure comes back as success:false', async () => {
+  const fakeDbx = {
+    filesCreateFolderV2: async () => { const e = new Error('boom'); e.error = { error_summary: 'internal_error/..' }; throw e; },
+  };
+  await withFakeCredentials(async () => {
+    const result = await dropboxSync.ensureMlsForDownloadFolder({ folderName: 'Job', client: fakeDbx });
+    assert.strictEqual(result.success, false);
+    assert.ok(result.error);
+  });
+});
+
+// ---- createSharedLink (delivery-email.js's per-line link resolver) ----
+
+await testAsync('createSharedLink: fails cleanly when not configured', async () => {
+  const saved = process.env.DROPBOX_APP_KEY;
+  delete process.env.DROPBOX_APP_KEY;
+  try {
+    const result = await dropboxSync.createSharedLink({ dropboxPath: '/Job/MLS' });
+    assert.strictEqual(result.success, false);
+  } finally {
+    if (saved !== undefined) process.env.DROPBOX_APP_KEY = saved;
+  }
+});
+
+await testAsync('createSharedLink: creates a fresh link', async () => {
+  const fakeDbx = {
+    sharingCreateSharedLinkWithSettings: async ({ path }) => ({ result: { url: 'https://dropbox.com/fake' + path } }),
+  };
+  await withFakeCredentials(async () => {
+    const result = await dropboxSync.createSharedLink({ dropboxPath: '/Job/MLS', client: fakeDbx });
+    assert.strictEqual(result.success, true);
+    assert.strictEqual(result.url, 'https://dropbox.com/fake/Job/MLS');
+  });
+});
+
+await testAsync('createSharedLink: reuses an existing link instead of erroring', async () => {
+  const fakeDbx = {
+    sharingCreateSharedLinkWithSettings: async () => { const e = new Error('x'); e.error = { error_summary: 'shared_link_already_exists/..' }; throw e; },
+    sharingListSharedLinks: async () => ({ result: { links: [{ url: 'https://dropbox.com/existing' }] } }),
+  };
+  await withFakeCredentials(async () => {
+    const result = await dropboxSync.createSharedLink({ dropboxPath: '/Job/MLS', client: fakeDbx });
+    assert.strictEqual(result.success, true);
+    assert.strictEqual(result.url, 'https://dropbox.com/existing');
+  });
+});
+
+await testAsync('createSharedLink: never throws -- a real failure comes back as success:false', async () => {
+  const fakeDbx = {
+    sharingCreateSharedLinkWithSettings: async () => { const e = new Error('boom'); e.error = { error_summary: 'internal_error/..' }; throw e; },
+  };
+  await withFakeCredentials(async () => {
+    const result = await dropboxSync.createSharedLink({ dropboxPath: '/Job/MLS', client: fakeDbx });
+    assert.strictEqual(result.success, false);
+    assert.ok(result.error);
+  });
+});
+
 }
 
 runAsyncTests().then(() => {
