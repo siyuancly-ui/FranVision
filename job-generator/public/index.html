@@ -280,7 +280,12 @@
           <span>$</span>
           <input type="number" step="0.01" id="manual-adjustment" placeholder="0.00">
         </div>
-        <div class="field-hint">Positive or negative. Applied to the subtotal before HST. Same field as pricing/tester.html.</div>
+        <div class="field-hint">Positive or negative. Added to the subtotal before HST. Same field as pricing/tester.html.</div>
+        <div class="adjustment-row" style="margin-top:10px;">
+          <span>$</span>
+          <input type="number" step="0.01" id="adjustment-override" placeholder="e.g. 500.00">
+        </div>
+        <div class="field-hint">Or set the exact pre-tax package price directly (e.g. rounding off a number without figuring out how much to subtract) -- fills in the adjustment above for you. Using this clears the field above; using the field above clears this.</div>
       </fieldset>
     </div>
 
@@ -403,8 +408,23 @@
     addonIds.forEach((id) => { addons[id] = el('addon-' + id).checked; });
     addons.virtual_staging_qty = el('addon-virtual_staging').checked ? (parseInt(el('virtual_staging_qty').value, 10) || 0) : 0;
 
-    const adjustmentDollars = parseFloat(el('manual-adjustment').value);
-    const manualAdjustmentCents = isNaN(adjustmentDollars) ? 0 : Math.round(adjustmentDollars * 100);
+    // Two input modes for the SAME underlying value -- "adjust by ±$Y" or
+    // "set the exact pre-tax package price". Whichever field currently has
+    // something typed in it wins (the two clear each other -- see the
+    // 'adjustment-override' input listener below -- so this is really just
+    // "is the override field non-blank right now", not a real conflict).
+    const overrideRaw = el('adjustment-override').value.trim();
+    let manualAdjustmentCents;
+    if (overrideRaw !== '' && !isNaN(parseFloat(overrideRaw))) {
+      const rawSubtotalCents = currentSelectedSubtotalCents();
+      // rawSubtotalCents is the line items' sum BEFORE any adjustment --
+      // stable across this call regardless of manualAdjustmentCents, so
+      // this is safe even though it comes from the last /api/price response.
+      manualAdjustmentCents = rawSubtotalCents === null ? 0 : Math.round(parseFloat(overrideRaw) * 100) - rawSubtotalCents;
+    } else {
+      const adjustmentDollars = parseFloat(el('manual-adjustment').value);
+      manualAdjustmentCents = isNaN(adjustmentDollars) ? 0 : Math.round(adjustmentDollars * 100);
+    }
 
     return { propertyType, photography, addons, manualAdjustmentCents };
   }
@@ -552,6 +572,10 @@
     el('virtual_staging_qty').disabled = !el('addon-virtual_staging').checked;
     el('virtual_staging_qty').value = addons.virtual_staging_qty || 0;
     el('manual-adjustment').value = order.manualAdjustmentCents ? (order.manualAdjustmentCents / 100).toFixed(2) : '';
+    // The "exact package price" field is a pure input-mode convenience --
+    // only manualAdjustmentCents (the resulting delta) is ever persisted,
+    // so a loaded draft/job always shows up in the field above, never here.
+    el('adjustment-override').value = '';
   }
 
   // Clears every field back to a brand-new, empty form and disconnects
@@ -730,10 +754,17 @@
   function renderTotals(container, result) {
     const box = document.createElement('div');
     box.className = 'totals';
-    const rows = [
-      ['Subtotal', result.subtotalCents],
-    ];
+    // "Subtotal" is the ADJUSTED figure (finalSubtotalCents) -- HST is
+    // computed off that in pricing/engine.js, so the line labeled
+    // "Subtotal" needs to actually be the number HST gets taken from, or
+    // the breakdown doesn't add up when read top-to-bottom. (When there's
+    // no adjustment, finalSubtotalCents === subtotalCents, so this is a
+    // no-op for the common case.) Manual adjustment, if any, is shown
+    // BEFORE Subtotal so the arithmetic reads in order: line items (above)
+    // + adjustment = Subtotal.
+    const rows = [];
     if (result.manualAdjustmentCents) rows.push(['Manual adjustment', result.manualAdjustmentCents]);
+    rows.push(['Subtotal', result.finalSubtotalCents]);
     rows.push(['HST', result.hstCents]);
     rows.forEach(([label, cents]) => {
       const row = document.createElement('div');
@@ -846,6 +877,21 @@
     if (latestPrice.status === 'ok') return latestPrice.totalCents;
     if (latestPrice.status === 'ambiguous' && latestPrice.candidates && latestPrice.candidates[selectedCandidateIndex]) {
       return latestPrice.candidates[selectedCandidateIndex].totalCents;
+    }
+    return null;
+  }
+
+  // Same idea as currentSelectedTotalCents() but the line items' raw sum
+  // BEFORE manualAdjustmentCents -- used by readOrder() to turn a typed
+  // "exact package price" into the equivalent adjustment delta. Note this
+  // number does NOT depend on manualAdjustmentCents at all (pricing/engine.js
+  // computes it purely from line items), so it stays valid as the basis for
+  // that conversion even though it's a snapshot from the last price refresh.
+  function currentSelectedSubtotalCents() {
+    if (!latestPrice) return null;
+    if (latestPrice.status === 'ok') return latestPrice.subtotalCents;
+    if (latestPrice.status === 'ambiguous' && latestPrice.candidates && latestPrice.candidates[selectedCandidateIndex]) {
+      return latestPrice.candidates[selectedCandidateIndex].subtotalCents;
     }
     return null;
   }
@@ -1125,7 +1171,14 @@
   // same as pricing/tester.html (they don't change which packages match).
   // They're pricing-only fields, so they never touch commission either.
   el('virtual_staging_qty').addEventListener('input', refreshPricing);
-  el('manual-adjustment').addEventListener('input', refreshPricing);
+  el('manual-adjustment').addEventListener('input', () => {
+    if (el('manual-adjustment').value.trim() !== '') el('adjustment-override').value = '';
+    refreshPricing();
+  });
+  el('adjustment-override').addEventListener('input', () => {
+    if (el('adjustment-override').value.trim() !== '') el('manual-adjustment').value = '';
+    refreshPricing();
+  });
 
   ['clientName', 'address', 'shootDate'].forEach((id) => {
     el(id).addEventListener('input', () => { updateCreateButtonState(); refreshFolderPreview(); });
