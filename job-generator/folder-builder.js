@@ -15,7 +15,6 @@
 //     2 Video          <- Walkthrough Video OR Vlog Video selected
 //     3 Image          <- same condition as 2 Video (video-editing stock images)
 //   Revisions           <- always, empty
-//   Home Report         <- always
 //   Local Report        <- always, empty (added 2026-09-07)
 //   MLS                 <- always
 //   Floorplan           <- Floor Plan OR Site Plan selected (Site Plan merges in, no separate folder)
@@ -25,13 +24,22 @@
 //   VLOG                <- Vlog Video selected (finished)
 //
 // Drone Photos has no dedicated folder -- it's treated exactly like the
-// base photography service and flows through 1 Raws / MLS / Home Report.
+// base photography service and flows through 1 Raws / MLS / Local Report.
 //
 // Twilight and 3D Tour deliberately have NO dedicated folder (2026-09-06
 // change -- they used to) -- Luxury tier still gets 0 RAW/4 Raw HDR, and
 // 3D Virtual Tour is still a real priced addon in pricing-config.js, but
 // neither gets its own folder anymore. Do not re-add these without
 // re-confirming -- this was an explicit request, not an oversight.
+//
+// "Home Report" REMOVED 2026-09-10 -- it was never a real distinct thing
+// in this list; it was a naming mistake for what should always have been
+// called "Local Report" ("本地报表" on the price sheet), so both ended up
+// getting generated on every job since 2026-09-07. There IS a real,
+// separate "Home Report" service, but it's a newly-added service not yet
+// wired into pricing-config.js -- when that happens it gets its own
+// CONDITIONAL folder logic here, tied to that new service being selected.
+// Do not re-add an unconditional "Home Report" folder before then.
 
 const fs = require('fs');
 const path = require('path');
@@ -57,7 +65,7 @@ function getComponentFolders(order) {
   const stagingQty = Number(addons.virtual_staging_qty) || 0;
   const wantsVirtualStaging = !!addons.virtual_staging || stagingQty > 0;
 
-  const folders = ['0 RAW/1 Raws', 'Revisions', 'Home Report', 'Local Report', 'MLS'];
+  const folders = ['0 RAW/1 Raws', 'Revisions', 'Local Report', 'MLS'];
 
   if (isLuxury) {
     folders.push('0 RAW/4 Raw HDR');
