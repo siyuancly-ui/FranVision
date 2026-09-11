@@ -50,6 +50,13 @@ const deliveryEmail = require('./delivery-email.js');
 // way (2026-09-08): doing this creates an unrelated, disconnected
 // top-level folder in Dropbox named "0 RAW" or "MLS", sitting among every
 // other real job folder with nothing tying it back to the actual job.
+// 'Home Report' is kept here deliberately even though folder-builder.js
+// no longer generates it (removed 2026-09-10 -- it was a naming mistake
+// for 'Local Report', not a real distinct folder at the time). Jobs
+// created before that fix still have a real "Home Report" subfolder on
+// disk, and this safety net exists specifically to catch someone
+// mis-clicking into a job's own subfolder -- so it stays listed for as
+// long as any such job might still be around.
 const KNOWN_COMPONENT_FOLDER_NAMES = new Set([
   '0 RAW', 'Revisions', 'Home Report', 'Local Report', 'MLS',
   'Floorplan', 'Virtual Staging', 'Feature Sheets', 'Video', 'VLOG',

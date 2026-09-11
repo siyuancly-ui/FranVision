@@ -6,7 +6,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "for f in *.test.js; do node \"$f\" || exit 1; done"
+    "test": "node run-tests.js"
   },
   "dependencies": {
     "dotenv": "^17.4.2",

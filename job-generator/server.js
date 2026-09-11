@@ -58,16 +58,38 @@ function setAndPersistRootFolder(newRootFolder) {
   configStore.setRootFolder(newRootFolder);
 }
 
-// Native macOS "choose folder" dialog via AppleScript -- no dependencies,
-// same spirit as the .command launcher already used in this project.
-// Resolves { cancelled: true } if the user dismisses the dialog rather
-// than rejecting, since that's a normal outcome, not an error.
+// Native "choose folder" dialog -- AppleScript on macOS, a PowerShell
+// FolderBrowserDialog on Windows. No npm dependency either way. Resolves
+// { cancelled: true } (not a rejection) whenever the user dismisses the
+// dialog, the tool isn't available, or anything else goes wrong -- the
+// UI's Job Root Folder field is always typeable as a fallback, so a
+// missing picker must never be fatal.
 function pickFolderNative() {
   return new Promise((resolve) => {
     if (process.platform === 'darwin') {
       execFile('osascript', ['-e', 'POSIX path of (choose folder with prompt "Select Job Root Folder:")'], (err, stdout) => {
         if (err) return resolve({ cancelled: true });
         resolve({ cancelled: false, path: stdout.trim() });
+      });
+      return;
+    }
+
+    if (process.platform === 'win32') {
+      // -STA is required for FolderBrowserDialog (PowerShell 7 defaults to
+      // MTA and would throw); Windows PowerShell 5.1 -- present on every
+      // Win10/11 box -- honours it. Prints the chosen path on OK, nothing
+      // on Cancel.
+      const ps = [
+        'Add-Type -AssemblyName System.Windows.Forms;',
+        '$d = New-Object System.Windows.Forms.FolderBrowserDialog;',
+        "$d.Description = 'Select Job Root Folder:';",
+        '$d.ShowNewFolderButton = $true;',
+        "if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($d.SelectedPath) }",
+      ].join(' ');
+      execFile('powershell.exe', ['-NoProfile', '-STA', '-Command', ps], { windowsHide: true }, (err, stdout) => {
+        if (err) return resolve({ cancelled: true });
+        const picked = String(stdout).replace(/^﻿/, '').trim();
+        resolve(picked ? { cancelled: false, path: picked } : { cancelled: true });
       });
       return;
     }
