@@ -34,6 +34,15 @@
 // present in the job's componentFolders -- so the line is effectively
 // ALWAYS included for now, and will become correctly conditional the
 // moment folder-builder.js's rule is fixed, with no change needed here.
+//
+// Wording revision (2026-09-12, from real first use): the payment
+// paragraph now shows pre-tax + HST separately ("{{PRETAX_AMOUNT}}+HST=
+// {{TOTAL_AMOUNT}}") instead of just the total; the E-Transfer email was
+// corrected (frankystudio@, not frankstudio@) with a "(Not Gmail!!)" note
+// added underneath it; and each download line is now its own
+// label-then-link-then-blank-line block (was one single line) for
+// legibility. See delivery-email-template.{zh,en}.txt directly for the
+// exact wording -- those two files are the source of truth, not this file.
 
 const fs = require('fs');
 const path = require('path');
@@ -115,11 +124,16 @@ function substituteTokens(str, tokens) {
 // ---- Pure: builds the {{TOKEN}} -> value map for one language, given the
 // already-resolved links (linkByKey: {HDR: 'https://...'|null, ...}) and
 // the manual-fill-in fields, which are always the placeholder for now. ----
-function buildTokens({ lang, clientName, address, totalCents, linkByKey }) {
+function buildTokens({ lang, clientName, address, totalCents, preTaxCents, linkByKey }) {
   const ph = PLACEHOLDERS[lang];
   const tokens = {
     CLIENT_NAME: clientName || '',
     PROPERTY_ADDRESS: address || '',
+    // Shown together in the payment paragraph as "{{PRETAX_AMOUNT}}+HST=
+    // {{TOTAL_AMOUNT}}" (2026-09-12, real-use request) -- pre-tax and
+    // total, not just the total alone, so the HST portion is legible at a
+    // glance instead of a single opaque number.
+    PRETAX_AMOUNT: centsToDisplay(preTaxCents || 0),
     TOTAL_AMOUNT: centsToDisplay(totalCents || 0),
     ALL_IN_ONE_LINK: ph.ALL_IN_ONE_LINK,
     WAVE_LINK: ph.WAVE_LINK,
@@ -141,7 +155,7 @@ function writeDeliveryEmailFiles(jobFolderAbsolutePath, { zhContent, enContent }
 // ---- The one function server.js calls. NEVER throws -- same contract as
 // dropbox-sync.js. `client` is a test-only seam (delivery-email.test.js
 // injects a fake Dropbox client so the suite never hits the real API). ----
-async function generateDeliveryEmails({ jobFolderPath, folderName, clientName, address, order, componentFolders, totalCents, client }) {
+async function generateDeliveryEmails({ jobFolderPath, folderName, clientName, address, order, componentFolders, totalCents, preTaxCents, client }) {
   try {
     const lines = getDeliverableLines(order, componentFolders);
     const includedKeys = new Set(lines.filter((l) => l.include).map((l) => l.key));
@@ -158,8 +172,8 @@ async function generateDeliveryEmails({ jobFolderPath, folderName, clientName, a
 
     const zhTemplate = fs.readFileSync(TEMPLATE_ZH_PATH, 'utf8');
     const enTemplate = fs.readFileSync(TEMPLATE_EN_PATH, 'utf8');
-    const zhContent = renderTemplate(zhTemplate, buildTokens({ lang: 'zh', clientName, address, totalCents, linkByKey }), includedKeys);
-    const enContent = renderTemplate(enTemplate, buildTokens({ lang: 'en', clientName, address, totalCents, linkByKey }), includedKeys);
+    const zhContent = renderTemplate(zhTemplate, buildTokens({ lang: 'zh', clientName, address, totalCents, preTaxCents, linkByKey }), includedKeys);
+    const enContent = renderTemplate(enTemplate, buildTokens({ lang: 'en', clientName, address, totalCents, preTaxCents, linkByKey }), includedKeys);
 
     const written = writeDeliveryEmailFiles(jobFolderPath, { zhContent, enContent });
     return { attempted: true, success: linkErrors.length === 0, ...written, linkByKey, linkErrors };

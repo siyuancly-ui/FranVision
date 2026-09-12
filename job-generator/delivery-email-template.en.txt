@@ -10,10 +10,12 @@ You can use the All-in-One link above to preview and share the listing online.
 Please note that the All-in-One website is for preview and sharing only. All downloadable files will be provided separately through Dropbox after payment.
 
 Payment
-Total amount due: {{TOTAL_AMOUNT}} (tax included). You can complete the payment by E-Transfer or Credit Card.
+Total amount due: {{PRETAX_AMOUNT}}+HST= {{TOTAL_AMOUNT}}. You can complete the payment by E-Transfer or Credit Card.
 
 E-Transfer: Please send the payment to:
-frankstudio@mail.com
+frankystudio@mail.com
+(Not Gmail!!)
+
 After the transfer is completed, please send the payment screenshot or confirmation to Franky.
 
 Credit Card: Please use the Wave payment link below:
@@ -24,13 +26,25 @@ After the credit card payment is completed, please also let Franky know so we ca
 The download links are below ⬇
 Please copy and paste the links into your browser if needed.
 Depending on the services included in your order, the following files are available:
-{{LINE:HDR}}HDR High-Resolution Photos: {{HDR_LINK}}
-{{LINE:MLS}}MLS Photos: {{MLS_LINK}}
-{{LINE:VIDEO}}Video: {{VIDEO_LINK}}
-{{LINE:FLOORPLAN}}Floor Plan / Site Plan: {{FLOORPLAN_LINK}}
-{{LINE:LOCAL_REPORT}}Local Report: {{LOCAL_REPORT_LINK}}
-{{LINE:HOME_REPORT}}Home Report: {{HOME_REPORT_LINK}}
 
+{{LINE:HDR}}HDR High-Resolution Photos:
+{{LINE:HDR}}{{HDR_LINK}}
+{{LINE:HDR}}
+{{LINE:MLS}}MLS Photos:
+{{LINE:MLS}}{{MLS_LINK}}
+{{LINE:MLS}}
+{{LINE:VIDEO}}Video:
+{{LINE:VIDEO}}{{VIDEO_LINK}}
+{{LINE:VIDEO}}
+{{LINE:FLOORPLAN}}Floor Plan / Site Plan:
+{{LINE:FLOORPLAN}}{{FLOORPLAN_LINK}}
+{{LINE:FLOORPLAN}}
+{{LINE:LOCAL_REPORT}}Local Report:
+{{LINE:LOCAL_REPORT}}{{LOCAL_REPORT_LINK}}
+{{LINE:LOCAL_REPORT}}
+{{LINE:HOME_REPORT}}Home Report:
+{{LINE:HOME_REPORT}}{{HOME_REPORT_LINK}}
+{{LINE:HOME_REPORT}}
 Thank you!
 Franky
 FranVision Media

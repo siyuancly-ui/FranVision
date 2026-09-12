@@ -118,23 +118,24 @@ test('renderTemplate: an unknown {{TOKEN}} is left as-is rather than silently bl
 // ---- buildTokens ----
 
 test('buildTokens: All-in-One / Wave stay literal placeholders (no system generates those links yet)', () => {
-  const tokens = buildTokens({ lang: 'en', clientName: 'Cindy', address: '1 Main St', totalCents: 10000, linkByKey: {} });
+  const tokens = buildTokens({ lang: 'en', clientName: 'Cindy', address: '1 Main St', totalCents: 10000, preTaxCents: 8850, linkByKey: {} });
   assert.ok(tokens.ALL_IN_ONE_LINK.toLowerCase().includes('fill in'));
   assert.ok(tokens.WAVE_LINK.toLowerCase().includes('fill in'));
 });
 
 test('buildTokens: resolved links are used as-is; unresolved ones fall back to a placeholder', () => {
   const tokens = buildTokens({
-    lang: 'en', clientName: 'Cindy', address: '1 Main St', totalCents: 10000,
+    lang: 'en', clientName: 'Cindy', address: '1 Main St', totalCents: 10000, preTaxCents: 8850,
     linkByKey: { MLS: 'https://dropbox.com/mls', HDR: null },
   });
   assert.strictEqual(tokens.MLS_LINK, 'https://dropbox.com/mls');
   assert.ok(tokens.HDR_LINK.toLowerCase().includes('not available'));
 });
 
-test('buildTokens: total formatted via pricing-adapter\'s centsToDisplay', () => {
-  const tokens = buildTokens({ lang: 'en', clientName: 'Cindy', address: '1 Main St', totalCents: 17854, linkByKey: {} });
+test('buildTokens: total and pre-tax amounts both formatted via pricing-adapter\'s centsToDisplay (2026-09-12: payment paragraph shows both, not just the total)', () => {
+  const tokens = buildTokens({ lang: 'en', clientName: 'Cindy', address: '1 Main St', totalCents: 17854, preTaxCents: 15800, linkByKey: {} });
   assert.strictEqual(tokens.TOTAL_AMOUNT, '$178.54');
+  assert.strictEqual(tokens.PRETAX_AMOUNT, '$158.00');
 });
 
 // ---- generateDeliveryEmails (end-to-end, fake Dropbox client) ----
@@ -174,6 +175,7 @@ await testAsync('generateDeliveryEmails: writes both language files with links f
         order: { addons: { floor_plan: true } },
         componentFolders: ['0 RAW/1 Raws', 'Revisions', 'Home Report', 'Local Report', 'MLS', 'Floorplan'],
         totalCents: 17854,
+        preTaxCents: 15800,
         client: fakeDbx,
       });
       assert.strictEqual(result.success, true);
@@ -184,10 +186,15 @@ await testAsync('generateDeliveryEmails: writes both language files with links f
       const en = fs.readFileSync(path.join(dir, OUTPUT_FILENAME_EN), 'utf8');
       assert.ok(zh.includes('Cindy Lu'));
       assert.ok(zh.includes('6-260 Eagle St, Newmarket'));
-      assert.ok(zh.includes('$178.54'));
+      // Payment paragraph shows pre-tax + HST, not just the total (2026-09-12).
+      assert.ok(zh.includes('$158.00+HST= $178.54'));
       assert.ok(zh.includes('https://dropbox.com/link/Job/MLS for download'));
       assert.ok(zh.includes('https://dropbox.com/link/Job/Floorplan'));
-      // No video was ordered -- the whole Video line must be gone, not just blanked.
+      // Corrected E-Transfer address + the "not Gmail" note (2026-09-12).
+      assert.ok(zh.includes('frankystudio@mail.com'));
+      assert.ok(zh.includes('(Not Gmail!!)'));
+      // No video was ordered -- the whole Video block (label+link+blank
+      // line) must be gone, not just blanked.
       assert.ok(!zh.includes('Video 视频'));
       assert.ok(!en.includes('Video:'));
     });

@@ -482,7 +482,7 @@ async function handleApi(req, res, urlPath) {
         await dropboxSync.ensureMlsForDownloadFolder({ folderName });
         deliveryEmailResult = await deliveryEmail.generateDeliveryEmails({
           jobFolderPath, folderName, clientName: body.clientName, address: body.address,
-          order, componentFolders, totalCents: price.totalCents,
+          order, componentFolders, totalCents: price.totalCents, preTaxCents: price.finalSubtotalCents,
         });
       } catch (err) {
         deliveryEmailResult = { attempted: true, success: false, error: 'Unexpected delivery-email failure: ' + err.message };
