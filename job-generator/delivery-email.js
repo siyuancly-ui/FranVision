@@ -121,6 +121,22 @@ function substituteTokens(str, tokens) {
   return str.replace(/\{\{([A-Z_]+)\}\}/g, (full, key) => (key in tokens ? tokens[key] : full));
 }
 
+// Pre-tax amounts are always whole dollars in practice -- every
+// pricing-config.js price and manual-adjustment/override entry Franky
+// actually uses is a round dollar figure; HST is what introduces cents.
+// So PRETAX_AMOUNT drops the decimals ("$599") rather than always showing
+// ".00" (2026-09-12 request). Falls back to full cents display (still via
+// centsToDisplay) on the rare/unexpected case a pre-tax amount does carry
+// cents (the manual-adjustment UI fields are `step="0.01"`, so this isn't
+// actually unreachable) -- so this never silently truncates real money.
+function formatPreTaxAmount(cents) {
+  const c = Number(cents) || 0;
+  const sign = c < 0 ? '-' : '';
+  const abs = Math.abs(c);
+  if (abs % 100 === 0) return sign + '$' + (abs / 100).toFixed(0);
+  return centsToDisplay(c);
+}
+
 // ---- Pure: builds the {{TOKEN}} -> value map for one language, given the
 // already-resolved links (linkByKey: {HDR: 'https://...'|null, ...}) and
 // the manual-fill-in fields, which are always the placeholder for now. ----
@@ -133,7 +149,7 @@ function buildTokens({ lang, clientName, address, totalCents, preTaxCents, linkB
     // {{TOTAL_AMOUNT}}" (2026-09-12, real-use request) -- pre-tax and
     // total, not just the total alone, so the HST portion is legible at a
     // glance instead of a single opaque number.
-    PRETAX_AMOUNT: centsToDisplay(preTaxCents || 0),
+    PRETAX_AMOUNT: formatPreTaxAmount(preTaxCents || 0),
     TOTAL_AMOUNT: centsToDisplay(totalCents || 0),
     ALL_IN_ONE_LINK: ph.ALL_IN_ONE_LINK,
     WAVE_LINK: ph.WAVE_LINK,
@@ -188,6 +204,7 @@ module.exports = {
   getDeliverableLines,
   renderTemplate,
   buildTokens,
+  formatPreTaxAmount,
   writeDeliveryEmailFiles,
   generateDeliveryEmails,
 };

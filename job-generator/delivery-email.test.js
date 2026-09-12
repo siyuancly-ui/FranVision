@@ -17,6 +17,7 @@ const {
   getDeliverableLines,
   renderTemplate,
   buildTokens,
+  formatPreTaxAmount,
   generateDeliveryEmails,
   OUTPUT_FILENAME_ZH,
   OUTPUT_FILENAME_EN,
@@ -132,10 +133,31 @@ test('buildTokens: resolved links are used as-is; unresolved ones fall back to a
   assert.ok(tokens.HDR_LINK.toLowerCase().includes('not available'));
 });
 
-test('buildTokens: total and pre-tax amounts both formatted via pricing-adapter\'s centsToDisplay (2026-09-12: payment paragraph shows both, not just the total)', () => {
+test('buildTokens: total keeps 2 decimals; pre-tax drops them when it\'s a whole dollar (2026-09-12: payment paragraph shows both, not just the total)', () => {
   const tokens = buildTokens({ lang: 'en', clientName: 'Cindy', address: '1 Main St', totalCents: 17854, preTaxCents: 15800, linkByKey: {} });
   assert.strictEqual(tokens.TOTAL_AMOUNT, '$178.54');
-  assert.strictEqual(tokens.PRETAX_AMOUNT, '$158.00');
+  assert.strictEqual(tokens.PRETAX_AMOUNT, '$158');
+});
+
+// ---- formatPreTaxAmount ----
+// Pre-tax amounts are always whole dollars in practice (every
+// pricing-config.js price and manual-adjustment/override Franky actually
+// uses is round) -- so no ".00" clutter. But the manual-adjustment UI
+// fields are `step="0.01"`, so a pre-tax amount WITH cents isn't actually
+// unreachable -- this must never silently truncate real money in that case.
+
+test('formatPreTaxAmount: whole dollars drop the decimals', () => {
+  assert.strictEqual(formatPreTaxAmount(59900), '$599');
+  assert.strictEqual(formatPreTaxAmount(0), '$0');
+});
+
+test('formatPreTaxAmount: a non-round amount still shows full cents rather than truncating', () => {
+  assert.strictEqual(formatPreTaxAmount(15850), '$158.50');
+});
+
+test('formatPreTaxAmount: negative amounts keep the sign in either format', () => {
+  assert.strictEqual(formatPreTaxAmount(-5000), '-$50');
+  assert.strictEqual(formatPreTaxAmount(-5050), '-$50.50');
 });
 
 // ---- generateDeliveryEmails (end-to-end, fake Dropbox client) ----
@@ -186,8 +208,9 @@ await testAsync('generateDeliveryEmails: writes both language files with links f
       const en = fs.readFileSync(path.join(dir, OUTPUT_FILENAME_EN), 'utf8');
       assert.ok(zh.includes('Cindy Lu'));
       assert.ok(zh.includes('6-260 Eagle St, Newmarket'));
-      // Payment paragraph shows pre-tax + HST, not just the total (2026-09-12).
-      assert.ok(zh.includes('$158.00+HST= $178.54'));
+      // Payment paragraph shows pre-tax + HST, not just the total (2026-09-12);
+      // pre-tax drops its decimals here since 15800 cents is a whole dollar.
+      assert.ok(zh.includes('$158+HST= $178.54'));
       assert.ok(zh.includes('https://dropbox.com/link/Job/MLS for download'));
       assert.ok(zh.includes('https://dropbox.com/link/Job/Floorplan'));
       // Corrected E-Transfer address + the "not Gmail" note (2026-09-12).
