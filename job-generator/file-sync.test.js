@@ -254,6 +254,25 @@ test('planPush: deleted on both sides already -- stale manifest entry, no-op', (
   assert.deepStrictEqual(conflicts, []);
 });
 
+test('planPush: local unchanged but Dropbox is missing the file (deleted there some other way, or a previous push silently failed) -- re-uploaded, not silently skipped', () => {
+  const local = [{ relativePath: 'a.jpg', size: 10, mtimeMs: 1 }]; // matches the manifest exactly
+  const manifest = { 'a.jpg': { local: { size: 10, mtimeMs: 1 }, dropbox: { rev: 'r1', size: 10 } } };
+  const { toUpload, conflicts } = planPush(local, [], manifest); // remote has nothing at all
+  assert.strictEqual(toUpload.length, 1);
+  assert.strictEqual(toUpload[0].relativePath, 'a.jpg');
+  assert.deepStrictEqual(conflicts, []);
+});
+
+test('planPush: a file the manifest never confirmed on Dropbox is not force-uploaded by the restore path (would double-count a normal first-time upload)', () => {
+  const local = [{ relativePath: 'a.jpg', size: 10, mtimeMs: 1 }];
+  const manifest = { 'a.jpg': { local: { size: 10, mtimeMs: 1 } } }; // no `dropbox` key -- never actually confirmed uploaded
+  const { toUpload, conflicts } = planPush(local, [], manifest);
+  // localChanged is false here (matches manifest.local), and there's no
+  // recorded.dropbox to restore from -- correctly a no-op, not an upload.
+  assert.deepStrictEqual(toUpload, []);
+  assert.deepStrictEqual(conflicts, []);
+});
+
 // ---- planPull (mirror of planPush) ----
 
 test('planPull: a brand-new remote file is downloaded, no conflict', () => {
@@ -296,6 +315,25 @@ test('planPull: Dropbox deletion vs. a local edit is a conflict, not a delete', 
   assert.deepStrictEqual(toDeleteLocal, []);
   assert.strictEqual(conflicts.length, 1);
   assert.ok(conflicts[0].reason.includes('Deleted on Dropbox'));
+});
+
+test('planPull: Dropbox unchanged but local is missing the file (deleted there some other way, or a previous pull silently failed) -- re-downloaded, not silently skipped', () => {
+  const remote = [{ relativePath: 'a.jpg', size: 10, rev: 'r1' }]; // matches the manifest exactly
+  const manifest = { 'a.jpg': { local: { size: 10, mtimeMs: 1 }, dropbox: { rev: 'r1', size: 10 } } };
+  const { toDownload, conflicts } = planPull(remote, [], manifest); // local has nothing at all
+  assert.strictEqual(toDownload.length, 1);
+  assert.strictEqual(toDownload[0].relativePath, 'a.jpg');
+  assert.deepStrictEqual(conflicts, []);
+});
+
+test('planPull: a file the manifest never confirmed locally is not force-downloaded by the restore path (would double-count a normal first-time download)', () => {
+  const remote = [{ relativePath: 'a.jpg', size: 10, rev: 'r1' }];
+  const manifest = { 'a.jpg': { dropbox: { rev: 'r1', size: 10 } } }; // no `local` key -- never actually confirmed downloaded
+  const { toDownload, conflicts } = planPull(remote, [], manifest);
+  // remoteChanged is false here (matches manifest.dropbox), and there's no
+  // recorded.local to restore from -- correctly a no-op, not a download.
+  assert.deepStrictEqual(toDownload, []);
+  assert.deepStrictEqual(conflicts, []);
 });
 
 // ---- uploadFile / downloadFile with fake clients ----

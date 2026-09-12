@@ -29,6 +29,17 @@
 // inside the job folder itself (travels with it) but is excluded from
 // what gets walked/synced, same as .DS_Store.
 //
+// Restoring a file the manifest thinks exists but doesn't (found in real
+// use, 2026-09-12): if the SIDE PUSH/PULL IS COPYING FROM is unchanged
+// (matches the manifest) but the OTHER side is simply missing the file --
+// deleted there by hand outside this tool, or a previous push/pull silently
+// failed after the manifest already recorded success -- planPush/planPull
+// re-upload/re-download it rather than silently doing nothing forever. This
+// is deliberately NOT a conflict: the source side never changed, so there is
+// nothing ambiguous to protect against, and copying a file to a side that's
+// merely missing it can never destroy someone's newer edit the way a
+// mirrored delete could.
+//
 // job.json and Job Info.txt (see job-files.js) are LOCAL-ONLY (see
 // LOCAL_ONLY_FILENAMES) -- explicit user requirement that these two stay
 // only in the local job folder, never on Dropbox at all, regardless of
@@ -217,7 +228,24 @@ function planPush(localFiles, remoteFiles, manifest) {
     const recorded = manifest[local.relativePath];
     const remote = remoteByPath.get(local.relativePath);
     const localChanged = !recorded || !recorded.local || recorded.local.size !== local.size || recorded.local.mtimeMs !== local.mtimeMs;
-    if (!localChanged) continue; // nothing new to push for this file
+
+    if (!localChanged) {
+      // Local matches what we last confirmed, so ordinarily there's nothing
+      // to do for this file. But if the manifest says Dropbox already has
+      // it and Dropbox currently does NOT (deleted there some other way --
+      // by hand, by another tool -- or a previous push silently failed
+      // after recording success), the manifest's promise is broken: local's
+      // copy is the only one left, and Push's whole job is "make Dropbox
+      // match local" -- so restore it instead of silently doing nothing
+      // forever (found in real use, 2026-09-12: files could go missing on
+      // Dropbox and Push would never notice or re-upload them). This can
+      // never destroy anything -- re-uploading a file that already matches
+      // local is always safe, unlike a delete.
+      if (recorded && recorded.dropbox && !remote) {
+        toUpload.push(local);
+      }
+      continue;
+    }
 
     const remoteChanged = !!remote && (!recorded || !recorded.dropbox || recorded.dropbox.rev !== remote.rev);
     if (remote && remoteChanged) {
@@ -259,7 +287,20 @@ function planPull(remoteFiles, localFiles, manifest) {
     const recorded = manifest[remote.relativePath];
     const local = localByPath.get(remote.relativePath);
     const remoteChanged = !recorded || !recorded.dropbox || recorded.dropbox.rev !== remote.rev;
-    if (!remoteChanged) continue;
+
+    if (!remoteChanged) {
+      // Mirror image of planPush's equivalent check above: Dropbox matches
+      // what we last confirmed, so ordinarily there's nothing to do. But if
+      // the manifest says local already has this file and local currently
+      // does NOT (deleted locally some other way, or a previous pull
+      // silently failed after recording success), Dropbox's copy is the
+      // only one left, and Pull's whole job is "make local match Dropbox"
+      // -- so restore it instead of silently doing nothing forever.
+      if (recorded && recorded.local && !local) {
+        toDownload.push(remote);
+      }
+      continue;
+    }
 
     const localChanged = !!local && (!recorded || !recorded.local || recorded.local.size !== local.size || recorded.local.mtimeMs !== local.mtimeMs);
     if (local && localChanged) {
