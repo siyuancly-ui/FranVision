@@ -33,6 +33,7 @@ const commissionConfig = require('./commission-config.js');
 const fileSync = require('./file-sync.js');
 const calendarFile = require('./calendar-file.js');
 const draftStore = require('./draft-store.js');
+const deliveryEmail = require('./delivery-email.js');
 
 const PORT = 4173;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -57,16 +58,38 @@ function setAndPersistRootFolder(newRootFolder) {
   configStore.setRootFolder(newRootFolder);
 }
 
-// Native macOS "choose folder" dialog via AppleScript -- no dependencies,
-// same spirit as the .command launcher already used in this project.
-// Resolves { cancelled: true } if the user dismisses the dialog rather
-// than rejecting, since that's a normal outcome, not an error.
+// Native "choose folder" dialog -- AppleScript on macOS, a PowerShell
+// FolderBrowserDialog on Windows. No npm dependency either way. Resolves
+// { cancelled: true } (not a rejection) whenever the user dismisses the
+// dialog, the tool isn't available, or anything else goes wrong -- the
+// UI's Job Root Folder field is always typeable as a fallback, so a
+// missing picker must never be fatal.
 function pickFolderNative() {
   return new Promise((resolve) => {
     if (process.platform === 'darwin') {
       execFile('osascript', ['-e', 'POSIX path of (choose folder with prompt "Select Job Root Folder:")'], (err, stdout) => {
         if (err) return resolve({ cancelled: true });
         resolve({ cancelled: false, path: stdout.trim() });
+      });
+      return;
+    }
+
+    if (process.platform === 'win32') {
+      // -STA is required for FolderBrowserDialog (PowerShell 7 defaults to
+      // MTA and would throw); Windows PowerShell 5.1 -- present on every
+      // Win10/11 box -- honours it. Prints the chosen path on OK, nothing
+      // on Cancel.
+      const ps = [
+        'Add-Type -AssemblyName System.Windows.Forms;',
+        '$d = New-Object System.Windows.Forms.FolderBrowserDialog;',
+        "$d.Description = 'Select Job Root Folder:';",
+        '$d.ShowNewFolderButton = $true;',
+        "if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($d.SelectedPath) }",
+      ].join(' ');
+      execFile('powershell.exe', ['-NoProfile', '-STA', '-Command', ps], { windowsHide: true }, (err, stdout) => {
+        if (err) return resolve({ cancelled: true });
+        const picked = String(stdout).replace(/^﻿/, '').trim();
+        resolve(picked ? { cancelled: false, path: picked } : { cancelled: true });
       });
       return;
     }
@@ -368,9 +391,23 @@ async function handleApi(req, res, urlPath) {
       // (POST /api/root-folder), so a one-off job elsewhere never
       // silently changes what the next job defaults to.
       // createJobFolders is idempotent -- on an update it just tops up any
-      // component folders the new service selection now needs.
-      const componentFolders = folderBuilder.createJobFolders(jobFolderPath, order).slice(1)
-        .map((abs) => path.relative(jobFolderPath, abs));
+      // component folders the new service selection now needs. Its return
+      // value (absolute filesystem paths) is used only for the mkdir side
+      // effect here -- componentFolders itself comes straight from
+      // getComponentFolders(order) instead of path.relative()-ing those
+      // absolute paths back down. path.relative()/path.join() use the HOST
+      // OS's native separator ('\' on Windows), but every downstream
+      // consumer of componentFolders (dropbox-sync.js#expandFolderPaths,
+      // delivery-email.js's folder-name Set, diffComponentFolders) expects
+      // the canonical '/'-joined POSIX form folder-builder.js always
+      // produces -- found in real use on Windows (2026-09-11): "0 RAW"'s
+      // nested entries (e.g. "0 RAW\1 Raws") never split on '/', so
+      // expandFolderPaths never emitted a separate "0 RAW" parent folder to
+      // create on Dropbox at all, only oddly-named single folders with a
+      // literal backslash in the name. Single-segment folders (Revisions,
+      // MLS, ...) were unaffected, which is why only "0 RAW" looked missing.
+      folderBuilder.createJobFolders(jobFolderPath, order);
+      const componentFolders = folderBuilder.getComponentFolders(order);
 
       // UPDATE only: prune component folders that are no longer part of the
       // selected services -- but ONLY when they're empty (no real files).
@@ -433,6 +470,24 @@ async function handleApi(req, res, urlPath) {
         }
       }
 
+      // Delivery Email (see delivery-email.js) -- interim .txt form of the
+      // eventual client delivery page. Best-effort, same as Dropbox above:
+      // pre-create the Dropbox-only 'MLS for download' folder (so its
+      // shared link can be generated immediately, before Photo Sync
+      // Worker ever writes into it), then generate both language files.
+      // Never blocks/fails job creation -- wrapped in try/catch on top of
+      // both callees' own never-throw contract.
+      let deliveryEmailResult;
+      try {
+        await dropboxSync.ensureMlsForDownloadFolder({ folderName });
+        deliveryEmailResult = await deliveryEmail.generateDeliveryEmails({
+          jobFolderPath, folderName, clientName: body.clientName, address: body.address,
+          order, componentFolders, totalCents: price.totalCents, preTaxCents: price.finalSubtotalCents,
+        });
+      } catch (err) {
+        deliveryEmailResult = { attempted: true, success: false, error: 'Unexpected delivery-email failure: ' + err.message };
+      }
+
       const jobData = {
         jobId,
         createdAt,
@@ -478,6 +533,7 @@ async function handleApi(req, res, urlPath) {
         commission,
         dropbox: dropboxResult,
         dropboxPrune: dropboxPruneResult || null,
+        deliveryEmail: deliveryEmailResult,
         pendingConfirmation,
       });
     }

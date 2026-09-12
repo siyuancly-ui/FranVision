@@ -40,6 +40,17 @@ const { Dropbox } = require('dropbox');
 
 const TEMPLATE_NAME = 'FranVision Job';
 
+// The Dropbox-only "delivery render" folder Photo Sync Worker lazily
+// writes MLS delivery images into (see photo-sync-worker/CLAUDE.md's
+// DOWNLOAD_SUBFOLDER) -- top-level, sibling to 'MLS', not nested under it.
+// folder-builder.js deliberately does NOT list this as a component folder
+// (it's never created on local disk -- nothing ever populates it locally,
+// Photo Sync Worker writes straight from Dropbox thumbnails to Dropbox).
+// ensureMlsForDownloadFolder() below pre-creates it EMPTY at job-creation
+// time purely so delivery-email.js can generate its shared link
+// immediately, instead of waiting for the first photo to sync.
+const MLS_FOR_DOWNLOAD_SUBFOLDER = 'MLS for download';
+
 function isConfigured() {
   return !!(
     process.env.DROPBOX_APP_KEY &&
@@ -119,6 +130,14 @@ function isFolderAlreadyExistsError(err) {
 function isPropertyGroupAlreadyExistsError(err) {
   const msg = extractDropboxErrorMessage(err);
   return typeof msg === 'string' && msg.indexOf('property_group_already_exists') !== -1;
+}
+
+// True when create_shared_link_with_settings failed because a shared link
+// for this path already exists -- listSharedLinks() is the documented way
+// to fetch it in that case (see createSharedLink() below).
+function isSharedLinkAlreadyExistsError(err) {
+  const msg = extractDropboxErrorMessage(err);
+  return typeof msg === 'string' && msg.indexOf('shared_link_already_exists') !== -1;
 }
 
 // ---- The one function server.js calls ----
@@ -295,14 +314,71 @@ async function updateJobFoldersOnDropbox({ folderName, foldersToCreate, foldersT
   }
 }
 
+// ---- Delivery email support (see delivery-email.js) ----
+
+// Pre-creates the empty top-level 'MLS for download' folder for a job --
+// see the MLS_FOR_DOWNLOAD_SUBFOLDER comment above for why this exists.
+// Same never-throw / idempotent contract as syncJobFolderToDropbox: an
+// "already exists" response is success, not an error. Deliberately
+// separate from syncJobFolderToDropbox/folder-builder.js -- this folder is
+// Dropbox-only and not part of the job's normal component-folder list.
+async function ensureMlsForDownloadFolder({ folderName, client }) {
+  if (!isConfigured()) {
+    return { attempted: false, success: false, skipped: true, error: 'Dropbox is not configured -- local job creation is unaffected.' };
+  }
+  const dropboxPath = '/' + folderName + '/' + MLS_FOR_DOWNLOAD_SUBFOLDER;
+  try {
+    const dbx = client || getClient();
+    await dbx.filesCreateFolderV2({ path: dropboxPath });
+    return { attempted: true, success: true, dropboxPath };
+  } catch (err) {
+    if (isFolderAlreadyExistsError(err)) {
+      return { attempted: true, success: true, dropboxPath };
+    }
+    return { attempted: true, success: false, dropboxPath, error: extractDropboxErrorMessage(err) };
+  }
+}
+
+// Best-effort: returns a public "anyone with the link can view" Dropbox
+// shared link for dropboxPath, creating one if none exists yet, or
+// reusing the existing one (Dropbox allows only one shared link per path)
+// via listSharedLinks(). NEVER throws -- same contract as every other
+// function in this file. `success:false` (missing folder, Dropbox not
+// configured, network error, etc.) is the normal/expected failure mode
+// delivery-email.js falls back to a placeholder token for.
+async function createSharedLink({ dropboxPath, client }) {
+  if (!isConfigured()) {
+    return { success: false, error: 'Dropbox is not configured.' };
+  }
+  try {
+    const dbx = client || getClient();
+    try {
+      const result = await dbx.sharingCreateSharedLinkWithSettings({ path: dropboxPath });
+      return { success: true, url: result.result.url };
+    } catch (err) {
+      if (!isSharedLinkAlreadyExistsError(err)) throw err;
+      const listed = await dbx.sharingListSharedLinks({ path: dropboxPath, direct_only: true });
+      const existing = listed.result && listed.result.links && listed.result.links[0];
+      if (existing && existing.url) return { success: true, url: existing.url };
+      return { success: false, error: 'Shared link already exists but could not be retrieved.' };
+    }
+  } catch (err) {
+    return { success: false, error: extractDropboxErrorMessage(err) };
+  }
+}
+
 module.exports = {
   TEMPLATE_NAME,
+  MLS_FOR_DOWNLOAD_SUBFOLDER,
   isConfigured,
   getClient,
   expandFolderPaths,
   extractDropboxErrorMessage,
   isFolderAlreadyExistsError,
   isPropertyGroupAlreadyExistsError,
+  isSharedLinkAlreadyExistsError,
   syncJobFolderToDropbox,
   updateJobFoldersOnDropbox,
+  ensureMlsForDownloadFolder,
+  createSharedLink,
 };
