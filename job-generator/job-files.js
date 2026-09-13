@@ -112,7 +112,7 @@ function buildJobInfoText(jobData) {
       lines.push('  ' + 'Manual adjustment'.padEnd(40) + centsToDisplay(p.manualAdjustmentCents));
     }
     lines.push('  ' + '-'.repeat(50));
-    lines.push('  ' + 'Subtotal'.padEnd(40) + centsToDisplay(p.subtotalCents + (p.manualAdjustmentCents || 0)));
+    lines.push('  ' + 'Subtotal'.padEnd(40) + centsToDisplay(p.finalSubtotalCents));
     lines.push('  ' + ('HST (' + config.taxRatePercent + '%)').padEnd(40) + centsToDisplay(p.hstCents));
     lines.push('  ' + 'Total'.padEnd(40) + centsToDisplay(p.totalCents));
   } else {

@@ -42,7 +42,7 @@ function makeJobData(overrides) {
     order,
     price: calculatePrice(order),
     folderName: '2026.08.27 12 Cozens Dr, Markham_Jane Smith',
-    componentFolders: ['0 RAW/1 Raws', 'MLS', 'Video'],
+    componentFolders: ['0 RAW/1 Raws', 'HDR Photos', 'Video'],
   }, overrides);
 }
 

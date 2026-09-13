@@ -130,39 +130,42 @@ function pad2(n) {
   return String(n).padStart(2, '0');
 }
 
-// 'yyyy/mm/dd' + 'HH:MM' -> 'YYYYMMDDTHHMMSS' (floating local time -- no
-// Z, no TZID; the user is importing this by hand into their own calendar
-// on their own machine, so "local time, whatever that means to you" is
-// the right, simplest interpretation).
-function toLocalDateTimeStamp(shootDate, shootTime) {
-  const [y, mo, d] = shootDate.split('/');
-  const [hh, mm] = shootTime.split(':');
-  return y + mo + d + 'T' + hh + mm + '00';
+// Parses 'yyyy/mm/dd' + 'HH:MM' as LOCAL wall-clock time on THIS machine
+// (the one running job-generator, i.e. wherever the shoot actually is) --
+// returns a real Date. new Date(y, mo, d, hh, mm) always uses the host
+// OS's configured timezone (DST-correct for that exact date), so this
+// needs no manual timezone table.
+function parseLocalShootDateTime(shootDate, shootTime) {
+  const [y, mo, d] = shootDate.split('/').map(Number);
+  const [hh, mm] = shootTime.split(':').map(Number);
+  return new Date(y, mo - 1, d, hh, mm, 0);
 }
 
-function addMinutes(localDateTimeStamp, minutes) {
-  const y = Number(localDateTimeStamp.slice(0, 4));
-  const mo = Number(localDateTimeStamp.slice(4, 6)) - 1;
-  const d = Number(localDateTimeStamp.slice(6, 8));
-  const hh = Number(localDateTimeStamp.slice(9, 11));
-  const mm = Number(localDateTimeStamp.slice(11, 13));
-  const ss = Number(localDateTimeStamp.slice(13, 15));
-  const dt = new Date(y, mo, d, hh, mm, ss);
-  dt.setMinutes(dt.getMinutes() + minutes);
-  return dt.getFullYear() + pad2(dt.getMonth() + 1) + pad2(dt.getDate()) + 'T' + pad2(dt.getHours()) + pad2(dt.getMinutes()) + pad2(dt.getSeconds());
-}
-
-function utcNowStamp() {
-  const now = new Date();
-  return now.getUTCFullYear() + pad2(now.getUTCMonth() + 1) + pad2(now.getUTCDate()) + 'T' +
-    pad2(now.getUTCHours()) + pad2(now.getUTCMinutes()) + pad2(now.getUTCSeconds()) + 'Z';
+// Formats a Date as a real UTC iCalendar DATE-TIME ("YYYYMMDDTHHMMSSZ").
+//
+// Earlier this wrote a "floating" local time instead (no Z, no TZID) on
+// the theory that the user imports it by hand on their own machine, so
+// ambiguity wouldn't matter. Found wrong in real use (2026-09): the
+// calendar app used to open the .ics on Windows did NOT treat the
+// floating time as "local, whatever that means to you" -- it showed a
+// time that didn't match what was typed. Floating-DATE-TIME handling is
+// inconsistent across real calendar clients; a real UTC instant has no
+// such ambiguity anywhere -- every client converts it to the viewer's own
+// local time correctly, and since the studio's team views these on
+// machines in the same timezone the job was created in, the displayed
+// time matches what was typed.
+function formatUtcStamp(date) {
+  return date.getUTCFullYear() + pad2(date.getUTCMonth() + 1) + pad2(date.getUTCDate()) + 'T' +
+    pad2(date.getUTCHours()) + pad2(date.getUTCMinutes()) + pad2(date.getUTCSeconds()) + 'Z';
 }
 
 // `images` is [{ filename, dataBase64 }] -- each becomes a base64 ATTACH
 // on the VEVENT. DESCRIPTION carries just the notes text.
 function buildIcs({ jobId, clientName, address, shootDate, shootTime, notes, images, durationMinutes }) {
-  const dtStart = toLocalDateTimeStamp(shootDate, shootTime);
-  const dtEnd = addMinutes(dtStart, durationMinutes || DEFAULT_DURATION_MINUTES);
+  const startDt = parseLocalShootDateTime(shootDate, shootTime);
+  // Real elapsed-time addition (not wall-clock field arithmetic) -- exact
+  // regardless of any DST transition inside the shoot window.
+  const endDt = new Date(startDt.getTime() + (durationMinutes || DEFAULT_DURATION_MINUTES) * 60000);
 
   const lines = [
     'BEGIN:VCALENDAR',
@@ -171,9 +174,9 @@ function buildIcs({ jobId, clientName, address, shootDate, shootTime, notes, ima
     'CALSCALE:GREGORIAN',
     'BEGIN:VEVENT',
     'UID:' + jobId + '@franvision.local',
-    'DTSTAMP:' + utcNowStamp(),
-    'DTSTART:' + dtStart,
-    'DTEND:' + dtEnd,
+    'DTSTAMP:' + formatUtcStamp(new Date()),
+    'DTSTART:' + formatUtcStamp(startDt),
+    'DTEND:' + formatUtcStamp(endDt),
     'SUMMARY:' + icsEscape('Photo Shoot -- ' + clientName),
     'LOCATION:' + icsEscape(address),
   ];

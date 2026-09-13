@@ -13,6 +13,7 @@ const os = require('os');
 const fileSync = require('./file-sync.js');
 const {
   isExcludedName,
+  isUnderExcludedTopFolder,
   walkFiles,
   readManifest,
   writeManifest,
@@ -95,6 +96,15 @@ test('isExcludedName: the legacy "Shoot Info" folder is still excluded', () => {
   assert.strictEqual(isExcludedName('Shoot Info'), true);
 });
 
+test('isExcludedName: the Dropbox-only "MLS for download" folder is excluded', () => {
+  assert.strictEqual(isExcludedName('MLS for download'), true);
+});
+
+test('isUnderExcludedTopFolder: matches on the first path segment of a nested file', () => {
+  assert.strictEqual(isUnderExcludedTopFolder('MLS for download/DSC_0001.jpg'), true);
+  assert.strictEqual(isUnderExcludedTopFolder('HDR Photos/DSC_0001.jpg'), false);
+});
+
 // ---- walkFiles ----
 
 test('walkFiles: finds nested files with forward-slash relative paths, excludes junk', () => {
@@ -155,12 +165,12 @@ test('writeManifest then readManifest round-trips', () => {
 
 // ---- looksLikeAComponentFolderNotAJobFolder (pure) ----
 // Regression coverage for a real mistake (2026-09-08): pointing Push/Pull
-// at a job's own subfolder (e.g. "0 RAW", "MLS") instead of the job's
-// top-level folder created a disconnected top-level Dropbox folder named
-// "0 RAW"/"MLS" with no relation to the actual job.
+// at a job's own subfolder (e.g. "0 RAW", "HDR Photos") instead of the
+// job's top-level folder created a disconnected top-level Dropbox folder
+// named "0 RAW"/"HDR Photos" with no relation to the actual job.
 
-test('looksLikeAComponentFolderNotAJobFolder: true for every known component folder name', () => {
-  ['0 RAW', 'Revisions', 'Home Report', 'Local Report', 'MLS', 'Floorplan', 'Virtual Staging', 'Feature Sheets', 'Video', 'VLOG'].forEach((name) => {
+test('looksLikeAComponentFolderNotAJobFolder: true for every known component folder name (including "MLS", the pre-2026-09-12 name for "HDR Photos")', () => {
+  ['0 RAW', 'Revisions', 'Home Report', 'Local Report', 'MLS', 'HDR Photos', 'Floorplan', 'Virtual Staging', 'Feature Sheets', 'Video', 'VLOG'].forEach((name) => {
     assert.strictEqual(looksLikeAComponentFolderNotAJobFolder('/Users/x/Some Job/' + name), true, name);
   });
 });
@@ -244,6 +254,25 @@ test('planPush: deleted on both sides already -- stale manifest entry, no-op', (
   assert.deepStrictEqual(conflicts, []);
 });
 
+test('planPush: local unchanged but Dropbox is missing the file (deleted there some other way, or a previous push silently failed) -- re-uploaded, not silently skipped', () => {
+  const local = [{ relativePath: 'a.jpg', size: 10, mtimeMs: 1 }]; // matches the manifest exactly
+  const manifest = { 'a.jpg': { local: { size: 10, mtimeMs: 1 }, dropbox: { rev: 'r1', size: 10 } } };
+  const { toUpload, conflicts } = planPush(local, [], manifest); // remote has nothing at all
+  assert.strictEqual(toUpload.length, 1);
+  assert.strictEqual(toUpload[0].relativePath, 'a.jpg');
+  assert.deepStrictEqual(conflicts, []);
+});
+
+test('planPush: a file the manifest never confirmed on Dropbox is not force-uploaded by the restore path (would double-count a normal first-time upload)', () => {
+  const local = [{ relativePath: 'a.jpg', size: 10, mtimeMs: 1 }];
+  const manifest = { 'a.jpg': { local: { size: 10, mtimeMs: 1 } } }; // no `dropbox` key -- never actually confirmed uploaded
+  const { toUpload, conflicts } = planPush(local, [], manifest);
+  // localChanged is false here (matches manifest.local), and there's no
+  // recorded.dropbox to restore from -- correctly a no-op, not an upload.
+  assert.deepStrictEqual(toUpload, []);
+  assert.deepStrictEqual(conflicts, []);
+});
+
 // ---- planPull (mirror of planPush) ----
 
 test('planPull: a brand-new remote file is downloaded, no conflict', () => {
@@ -286,6 +315,25 @@ test('planPull: Dropbox deletion vs. a local edit is a conflict, not a delete', 
   assert.deepStrictEqual(toDeleteLocal, []);
   assert.strictEqual(conflicts.length, 1);
   assert.ok(conflicts[0].reason.includes('Deleted on Dropbox'));
+});
+
+test('planPull: Dropbox unchanged but local is missing the file (deleted there some other way, or a previous pull silently failed) -- re-downloaded, not silently skipped', () => {
+  const remote = [{ relativePath: 'a.jpg', size: 10, rev: 'r1' }]; // matches the manifest exactly
+  const manifest = { 'a.jpg': { local: { size: 10, mtimeMs: 1 }, dropbox: { rev: 'r1', size: 10 } } };
+  const { toDownload, conflicts } = planPull(remote, [], manifest); // local has nothing at all
+  assert.strictEqual(toDownload.length, 1);
+  assert.strictEqual(toDownload[0].relativePath, 'a.jpg');
+  assert.deepStrictEqual(conflicts, []);
+});
+
+test('planPull: a file the manifest never confirmed locally is not force-downloaded by the restore path (would double-count a normal first-time download)', () => {
+  const remote = [{ relativePath: 'a.jpg', size: 10, rev: 'r1' }];
+  const manifest = { 'a.jpg': { dropbox: { rev: 'r1', size: 10 } } }; // no `local` key -- never actually confirmed downloaded
+  const { toDownload, conflicts } = planPull(remote, [], manifest);
+  // remoteChanged is false here (matches manifest.dropbox), and there's no
+  // recorded.local to restore from -- correctly a no-op, not a download.
+  assert.deepStrictEqual(toDownload, []);
+  assert.deepStrictEqual(conflicts, []);
 });
 
 // ---- uploadFile / downloadFile with fake clients ----
@@ -414,7 +462,7 @@ await testAsync('pushJobFilesToDropbox: refuses a component-subfolder path inste
 await testAsync('pullJobFilesFromDropbox: refuses a component-subfolder path instead of silently pulling into the wrong local location', async () => {
   await withFakeDropboxEnv(async () => {
     const fakeDbx = makeFakeDbx({ remoteFiles: [{ relativePath: 'x.jpg', size: 1, rev: 'r1' }] });
-    const result = await pullJobFilesFromDropbox({ jobFolderPath: '/Users/x/Some Job/MLS', dropboxJobFolderName: 'MLS', client: fakeDbx });
+    const result = await pullJobFilesFromDropbox({ jobFolderPath: '/Users/x/Some Job/HDR Photos', dropboxJobFolderName: 'HDR Photos', client: fakeDbx });
     assert.strictEqual(result.attempted, false);
     assert.strictEqual(result.success, false);
     assert.ok(result.error.includes('subfolders'));
@@ -537,6 +585,32 @@ await testAsync('pullJobFilesFromDropbox: downloads a new remote file end-to-end
     assert.ok(fs.existsSync(path.join(dir, '0 RAW', 'a.jpg')));
     const manifest = readManifest(dir);
     assert.strictEqual(manifest['0 RAW/a.jpg'].dropbox.rev, 'r1');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await testAsync('pullJobFilesFromDropbox: never pulls "MLS for download" -- Dropbox-only derived Photo Sync Worker renders', async () => {
+  const dir = makeTmpDir();
+  try {
+    const fakeDbx = makeFakeDbx({
+      remoteFiles: [
+        { relativePath: 'HDR Photos/a.jpg', size: 7, rev: 'r1' },
+        { relativePath: 'MLS for download/a.jpg', size: 7, rev: 'r2' },
+      ],
+    });
+    const fakeDownload = async (dbx, dropboxPath, dest) => {
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.writeFileSync(dest, 'content');
+    };
+
+    await withFakeDropboxEnv(async () => {
+      const result = await pullJobFilesFromDropbox({ jobFolderPath: dir, dropboxJobFolderName: 'MyJob', client: fakeDbx, downloadImpl: fakeDownload });
+      assert.strictEqual(result.downloadedCount, 1); // only HDR Photos/a.jpg
+    });
+
+    assert.ok(fs.existsSync(path.join(dir, 'HDR Photos', 'a.jpg')));
+    assert.ok(!fs.existsSync(path.join(dir, 'MLS for download')));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

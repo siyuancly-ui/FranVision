@@ -29,6 +29,17 @@
 // inside the job folder itself (travels with it) but is excluded from
 // what gets walked/synced, same as .DS_Store.
 //
+// Restoring a file the manifest thinks exists but doesn't (found in real
+// use, 2026-09-12): if the SIDE PUSH/PULL IS COPYING FROM is unchanged
+// (matches the manifest) but the OTHER side is simply missing the file --
+// deleted there by hand outside this tool, or a previous push/pull silently
+// failed after the manifest already recorded success -- planPush/planPull
+// re-upload/re-download it rather than silently doing nothing forever. This
+// is deliberately NOT a conflict: the source side never changed, so there is
+// nothing ambiguous to protect against, and copying a file to a side that's
+// merely missing it can never destroy someone's newer edit the way a
+// mirrored delete could.
+//
 // job.json and Job Info.txt (see job-files.js) are LOCAL-ONLY (see
 // LOCAL_ONLY_FILENAMES) -- explicit user requirement that these two stay
 // only in the local job folder, never on Dropbox at all, regardless of
@@ -38,6 +49,7 @@ const fs = require('fs');
 const path = require('path');
 const { downloadFile: sdkDownloadFile } = require('dropbox');
 const dropboxSync = require('./dropbox-sync.js');
+const deliveryEmail = require('./delivery-email.js');
 
 // Names folder-builder.js can produce as a job's OWN top-level component
 // folder (the first path segment of getComponentFolders()' output --
@@ -45,12 +57,23 @@ const dropboxSync = require('./dropbox-sync.js');
 // job folder is always named "<date> <address>_<client>", so if Push/Pull
 // is pointed at a folder whose name is literally one of THESE instead,
 // that's almost certainly a mis-click (a job's own subfolder, e.g. "0 RAW"
-// or "MLS", picked instead of the job folder itself) -- found the hard
-// way (2026-09-08): doing this creates an unrelated, disconnected
-// top-level folder in Dropbox named "0 RAW" or "MLS", sitting among every
-// other real job folder with nothing tying it back to the actual job.
+// or "HDR Photos", picked instead of the job folder itself) -- found the
+// hard way (2026-09-08): doing this creates an unrelated, disconnected
+// top-level folder in Dropbox named "0 RAW" or "HDR Photos", sitting
+// among every other real job folder with nothing tying it back to the
+// actual job.
+// 'Home Report' is kept here deliberately even though folder-builder.js
+// no longer generates it (removed 2026-09-10 -- it was a naming mistake
+// for 'Local Report', not a real distinct folder at the time). Jobs
+// created before that fix still have a real "Home Report" subfolder on
+// disk, and this safety net exists specifically to catch someone
+// mis-clicking into a job's own subfolder -- so it stays listed for as
+// long as any such job might still be around.
+// 'MLS' is kept for the exact same reason, alongside its 2026-09-12
+// rename to 'HDR Photos' (see folder-builder.js's header comment) --
+// jobs created before that rename still have a real 'MLS' subfolder.
 const KNOWN_COMPONENT_FOLDER_NAMES = new Set([
-  '0 RAW', 'Revisions', 'Home Report', 'Local Report', 'MLS',
+  '0 RAW', 'Revisions', 'Home Report', 'Local Report', 'MLS', 'HDR Photos',
   'Floorplan', 'Virtual Staging', 'Feature Sheets', 'Video', 'VLOG',
 ]);
 
@@ -60,18 +83,33 @@ function looksLikeAComponentFolderNotAJobFolder(jobFolderPath) {
 
 const MANIFEST_FILENAME = '.dropbox-sync-manifest.json';
 
-// job.json / Job Info.txt (job-files.js) and Shoot Schedule.ics
+// job.json / Job Info.txt (job-files.js), Shoot Schedule.ics
 // (calendar-file.js -- the generated calendar event, with any images
-// embedded as base64 ATTACH) are deliberately LOCAL-ONLY -- never pushed,
+// embedded as base64 ATTACH), and the two Delivery Email .txt files
+// (delivery-email.js) are deliberately LOCAL-ONLY -- never pushed,
 // pulled, or deleted on either side by this module. Explicit user
 // requirement: these must exist only in the local job folder, regardless
 // of what Push/Pull does to everything else in the tree.
-const LOCAL_ONLY_FILENAMES = new Set(['job.json', 'Job Info.txt', 'Shoot Schedule.ics']);
+const LOCAL_ONLY_FILENAMES = new Set([
+  'job.json', 'Job Info.txt', 'Shoot Schedule.ics',
+  deliveryEmail.OUTPUT_FILENAME_ZH, deliveryEmail.OUTPUT_FILENAME_EN,
+]);
 
 // Pre-2026-09-10, calendar-file.js wrote a "Shoot Info" folder (holding
 // the .ics plus loose image files) instead of a single root-level .ics.
 // Still excluded here so any lingering old folder never syncs.
 const LOCAL_ONLY_FOLDER_NAMES = new Set(['Shoot Info']);
+
+// The mirror image of LOCAL_ONLY_FOLDER_NAMES: a folder that lives on
+// DROPBOX ONLY and must never be touched by Push or Pull. Currently just
+// dropbox-sync.js's 'MLS for download' -- Photo Sync Worker's derived MLS
+// delivery renders (see its own comment there), pure derivatives of
+// what's already in 'HDR Photos' (or 'MLS', for jobs from before the
+// 2026-09-12 rename), regenerable, and never meant to exist on local
+// disk. Push must never upload into it (nothing ever will locally); Pull
+// must never download it (it would just be a redundant second copy of
+// every photo, at Dropbox's expense too).
+const DROPBOX_ONLY_FOLDER_NAMES = new Set([dropboxSync.MLS_FOR_DOWNLOAD_SUBFOLDER]);
 
 // Dropbox limits: a single files/upload call must be under 150 MiB; above
 // that, an upload session (start/append/finish) is required, and each
@@ -84,7 +122,19 @@ const DEFAULT_CHUNK_SIZE = 8 * 1024 * 1024; // multiple of 4 MiB
 
 function isExcludedName(name) {
   return name === '.DS_Store' || name === MANIFEST_FILENAME || name.startsWith('~$') ||
-    LOCAL_ONLY_FILENAMES.has(name) || LOCAL_ONLY_FOLDER_NAMES.has(name);
+    LOCAL_ONLY_FILENAMES.has(name) || LOCAL_ONLY_FOLDER_NAMES.has(name) ||
+    DROPBOX_ONLY_FOLDER_NAMES.has(name);
+}
+
+// listDropboxFiles() below deals in relative FILE paths (e.g. 'MLS for
+// download/DSC_0001.jpg'), so excluding by isExcludedName(basename) alone
+// (as walkFiles() can, since it walks directory-by-directory and can skip
+// the whole subtree at the folder entry itself) would miss every file
+// nested under an excluded top-level folder. This checks the first path
+// segment instead.
+function isUnderExcludedTopFolder(relativePath) {
+  const first = relativePath.split('/')[0];
+  return LOCAL_ONLY_FOLDER_NAMES.has(first) || DROPBOX_ONLY_FOLDER_NAMES.has(first);
 }
 
 // Recursively lists every real file under jobFolderPath (skipping
@@ -147,7 +197,7 @@ async function listDropboxFiles(dbx, dropboxJobFolderName) {
   return entries
     .filter((e) => e['.tag'] === 'file')
     .map((e) => ({ relativePath: e.path_display.slice(prefix.length), size: e.size, rev: e.rev }))
-    .filter((e) => !isExcludedName(path.basename(e.relativePath)));
+    .filter((e) => !isExcludedName(path.basename(e.relativePath)) && !isUnderExcludedTopFolder(e.relativePath));
 }
 
 function readManifest(jobFolderPath) {
@@ -183,7 +233,24 @@ function planPush(localFiles, remoteFiles, manifest) {
     const recorded = manifest[local.relativePath];
     const remote = remoteByPath.get(local.relativePath);
     const localChanged = !recorded || !recorded.local || recorded.local.size !== local.size || recorded.local.mtimeMs !== local.mtimeMs;
-    if (!localChanged) continue; // nothing new to push for this file
+
+    if (!localChanged) {
+      // Local matches what we last confirmed, so ordinarily there's nothing
+      // to do for this file. But if the manifest says Dropbox already has
+      // it and Dropbox currently does NOT (deleted there some other way --
+      // by hand, by another tool -- or a previous push silently failed
+      // after recording success), the manifest's promise is broken: local's
+      // copy is the only one left, and Push's whole job is "make Dropbox
+      // match local" -- so restore it instead of silently doing nothing
+      // forever (found in real use, 2026-09-12: files could go missing on
+      // Dropbox and Push would never notice or re-upload them). This can
+      // never destroy anything -- re-uploading a file that already matches
+      // local is always safe, unlike a delete.
+      if (recorded && recorded.dropbox && !remote) {
+        toUpload.push(local);
+      }
+      continue;
+    }
 
     const remoteChanged = !!remote && (!recorded || !recorded.dropbox || recorded.dropbox.rev !== remote.rev);
     if (remote && remoteChanged) {
@@ -225,7 +292,20 @@ function planPull(remoteFiles, localFiles, manifest) {
     const recorded = manifest[remote.relativePath];
     const local = localByPath.get(remote.relativePath);
     const remoteChanged = !recorded || !recorded.dropbox || recorded.dropbox.rev !== remote.rev;
-    if (!remoteChanged) continue;
+
+    if (!remoteChanged) {
+      // Mirror image of planPush's equivalent check above: Dropbox matches
+      // what we last confirmed, so ordinarily there's nothing to do. But if
+      // the manifest says local already has this file and local currently
+      // does NOT (deleted locally some other way, or a previous pull
+      // silently failed after recording success), Dropbox's copy is the
+      // only one left, and Pull's whole job is "make local match Dropbox"
+      // -- so restore it instead of silently doing nothing forever.
+      if (recorded && recorded.local && !local) {
+        toDownload.push(remote);
+      }
+      continue;
+    }
 
     const localChanged = !!local && (!recorded || !recorded.local || recorded.local.size !== local.size || recorded.local.mtimeMs !== local.mtimeMs);
     if (local && localChanged) {
@@ -468,10 +548,12 @@ module.exports = {
   MANIFEST_FILENAME,
   LOCAL_ONLY_FILENAMES,
   LOCAL_ONLY_FOLDER_NAMES,
+  DROPBOX_ONLY_FOLDER_NAMES,
   KNOWN_COMPONENT_FOLDER_NAMES,
   DEFAULT_SINGLE_SHOT_MAX_BYTES,
   DEFAULT_CHUNK_SIZE,
   isExcludedName,
+  isUnderExcludedTopFolder,
   looksLikeAComponentFolderNotAJobFolder,
   walkFiles,
   listDropboxFiles,

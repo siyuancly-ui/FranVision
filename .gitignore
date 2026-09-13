@@ -23,3 +23,6 @@
 
 # Source reference PDF (large binary, not code)
 /Jason FS.pdf
+
+# Loose credential notes dropped in the repo root -- never commit these
+/Secret and token.txt

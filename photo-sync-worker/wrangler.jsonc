@@ -52,7 +52,13 @@
 
     // Sub-folders (directly under a job folder) whose images get mirrored.
     // Comma-separated, case-insensitive, surrounding spaces trimmed.
-    "SYNC_FOLDERS": "MLS,Virtual Staging,Floorplan,Local Report",
+    // "MLS" was job-generator's folder name for this content until
+    // 2026-09-12, when it was renamed to "HDR Photos" (pure naming
+    // change there -- see job-generator/CLAUDE.md's "MLS renamed to HDR
+    // Photos" decision). Both names are listed here so jobs created
+    // before and after that rename keep syncing -- do not drop "MLS"
+    // until no job with the old folder name is still in active use.
+    "SYNC_FOLDERS": "MLS,HDR Photos,Virtual Staging,Floorplan,Local Report",
 
     // Dropbox get_thumbnail size for the Gallery / Supabase thumbnail.
     "THUMB_SIZE": "w1024h768",
@@ -68,8 +74,12 @@
 
     // Sub-folders that ALSO get a downloadable compressed copy written back
     // into Dropbox (the "MLS for download" delivery set). Subset of
-    // SYNC_FOLDERS. The 1024 bytes are reused -- compressed once.
-    "DOWNLOAD_SET_FOLDERS": "MLS",
+    // SYNC_FOLDERS. The 1024 bytes are reused -- compressed once. Same
+    // "MLS"->"HDR Photos" rename note as SYNC_FOLDERS above applies here.
+    // DOWNLOAD_SUBFOLDER itself ("MLS for download") is a DIFFERENT,
+    // unrelated name (Photo Sync Worker's own derived-copy folder) --
+    // it is NOT part of the job-generator rename and stays as-is.
+    "DOWNLOAD_SET_FOLDERS": "MLS,HDR Photos",
     "DOWNLOAD_SUBFOLDER": "MLS for download",
 
     // Safety cap: max delta entries pulled per queue message before the

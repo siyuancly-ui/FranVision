@@ -1,5 +1,12 @@
 // Run with: node calendar-file.test.js
 // No dependencies -- plain Node `assert` + a tiny pass/fail runner.
+//
+// Pinned BEFORE requiring calendar-file.js (or constructing any Date) so
+// the DTSTART/DTEND/DTSTAMP UTC-conversion tests give the same answer on
+// any machine running this suite -- Node re-reads process.env.TZ per
+// Date computation, so this works even though other test files earlier
+// in a full-suite run may have already constructed Dates.
+process.env.TZ = 'America/Toronto';
 
 const assert = require('assert');
 const fs = require('fs');
@@ -73,22 +80,29 @@ test('validateImages: accepts every allowed extension', () => {
 
 // ---- buildIcs ----
 
-test('buildIcs: DTSTART/DTEND reflect the shoot date+time and default 2h duration', () => {
+// DTSTART/DTEND are real UTC ("Z") instants now, not a "floating" local
+// time (see calendar-file.js's formatUtcStamp() comment for why -- a
+// floating time was found to display wrong on a real Windows machine).
+// process.env.TZ is pinned to America/Toronto at the top of this file, so
+// these expected values (EDT = UTC-4 in September) are deterministic
+// wherever this suite runs.
+
+test('buildIcs: DTSTART/DTEND reflect the shoot date+time (as real UTC) and default 2h duration', () => {
   const ics = buildIcs(BASE_JOB);
-  assert.ok(ics.includes('DTSTART:20260910T143000'));
-  assert.ok(ics.includes('DTEND:20260910T163000')); // +2h default
+  assert.ok(ics.includes('DTSTART:20260910T183000Z')); // 14:30 EDT -> 18:30 UTC
+  assert.ok(ics.includes('DTEND:20260910T203000Z'));   // +2h default -> 20:30 UTC
 });
 
 test('buildIcs: DTEND respects a custom durationMinutes', () => {
   const ics = buildIcs(Object.assign({}, BASE_JOB, { durationMinutes: 30 }));
-  assert.ok(ics.includes('DTSTART:20260910T143000'));
-  assert.ok(ics.includes('DTEND:20260910T150000'));
+  assert.ok(ics.includes('DTSTART:20260910T183000Z'));
+  assert.ok(ics.includes('DTEND:20260910T190000Z')); // +30min
 });
 
-test('buildIcs: DTEND rolls over midnight correctly', () => {
+test('buildIcs: DTEND rolls over midnight correctly (in UTC too)', () => {
   const ics = buildIcs(Object.assign({}, BASE_JOB, { shootTime: '23:15' }));
-  assert.ok(ics.includes('DTSTART:20260910T231500'));
-  assert.ok(ics.includes('DTEND:20260911T011500'));
+  assert.ok(ics.includes('DTSTART:20260911T031500Z')); // 23:15 EDT Sep 10 -> 03:15 UTC Sep 11
+  assert.ok(ics.includes('DTEND:20260911T051500Z'));   // +2h -> 05:15 UTC Sep 11
 });
 
 test('buildIcs: includes client name in SUMMARY and address in LOCATION', () => {
@@ -118,6 +132,32 @@ test('buildIcs: embeds each image as a base64 ATTACH with FMTTYPE + filename par
 test('buildIcs: escapes commas, semicolons, and newlines in text fields', () => {
   const ics = buildIcs(Object.assign({}, BASE_JOB, { notes: 'Line one\nLine two; with, punctuation' }));
   assert.ok(ics.includes('Line one\\nLine two\\; with\\, punctuation'));
+});
+
+test('buildIcs: DTSTART is correct UTC regardless of the HOST machine\'s own timezone', () => {
+  // Round-trip invariant, independent of America/Toronto specifically:
+  // whatever timezone the computer running job-generator is set to, the
+  // emitted UTC instant must convert BACK to the exact local wall-clock
+  // time that was typed. This is what actually matters (a shoot entered
+  // as "14:30" must display as 2:30 PM wherever it's viewed) -- proving
+  // it for a second, very different zone guards against ever
+  // reintroducing an offset bug that only some timezones would expose.
+  const saved = process.env.TZ;
+  try {
+    process.env.TZ = 'Asia/Shanghai'; // UTC+8, no DST -- deliberately unlike Toronto
+    const ics = buildIcs(BASE_JOB); // shootDate 2026/09/10, shootTime 14:30
+    const m = ics.match(/DTSTART:(\d{8})T(\d{6})Z/);
+    assert.ok(m, 'DTSTART not found');
+    const utc = new Date(Date.UTC(
+      Number(m[1].slice(0, 4)), Number(m[1].slice(4, 6)) - 1, Number(m[1].slice(6, 8)),
+      Number(m[2].slice(0, 2)), Number(m[2].slice(2, 4)), Number(m[2].slice(4, 6))
+    ));
+    // Converted back to Shanghai local time, must read 2026/09/10 14:30 again.
+    assert.strictEqual(utc.getFullYear() + '/' + String(utc.getMonth() + 1).padStart(2, '0') + '/' + String(utc.getDate()).padStart(2, '0'), '2026/09/10');
+    assert.strictEqual(utc.getHours() + ':' + String(utc.getMinutes()).padStart(2, '0'), '14:30');
+  } finally {
+    process.env.TZ = saved;
+  }
 });
 
 test('buildIcs: produces a well-formed VCALENDAR/VEVENT wrapper', () => {

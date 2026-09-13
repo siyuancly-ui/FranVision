@@ -1,0 +1,50 @@
+您好 {{CLIENT_NAME}}，
+
+{{PROPERTY_ADDRESS}} 的媒体文件已经制作完成，感谢您的耐心等待。
+
+All-in-One MLS Virtual Tour 链接：
+{{ALL_IN_ONE_LINK}}
+
+您可以通过上面的 All-in-One 链接在线预览和分享本次房源内容。
+
+请注意，All-in-One 网站目前仅用于在线预览及分享。所有需要下载的文件将在付款后通过 Dropbox 单独提供。
+
+付款方式
+本次交付费用总计：{{PRETAX_AMOUNT}}+HST= {{TOTAL_AMOUNT}}。您可以选择 E-Transfer 或 信用卡完成付款。
+
+E-Transfer：请转账至：
+frankystudio@mail.com
+(Not Gmail!!)
+
+转账完成后，请将付款截图或确认信息发送给 Franky。
+
+信用卡付款：请直接通过下面的 Wave 付款链接支付：
+{{WAVE_LINK}}
+
+信用卡付款完成后，也请告知 Franky，方便我们确认付款并发送下载链接。
+
+以下是文件下载链接 ⬇
+如有需要，请复制链接并粘贴到 Safari、Chrome 等浏览器中打开。
+根据您本次订购的服务，包含以下内容：
+
+{{LINE:HDR}}HDR 高清照片：
+{{LINE:HDR}}{{HDR_LINK}}
+{{LINE:HDR}}
+{{LINE:MLS}}MLS 照片：
+{{LINE:MLS}}{{MLS_LINK}}
+{{LINE:MLS}}
+{{LINE:VIDEO}}Video 视频：
+{{LINE:VIDEO}}{{VIDEO_LINK}}
+{{LINE:VIDEO}}
+{{LINE:FLOORPLAN}}Floor Plan / Site Plan：
+{{LINE:FLOORPLAN}}{{FLOORPLAN_LINK}}
+{{LINE:FLOORPLAN}}
+{{LINE:LOCAL_REPORT}}Local Report：
+{{LINE:LOCAL_REPORT}}{{LOCAL_REPORT_LINK}}
+{{LINE:LOCAL_REPORT}}
+{{LINE:HOME_REPORT}}Home Report：
+{{LINE:HOME_REPORT}}{{HOME_REPORT_LINK}}
+{{LINE:HOME_REPORT}}
+谢谢！
+Franky
+FranVision Media

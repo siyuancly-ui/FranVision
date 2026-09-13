@@ -9,6 +9,7 @@
 
 const assert = require('assert');
 const dropboxSync = require('./dropbox-sync.js');
+const folderBuilder = require('./folder-builder.js');
 const {
   expandFolderPaths,
   extractDropboxErrorMessage,
@@ -53,10 +54,10 @@ test('expandFolderPaths: includes the top-level folder alone', () => {
 });
 
 test('expandFolderPaths: fills in intermediate directories Dropbox needs', () => {
-  const result = expandFolderPaths('Job', ['0 RAW/1 Raws', '0 RAW/4 Raw HDR', 'MLS']);
+  const result = expandFolderPaths('Job', ['0 RAW/1 Raws', '0 RAW/4 Raw HDR', 'HDR Photos']);
   // '0 RAW' itself must appear even though folder-builder.js never lists it
   // as its own entry -- Dropbox's create_folder doesn't make parents for you.
-  assert.deepStrictEqual(result, ['Job', 'Job/0 RAW', 'Job/MLS', 'Job/0 RAW/1 Raws', 'Job/0 RAW/4 Raw HDR']);
+  assert.deepStrictEqual(result, ['Job', 'Job/0 RAW', 'Job/HDR Photos', 'Job/0 RAW/1 Raws', 'Job/0 RAW/4 Raw HDR']);
 });
 
 test('expandFolderPaths: de-duplicates a shared intermediate directory', () => {
@@ -68,6 +69,36 @@ test('expandFolderPaths: orders shallowest-first (parents before children)', () 
   const result = expandFolderPaths('Job', ['0 RAW/1 Raws']);
   assert.ok(result.indexOf('Job') < result.indexOf('Job/0 RAW'));
   assert.ok(result.indexOf('Job/0 RAW') < result.indexOf('Job/0 RAW/1 Raws'));
+});
+
+// Regression test for a real Windows bug (2026-09-11): server.js used to
+// derive componentFolders by round-tripping folder-builder.js's OWN
+// output through path.join()/path.relative() (to create the local
+// folders, then convert the resulting ABSOLUTE paths back to relative
+// ones) instead of just calling folder-builder.js#getComponentFolders()
+// directly. path.join()/path.relative() use the HOST OS's native
+// separator -- '\' on Windows -- so on Windows, componentFolders came out
+// as e.g. "0 RAW\1 Raws" instead of "0 RAW/1 Raws". expandFolderPaths()
+// here splits on '/' only, so that string never split at all: Dropbox
+// would get a single oddly-named folder ("0 RAW\1 Raws", literal
+// backslash in the name) directly under the job folder instead of a
+// proper "0 RAW" parent containing "1 Raws" -- meaning "0 RAW" itself
+// never got created. Single-segment folders (Revisions, MLS, ...) were
+// unaffected, which is why only "0 RAW" looked missing to the user.
+// This test feeds expandFolderPaths folder-builder.js's REAL output
+// (never anything derived via path.join/path.relative) to prove the
+// integration between the two modules stays correct -- and to catch it
+// immediately if that boundary is ever reintroduced.
+test('expandFolderPaths: integrates correctly with folder-builder.js\'s real output (regression -- Windows "0 RAW" missing bug)', () => {
+  const order = { propertyType: 'house', photography: 'luxury', addons: { walkthrough_video: true } };
+  const componentFolders = folderBuilder.getComponentFolders(order);
+  assert.ok(componentFolders.every((p) => !p.includes('\\')), 'getComponentFolders() must never contain a backslash');
+
+  const result = expandFolderPaths('Job', componentFolders);
+  assert.ok(result.includes('Job/0 RAW'), '"0 RAW" parent folder must be its own entry, not just embedded in a longer un-split string');
+  assert.ok(result.includes('Job/0 RAW/1 Raws'));
+  assert.ok(result.includes('Job/0 RAW/4 Raw HDR'));
+  assert.ok(result.every((p) => !p.includes('\\')), 'no entry should ever contain a literal backslash');
 });
 
 // ---- error classification ----
@@ -176,12 +207,12 @@ await testAsync('syncJobFolderToDropbox: success path creates folders and tags t
   };
   await withFakeCredentials(async () => {
     const result = await syncJobFolderToDropbox({
-      folderName: 'Job', componentFolders: ['0 RAW/1 Raws', 'MLS'], jobId: 'FVS-20260827-001', client: fakeDbx,
+      folderName: 'Job', componentFolders: ['0 RAW/1 Raws', 'HDR Photos'], jobId: 'FVS-20260827-001', client: fakeDbx,
     });
     assert.strictEqual(result.success, true);
     assert.strictEqual(result.propertiesTagged, true);
     assert.strictEqual(result.error, null);
-    assert.deepStrictEqual(created.sort(), ['/Job', '/Job/0 RAW', '/Job/0 RAW/1 Raws', '/Job/MLS'].sort());
+    assert.deepStrictEqual(created.sort(), ['/Job', '/Job/0 RAW', '/Job/0 RAW/1 Raws', '/Job/HDR Photos'].sort());
     assert.strictEqual(tagged.length, 1);
     assert.strictEqual(tagged[0].path, '/Job');
     assert.strictEqual(tagged[0].property_groups[0].fields[0].value, 'FVS-20260827-001');
@@ -202,7 +233,7 @@ await testAsync('syncJobFolderToDropbox: treats "already exists" as success, not
     },
   };
   await withFakeCredentials(async () => {
-    const result = await syncJobFolderToDropbox({ folderName: 'Job', componentFolders: ['MLS'], jobId: 'FVS-1', client: fakeDbx });
+    const result = await syncJobFolderToDropbox({ folderName: 'Job', componentFolders: ['HDR Photos'], jobId: 'FVS-1', client: fakeDbx });
     assert.strictEqual(result.success, true);
     assert.strictEqual(result.propertiesTagged, true);
   });
@@ -302,9 +333,101 @@ await testAsync('updateJobFoldersOnDropbox: never throws -- a real failure comes
     filesDeleteV2: async () => ({ result: {} }),
   };
   await withFakeCredentials(async () => {
-    const result = await updateJobFoldersOnDropbox({ folderName: 'Job', client: fakeDbx, foldersToCreate: ['MLS'], foldersToPrune: [] });
+    const result = await updateJobFoldersOnDropbox({ folderName: 'Job', client: fakeDbx, foldersToCreate: ['HDR Photos'], foldersToPrune: [] });
     assert.strictEqual(result.success, false);
     assert.ok(result.errors.length >= 1);
+  });
+});
+
+// ---- ensureMlsForDownloadFolder (delivery-email.js's link source) ----
+
+await testAsync('ensureMlsForDownloadFolder: skips cleanly when not configured', async () => {
+  const saved = process.env.DROPBOX_APP_KEY;
+  delete process.env.DROPBOX_APP_KEY;
+  try {
+    const result = await dropboxSync.ensureMlsForDownloadFolder({ folderName: 'Job' });
+    assert.strictEqual(result.attempted, false);
+    assert.strictEqual(result.skipped, true);
+  } finally {
+    if (saved !== undefined) process.env.DROPBOX_APP_KEY = saved;
+  }
+});
+
+await testAsync('ensureMlsForDownloadFolder: creates the top-level "MLS for download" folder', async () => {
+  const created = [];
+  const fakeDbx = { filesCreateFolderV2: async ({ path }) => { created.push(path); return { result: {} }; } };
+  await withFakeCredentials(async () => {
+    const result = await dropboxSync.ensureMlsForDownloadFolder({ folderName: 'Job', client: fakeDbx });
+    assert.strictEqual(result.success, true);
+    assert.deepStrictEqual(created, ['/Job/MLS for download']);
+  });
+});
+
+await testAsync('ensureMlsForDownloadFolder: already-exists is success, not an error', async () => {
+  const fakeDbx = {
+    filesCreateFolderV2: async () => { const e = new Error('x'); e.error = { error_summary: 'path/conflict/folder/..' }; throw e; },
+  };
+  await withFakeCredentials(async () => {
+    const result = await dropboxSync.ensureMlsForDownloadFolder({ folderName: 'Job', client: fakeDbx });
+    assert.strictEqual(result.success, true);
+  });
+});
+
+await testAsync('ensureMlsForDownloadFolder: never throws -- a real failure comes back as success:false', async () => {
+  const fakeDbx = {
+    filesCreateFolderV2: async () => { const e = new Error('boom'); e.error = { error_summary: 'internal_error/..' }; throw e; },
+  };
+  await withFakeCredentials(async () => {
+    const result = await dropboxSync.ensureMlsForDownloadFolder({ folderName: 'Job', client: fakeDbx });
+    assert.strictEqual(result.success, false);
+    assert.ok(result.error);
+  });
+});
+
+// ---- createSharedLink (delivery-email.js's per-line link resolver) ----
+
+await testAsync('createSharedLink: fails cleanly when not configured', async () => {
+  const saved = process.env.DROPBOX_APP_KEY;
+  delete process.env.DROPBOX_APP_KEY;
+  try {
+    const result = await dropboxSync.createSharedLink({ dropboxPath: '/Job/HDR Photos' });
+    assert.strictEqual(result.success, false);
+  } finally {
+    if (saved !== undefined) process.env.DROPBOX_APP_KEY = saved;
+  }
+});
+
+await testAsync('createSharedLink: creates a fresh link', async () => {
+  const fakeDbx = {
+    sharingCreateSharedLinkWithSettings: async ({ path }) => ({ result: { url: 'https://dropbox.com/fake' + path } }),
+  };
+  await withFakeCredentials(async () => {
+    const result = await dropboxSync.createSharedLink({ dropboxPath: '/Job/HDR Photos', client: fakeDbx });
+    assert.strictEqual(result.success, true);
+    assert.strictEqual(result.url, 'https://dropbox.com/fake/Job/HDR Photos');
+  });
+});
+
+await testAsync('createSharedLink: reuses an existing link instead of erroring', async () => {
+  const fakeDbx = {
+    sharingCreateSharedLinkWithSettings: async () => { const e = new Error('x'); e.error = { error_summary: 'shared_link_already_exists/..' }; throw e; },
+    sharingListSharedLinks: async () => ({ result: { links: [{ url: 'https://dropbox.com/existing' }] } }),
+  };
+  await withFakeCredentials(async () => {
+    const result = await dropboxSync.createSharedLink({ dropboxPath: '/Job/HDR Photos', client: fakeDbx });
+    assert.strictEqual(result.success, true);
+    assert.strictEqual(result.url, 'https://dropbox.com/existing');
+  });
+});
+
+await testAsync('createSharedLink: never throws -- a real failure comes back as success:false', async () => {
+  const fakeDbx = {
+    sharingCreateSharedLinkWithSettings: async () => { const e = new Error('boom'); e.error = { error_summary: 'internal_error/..' }; throw e; },
+  };
+  await withFakeCredentials(async () => {
+    const result = await dropboxSync.createSharedLink({ dropboxPath: '/Job/HDR Photos', client: fakeDbx });
+    assert.strictEqual(result.success, false);
+    assert.ok(result.error);
   });
 });
 
