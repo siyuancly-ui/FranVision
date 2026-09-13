@@ -102,7 +102,7 @@ test('isExcludedName: the Dropbox-only "MLS for download" folder is excluded', (
 
 test('isUnderExcludedTopFolder: matches on the first path segment of a nested file', () => {
   assert.strictEqual(isUnderExcludedTopFolder('MLS for download/DSC_0001.jpg'), true);
-  assert.strictEqual(isUnderExcludedTopFolder('MLS/DSC_0001.jpg'), false);
+  assert.strictEqual(isUnderExcludedTopFolder('HDR Photos/DSC_0001.jpg'), false);
 });
 
 // ---- walkFiles ----
@@ -165,12 +165,12 @@ test('writeManifest then readManifest round-trips', () => {
 
 // ---- looksLikeAComponentFolderNotAJobFolder (pure) ----
 // Regression coverage for a real mistake (2026-09-08): pointing Push/Pull
-// at a job's own subfolder (e.g. "0 RAW", "MLS") instead of the job's
-// top-level folder created a disconnected top-level Dropbox folder named
-// "0 RAW"/"MLS" with no relation to the actual job.
+// at a job's own subfolder (e.g. "0 RAW", "HDR Photos") instead of the
+// job's top-level folder created a disconnected top-level Dropbox folder
+// named "0 RAW"/"HDR Photos" with no relation to the actual job.
 
-test('looksLikeAComponentFolderNotAJobFolder: true for every known component folder name', () => {
-  ['0 RAW', 'Revisions', 'Home Report', 'Local Report', 'MLS', 'Floorplan', 'Virtual Staging', 'Feature Sheets', 'Video', 'VLOG'].forEach((name) => {
+test('looksLikeAComponentFolderNotAJobFolder: true for every known component folder name (including "MLS", the pre-2026-09-12 name for "HDR Photos")', () => {
+  ['0 RAW', 'Revisions', 'Home Report', 'Local Report', 'MLS', 'HDR Photos', 'Floorplan', 'Virtual Staging', 'Feature Sheets', 'Video', 'VLOG'].forEach((name) => {
     assert.strictEqual(looksLikeAComponentFolderNotAJobFolder('/Users/x/Some Job/' + name), true, name);
   });
 });
@@ -424,7 +424,7 @@ await testAsync('pushJobFilesToDropbox: refuses a component-subfolder path inste
 await testAsync('pullJobFilesFromDropbox: refuses a component-subfolder path instead of silently pulling into the wrong local location', async () => {
   await withFakeDropboxEnv(async () => {
     const fakeDbx = makeFakeDbx({ remoteFiles: [{ relativePath: 'x.jpg', size: 1, rev: 'r1' }] });
-    const result = await pullJobFilesFromDropbox({ jobFolderPath: '/Users/x/Some Job/MLS', dropboxJobFolderName: 'MLS', client: fakeDbx });
+    const result = await pullJobFilesFromDropbox({ jobFolderPath: '/Users/x/Some Job/HDR Photos', dropboxJobFolderName: 'HDR Photos', client: fakeDbx });
     assert.strictEqual(result.attempted, false);
     assert.strictEqual(result.success, false);
     assert.ok(result.error.includes('subfolders'));
@@ -557,7 +557,7 @@ await testAsync('pullJobFilesFromDropbox: never pulls "MLS for download" -- Drop
   try {
     const fakeDbx = makeFakeDbx({
       remoteFiles: [
-        { relativePath: 'MLS/a.jpg', size: 7, rev: 'r1' },
+        { relativePath: 'HDR Photos/a.jpg', size: 7, rev: 'r1' },
         { relativePath: 'MLS for download/a.jpg', size: 7, rev: 'r2' },
       ],
     });
@@ -568,10 +568,10 @@ await testAsync('pullJobFilesFromDropbox: never pulls "MLS for download" -- Drop
 
     await withFakeDropboxEnv(async () => {
       const result = await pullJobFilesFromDropbox({ jobFolderPath: dir, dropboxJobFolderName: 'MyJob', client: fakeDbx, downloadImpl: fakeDownload });
-      assert.strictEqual(result.downloadedCount, 1); // only MLS/a.jpg
+      assert.strictEqual(result.downloadedCount, 1); // only HDR Photos/a.jpg
     });
 
-    assert.ok(fs.existsSync(path.join(dir, 'MLS', 'a.jpg')));
+    assert.ok(fs.existsSync(path.join(dir, 'HDR Photos', 'a.jpg')));
     assert.ok(!fs.existsSync(path.join(dir, 'MLS for download')));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

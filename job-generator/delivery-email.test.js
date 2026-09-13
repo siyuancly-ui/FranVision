@@ -57,7 +57,7 @@ function keysOf(lines) {
 // ---- getDeliverableLines ----
 
 test('getDeliverableLines: bare standard job -- HDR/MLS/Local Report always, nothing else', () => {
-  const lines = getDeliverableLines({ addons: {} }, ['0 RAW/1 Raws', 'Revisions', 'Local Report', 'MLS']);
+  const lines = getDeliverableLines({ addons: {} }, ['0 RAW/1 Raws', 'Revisions', 'Local Report', 'HDR Photos']);
   assert.deepStrictEqual(keysOf(lines).sort(), ['HDR', 'LOCAL_REPORT', 'MLS']);
 });
 
@@ -90,6 +90,11 @@ test('getDeliverableLines: MLS line points at the Dropbox-only MLS-for-download 
   const dropboxSync = require('./dropbox-sync.js');
   const mls = getDeliverableLines({ addons: {} }, []).find((l) => l.key === 'MLS');
   assert.strictEqual(mls.dropboxFolder, dropboxSync.MLS_FOR_DOWNLOAD_SUBFOLDER);
+});
+
+test('getDeliverableLines: HDR line points at "HDR Photos" (renamed from "MLS" 2026-09-12)', () => {
+  const hdr = getDeliverableLines({ addons: {} }, []).find((l) => l.key === 'HDR');
+  assert.strictEqual(hdr.dropboxFolder, 'HDR Photos');
 });
 
 // ---- renderTemplate ----
@@ -195,7 +200,7 @@ await testAsync('generateDeliveryEmails: writes both language files with links f
         clientName: 'Cindy Lu',
         address: '6-260 Eagle St, Newmarket',
         order: { addons: { floor_plan: true } },
-        componentFolders: ['0 RAW/1 Raws', 'Revisions', 'Home Report', 'Local Report', 'MLS', 'Floorplan'],
+        componentFolders: ['0 RAW/1 Raws', 'Revisions', 'Home Report', 'Local Report', 'HDR Photos', 'Floorplan'],
         totalCents: 17854,
         preTaxCents: 15800,
         client: fakeDbx,
@@ -211,6 +216,7 @@ await testAsync('generateDeliveryEmails: writes both language files with links f
       // Payment paragraph shows pre-tax + HST, not just the total (2026-09-12);
       // pre-tax drops its decimals here since 15800 cents is a whole dollar.
       assert.ok(zh.includes('$158+HST= $178.54'));
+      assert.ok(zh.includes('https://dropbox.com/link/Job/HDR Photos')); // the renamed HDR line target
       assert.ok(zh.includes('https://dropbox.com/link/Job/MLS for download'));
       assert.ok(zh.includes('https://dropbox.com/link/Job/Floorplan'));
       // Corrected E-Transfer address + the "not Gmail" note (2026-09-12).

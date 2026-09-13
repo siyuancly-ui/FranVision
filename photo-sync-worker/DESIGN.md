@@ -22,7 +22,7 @@
 | 扫描起点 | 监听根目录 + 靠 `jobId` 标签过滤；做成环境变量 `DROPBOX_JOBS_ROOT`（默认空=根），以后收进统一父文件夹时改配置即可。 |
 | 回填 | 手动触发接口 `POST /admin/backfill`（带 `ADMIN_TOKEN`），可全量或单 job。**不自动跑**。v1 只处理上线后的新变化，旧 job 等以后做数据迁移。 |
 | 并发安全 | 加 Postgres 原子函数 `photos_upsert` / `photos_mark_pending`，避免多批次并发 + Feature Sheet Builder 同时写 `projects.data` 互相覆盖丢照片。 |
-| 同步文件夹 | `SYNC_FOLDERS = MLS, Virtual Staging, Floorplan, Local Report`（及其子目录里的 `.jpg/.jpeg/.png/.webp`）。非图片（PDF/文档）自动跳过。`Home Report` 不同步（它是房屋详情报告，Local Report 是周边配套报告，两个不同目录）。 |
+| 同步文件夹 | `SYNC_FOLDERS = MLS, HDR Photos, Virtual Staging, Floorplan, Local Report`（及其子目录里的 `.jpg/.jpeg/.png/.webp`）。非图片（PDF/文档）自动跳过。`Home Report` 不同步（它是房屋详情报告，Local Report 是周边配套报告，两个不同目录）。`MLS` 和 `HDR Photos` 都列进去是因为 job-generator 在 2026-09-12 把这个固定文件夹从 `MLS` 改名成了 `HDR Photos`（纯改名，行为不变）——2026-09-12 之前建的 job 文件夹下还是叫 `MLS`，两个名字都得同步才不会漏掉旧 job。 |
 | Video / VLOG | **v1 不碰**。Dropbox 视频直链在 Wix 里播放不可靠（预览页非裸文件、流量限制、Range 支持差）。等定了视频托管（Vimeo / YouTube）再做独立小后续。 |
 | MLS 可下载交付图集（方案二 A-lite） | 展示与交付**两条压缩管线**：① Supabase/Gallery 用 `w1024h768`（`THUMB_SIZE`）；② Dropbox `MLS for download/` 交付集用 `w2048h1536`（`DOWNLOAD_THUMB_SIZE`，Dropbox 最大档，3:2 横幅 → 2048×1365，~0.4–0.9MB）。都由 Dropbox 缩略图 API 生成，Worker 不做图像计算。只有 `MLS` 有交付镜像。原图被删 → 镜像副本**一并硬删**（纯派生物，可重建），Supabase 记录照常置 `pending_review`。批量端点若不接受 `w2048h1536`，逐张回退 `get_thumbnail_v2`。 |
 
@@ -73,10 +73,10 @@ Property Template：名字 `FranVision Job`，`template_id = ptid:R599LCPosWEAAA
   `DROPBOX_APP_KEY` / `DROPBOX_APP_SECRET` / `DROPBOX_REFRESH_TOKEN` /
   `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `ADMIN_TOKEN`
 - **Vars**（`wrangler.jsonc`，非机密）：
-  `DROPBOX_JOBS_ROOT=""` / `SYNC_FOLDERS="MLS,Virtual Staging,Floorplan,Local Report"` /
+  `DROPBOX_JOBS_ROOT=""` / `SYNC_FOLDERS="MLS,HDR Photos,Virtual Staging,Floorplan,Local Report"` /
   `THUMB_SIZE="w1024h768"` / `DOWNLOAD_THUMB_SIZE="w2048h1536"` /
   `DROPBOX_TEMPLATE_ID="ptid:R599LCPosWEAAAAAAAAIFA"` /
-  `DOWNLOAD_SET_FOLDERS="MLS"` / `DOWNLOAD_SUBFOLDER="MLS for download"`
+  `DOWNLOAD_SET_FOLDERS="MLS,HDR Photos"` / `DOWNLOAD_SUBFOLDER="MLS for download"`
 
 Webhook 验证用 `DROPBOX_APP_SECRET` 对请求体做 HMAC-SHA256，比对 `X-Dropbox-Signature`。
 

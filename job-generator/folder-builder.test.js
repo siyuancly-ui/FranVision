@@ -30,7 +30,7 @@ function sortedSet(arr) {
 
 test('Standard photography, no add-ons: baseline four folders only', () => {
   const order = { propertyType: 'condo', photography: 'standard', addons: {} };
-  assert.deepStrictEqual(sortedSet(getComponentFolders(order)), sortedSet(['0 RAW/1 Raws', 'Revisions', 'Local Report', 'MLS']));
+  assert.deepStrictEqual(sortedSet(getComponentFolders(order)), sortedSet(['0 RAW/1 Raws', 'Revisions', 'Local Report', 'HDR Photos']));
 });
 
 test('Luxury photography: adds Raw HDR, no dedicated Twilight folder (removed 2026-09-06)', () => {
@@ -84,7 +84,7 @@ test('3D Virtual Tour selected: no dedicated folder (removed 2026-09-06) -- stil
   const order = { propertyType: 'condo', photography: 'standard', addons: { three_d_tour: true } };
   const folders = getComponentFolders(order);
   assert.ok(!folders.some((f) => /3d/i.test(f)));
-  assert.deepStrictEqual(sortedSet(folders), sortedSet(['0 RAW/1 Raws', 'Revisions', 'Local Report', 'MLS']));
+  assert.deepStrictEqual(sortedSet(folders), sortedSet(['0 RAW/1 Raws', 'Revisions', 'Local Report', 'HDR Photos']));
 });
 
 test('Virtual Staging: checkbox alone with qty 0 still creates the folder (photo count often unknown yet -- intentional)', () => {
@@ -105,7 +105,7 @@ test('Feature Sheets selected: Feature Sheets folder', () => {
 test('Drone Photos selected: no dedicated folder at all', () => {
   const order = { propertyType: 'condo', photography: 'standard', addons: { drone_photos: true } };
   const folders = getComponentFolders(order);
-  assert.deepStrictEqual(sortedSet(folders), sortedSet(['0 RAW/1 Raws', 'Revisions', 'Local Report', 'MLS']));
+  assert.deepStrictEqual(sortedSet(folders), sortedSet(['0 RAW/1 Raws', 'Revisions', 'Local Report', 'HDR Photos']));
 });
 
 test('Everything selected at once: full folder set, each exactly once', () => {
@@ -127,7 +127,7 @@ test('Everything selected at once: full folder set, each exactly once', () => {
   const folders = getComponentFolders(order);
   const expected = [
     '0 RAW/1 Raws', '0 RAW/4 Raw HDR', '0 RAW/2 Video', '0 RAW/3 Image',
-    'Revisions', 'Local Report', 'MLS', 'Floorplan',
+    'Revisions', 'Local Report', 'HDR Photos', 'Floorplan',
     'Virtual Staging', 'Feature Sheets', 'Video', 'VLOG',
   ];
   assert.deepStrictEqual(sortedSet(folders), sortedSet(expected));
@@ -158,7 +158,7 @@ test('createJobFolders actually creates the job folder and every component folde
     assert.ok(fs.existsSync(path.join(jobFolder, 'Revisions')));
     assert.ok(!fs.existsSync(path.join(jobFolder, 'Home Report')));
     assert.ok(fs.existsSync(path.join(jobFolder, 'Local Report')));
-    assert.ok(fs.existsSync(path.join(jobFolder, 'MLS')));
+    assert.ok(fs.existsSync(path.join(jobFolder, 'HDR Photos')));
     assert.ok(fs.existsSync(path.join(jobFolder, 'Floorplan')));
     assert.ok(fs.existsSync(path.join(jobFolder, 'Video')));
     assert.ok(!fs.existsSync(path.join(jobFolder, 'VLOG')));

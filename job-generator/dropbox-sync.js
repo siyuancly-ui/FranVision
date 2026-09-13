@@ -42,7 +42,8 @@ const TEMPLATE_NAME = 'FranVision Job';
 
 // The Dropbox-only "delivery render" folder Photo Sync Worker lazily
 // writes MLS delivery images into (see photo-sync-worker/CLAUDE.md's
-// DOWNLOAD_SUBFOLDER) -- top-level, sibling to 'MLS', not nested under it.
+// DOWNLOAD_SUBFOLDER) -- top-level, sibling to 'HDR Photos' (renamed
+// from 'MLS' 2026-09-12), not nested under it.
 // folder-builder.js deliberately does NOT list this as a component folder
 // (it's never created on local disk -- nothing ever populates it locally,
 // Photo Sync Worker writes straight from Dropbox thumbnails to Dropbox).
@@ -79,7 +80,7 @@ function getClient() {
 
 // Given the top-level folder name and the list of '/'-joined component
 // folder paths (same shape folder-builder.js#getComponentFolders returns,
-// e.g. ['0 RAW/1 Raws', 'MLS']), returns every directory that needs to
+// e.g. ['0 RAW/1 Raws', 'HDR Photos']), returns every directory that needs to
 // exist in Dropbox -- INCLUDING intermediate directories folder-builder.js
 // never lists explicitly (e.g. '0 RAW' itself), because unlike
 // fs.mkdirSync(..., {recursive:true}), Dropbox's create_folder does not

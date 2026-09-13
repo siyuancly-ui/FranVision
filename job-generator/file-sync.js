@@ -46,10 +46,11 @@ const deliveryEmail = require('./delivery-email.js');
 // job folder is always named "<date> <address>_<client>", so if Push/Pull
 // is pointed at a folder whose name is literally one of THESE instead,
 // that's almost certainly a mis-click (a job's own subfolder, e.g. "0 RAW"
-// or "MLS", picked instead of the job folder itself) -- found the hard
-// way (2026-09-08): doing this creates an unrelated, disconnected
-// top-level folder in Dropbox named "0 RAW" or "MLS", sitting among every
-// other real job folder with nothing tying it back to the actual job.
+// or "HDR Photos", picked instead of the job folder itself) -- found the
+// hard way (2026-09-08): doing this creates an unrelated, disconnected
+// top-level folder in Dropbox named "0 RAW" or "HDR Photos", sitting
+// among every other real job folder with nothing tying it back to the
+// actual job.
 // 'Home Report' is kept here deliberately even though folder-builder.js
 // no longer generates it (removed 2026-09-10 -- it was a naming mistake
 // for 'Local Report', not a real distinct folder at the time). Jobs
@@ -57,8 +58,11 @@ const deliveryEmail = require('./delivery-email.js');
 // disk, and this safety net exists specifically to catch someone
 // mis-clicking into a job's own subfolder -- so it stays listed for as
 // long as any such job might still be around.
+// 'MLS' is kept for the exact same reason, alongside its 2026-09-12
+// rename to 'HDR Photos' (see folder-builder.js's header comment) --
+// jobs created before that rename still have a real 'MLS' subfolder.
 const KNOWN_COMPONENT_FOLDER_NAMES = new Set([
-  '0 RAW', 'Revisions', 'Home Report', 'Local Report', 'MLS',
+  '0 RAW', 'Revisions', 'Home Report', 'Local Report', 'MLS', 'HDR Photos',
   'Floorplan', 'Virtual Staging', 'Feature Sheets', 'Video', 'VLOG',
 ]);
 
@@ -88,11 +92,12 @@ const LOCAL_ONLY_FOLDER_NAMES = new Set(['Shoot Info']);
 // The mirror image of LOCAL_ONLY_FOLDER_NAMES: a folder that lives on
 // DROPBOX ONLY and must never be touched by Push or Pull. Currently just
 // dropbox-sync.js's 'MLS for download' -- Photo Sync Worker's derived MLS
-// delivery renders (see its own comment there), pure derivatives of what's
-// already in 'MLS', regenerable, and never meant to exist on local disk.
-// Push must never upload into it (nothing ever will locally); Pull must
-// never download it (it would just be a redundant second copy of every
-// MLS photo, at Dropbox's expense too).
+// delivery renders (see its own comment there), pure derivatives of
+// what's already in 'HDR Photos' (or 'MLS', for jobs from before the
+// 2026-09-12 rename), regenerable, and never meant to exist on local
+// disk. Push must never upload into it (nothing ever will locally); Pull
+// must never download it (it would just be a redundant second copy of
+// every photo, at Dropbox's expense too).
 const DROPBOX_ONLY_FOLDER_NAMES = new Set([dropboxSync.MLS_FOR_DOWNLOAD_SUBFOLDER]);
 
 // Dropbox limits: a single files/upload call must be under 150 MiB; above

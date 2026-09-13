@@ -88,7 +88,14 @@ function getDeliverableLines(order, componentFolders) {
 
   return [
     // Every job delivers HD photos and MLS-sized photos.
-    { key: 'HDR', include: true, dropboxFolder: 'MLS' },
+    // 'HDR Photos' was named 'MLS' until 2026-09-12 -- pure rename, see
+    // folder-builder.js's header comment. A job created before that
+    // rename still has this content under 'MLS' on disk/Dropbox; this
+    // module doesn't special-case that (Update on such a job would link
+    // to the new, still-empty 'HDR Photos' folder rather than the old
+    // one with real photos in it -- a known, accepted gap, not silently
+    // "fixed" here).
+    { key: 'HDR', include: true, dropboxFolder: 'HDR Photos' },
     { key: 'MLS', include: true, dropboxFolder: dropboxSync.MLS_FOR_DOWNLOAD_SUBFOLDER },
     video,
     { key: 'FLOORPLAN', include: wantsFloorplan, dropboxFolder: 'Floorplan' },

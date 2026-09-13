@@ -16,7 +16,7 @@
 //     3 Image          <- same condition as 2 Video (video-editing stock images)
 //   Revisions           <- always, empty
 //   Local Report        <- always, empty (added 2026-09-07)
-//   MLS                 <- always
+//   HDR Photos          <- always (renamed from "MLS" 2026-09-12 -- see below)
 //   Floorplan           <- Floor Plan OR Site Plan selected (Site Plan merges in, no separate folder)
 //   Virtual Staging     <- Virtual Staging selected
 //   Feature Sheets      <- Feature Sheets selected
@@ -24,7 +24,7 @@
 //   VLOG                <- Vlog Video selected (finished)
 //
 // Drone Photos has no dedicated folder -- it's treated exactly like the
-// base photography service and flows through 1 Raws / MLS / Local Report.
+// base photography service and flows through 1 Raws / HDR Photos / Local Report.
 //
 // Twilight and 3D Tour deliberately have NO dedicated folder (2026-09-06
 // change -- they used to) -- Luxury tier still gets 0 RAW/4 Raw HDR, and
@@ -40,6 +40,20 @@
 // wired into pricing-config.js -- when that happens it gets its own
 // CONDITIONAL folder logic here, tied to that new service being selected.
 // Do not re-add an unconditional "Home Report" folder before then.
+//
+// "MLS" RENAMED to "HDR Photos" 2026-09-12 -- pure naming change, no
+// behavior change (still always-present, still the folder the Delivery
+// Email's HDR line links to). Chosen because the folder actually holds
+// the studio's finished high-res photos, and "MLS" as a name was
+// confusing next to the Delivery Email's own separate "MLS Photos" line
+// (which points at Photo Sync Worker's derived "MLS for download"
+// folder, an entirely different thing). Existing jobs created before
+// this change keep their real "MLS" folder on disk (this is a
+// go-forward rename, not a migration) -- file-sync.js's
+// KNOWN_COMPONENT_FOLDER_NAMES and photo-sync-worker's
+// SYNC_FOLDERS/DOWNLOAD_SET_FOLDERS both list BOTH names for exactly
+// this reason. Do not remove "MLS" from either of those until no job
+// with the old folder name is still in active use.
 
 const fs = require('fs');
 const path = require('path');
@@ -65,7 +79,7 @@ function getComponentFolders(order) {
   const stagingQty = Number(addons.virtual_staging_qty) || 0;
   const wantsVirtualStaging = !!addons.virtual_staging || stagingQty > 0;
 
-  const folders = ['0 RAW/1 Raws', 'Revisions', 'Local Report', 'MLS'];
+  const folders = ['0 RAW/1 Raws', 'Revisions', 'Local Report', 'HDR Photos'];
 
   if (isLuxury) {
     folders.push('0 RAW/4 Raw HDR');

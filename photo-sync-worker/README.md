@@ -31,15 +31,21 @@ Cron (every 2 min) ────────────────────�
                                            advance cursor)                     back to "MLS for download/")
 ```
 
-- **`SYNC_FOLDERS`** (`MLS, Virtual Staging, Floorplan, Local Report`): only
-  images (`.jpg/.jpeg/.png/.webp`) under these sub-folders of a job folder
-  are mirrored. `0 RAW`, `Home Report`, videos, PDFs, etc. are ignored.
-- **`DOWNLOAD_SET_FOLDERS`** (`MLS`): these also get a **larger** render
+- **`SYNC_FOLDERS`** (`MLS, HDR Photos, Virtual Staging, Floorplan, Local Report`):
+  only images (`.jpg/.jpeg/.png/.webp`) under these sub-folders of a job folder
+  are mirrored. `0 RAW`, `Home Report`, videos, PDFs, etc. are ignored. Both
+  `MLS` and `HDR Photos` are listed because job-generator renamed its
+  always-present high-res-photos folder from `MLS` to `HDR Photos` on
+  2026-09-12 (pure rename on that side) — jobs created before then still
+  have a real `MLS` folder, so both names stay synced.
+- **`DOWNLOAD_SET_FOLDERS`** (`MLS, HDR Photos`): these also get a **larger** render
   (`DOWNLOAD_THUMB_SIZE`, `w2048h1536` — a 3:2 landscape → 2048×1365,
   ~0.4–0.9 MB) written back into Dropbox at `<job>/MLS for download/<name>.jpg`
-  as a human-downloadable delivery set. Two compressions per MLS photo:
-  `THUMB_SIZE` for Supabase/Gallery, `DOWNLOAD_THUMB_SIZE` for Dropbox. If the
-  batch endpoint rejects the size, it falls back to per-file `get_thumbnail_v2`.
+  as a human-downloadable delivery set (`DOWNLOAD_SUBFOLDER` is its own,
+  unrelated name — not part of the `MLS`/`HDR Photos` rename). Two
+  compressions per photo: `THUMB_SIZE` for Supabase/Gallery,
+  `DOWNLOAD_THUMB_SIZE` for Dropbox. If the batch endpoint rejects the
+  size, it falls back to per-file `get_thumbnail_v2`.
 - **Self-heal**: a Dropbox-side delete flags the photo `status:"pending_review"`
   in Supabase (nothing is removed) and deletes the derived `MLS for download`
   copy. Re-uploading a file with the **same name** in the same folder → same
