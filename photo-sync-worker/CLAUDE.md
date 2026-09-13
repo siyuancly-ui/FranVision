@@ -51,7 +51,7 @@ npx wrangler deploy
 #       and register https://<worker>/webhook in the Dropbox App Console (FranVision OS -> Settings -> Webhooks)
 ```
 
-Live as of 2026-09-08: deployed to the **`Frankystudio`** Cloudflare account at `https://franvision-photo-sync.frankystudio-6f3.workers.dev`; the Dropbox webhook is registered and Enabled on the **FranVision OS** app; end-to-end acceptance (job create → photo upload → thumbnail + record + delivery copy → delete/self-heal) has passed against real Dropbox + Supabase.
+Live as of 2026-09-08: deployed to the **`Frankystudio`** Cloudflare account at `https://franvision-photo-sync.frankystudio-6f3.workers.dev`; the Dropbox webhook is registered and Enabled on the **FranVision OS** app; end-to-end acceptance (job create → photo upload → thumbnail + record + delivery copy → delete/self-heal) has passed against real Dropbox + Supabase. Redeployed 2026-09-13 for the `SYNC_FOLDERS`/`DOWNLOAD_SET_FOLDERS` config-only change (added `HDR Photos` alongside `MLS` — see job-generator/CLAUDE.md's "MLS renamed to HDR Photos" decision); no code changed, no new acceptance run needed.
 
 ## Architecture: the pipeline
 
