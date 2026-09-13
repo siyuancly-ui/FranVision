@@ -50,6 +50,7 @@ const path = require('path');
 const { downloadFile: sdkDownloadFile } = require('dropbox');
 const dropboxSync = require('./dropbox-sync.js');
 const deliveryEmail = require('./delivery-email.js');
+const formState = require('./form-state.js');
 
 // Names folder-builder.js can produce as a job's OWN top-level component
 // folder (the first path segment of getComponentFolders()' output --
@@ -85,14 +86,17 @@ const MANIFEST_FILENAME = '.dropbox-sync-manifest.json';
 
 // job.json / Job Info.txt (job-files.js), Shoot Schedule.ics
 // (calendar-file.js -- the generated calendar event, with any images
-// embedded as base64 ATTACH), and the two Delivery Email .txt files
-// (delivery-email.js) are deliberately LOCAL-ONLY -- never pushed,
-// pulled, or deleted on either side by this module. Explicit user
-// requirement: these must exist only in the local job folder, regardless
-// of what Push/Pull does to everything else in the tree.
+// embedded as base64 ATTACH), the two Delivery Email .txt files
+// (delivery-email.js), and the form-reload sidecar (form-state.js, added
+// 2026-09-13 alongside the Draft/Job unification) are deliberately
+// LOCAL-ONLY -- never pushed, pulled, or deleted on either side by this
+// module. Explicit user requirement: these must exist only in the local
+// job folder, regardless of what Push/Pull does to everything else in
+// the tree.
 const LOCAL_ONLY_FILENAMES = new Set([
   'job.json', 'Job Info.txt', 'Shoot Schedule.ics',
   deliveryEmail.OUTPUT_FILENAME_ZH, deliveryEmail.OUTPUT_FILENAME_EN,
+  formState.FORM_STATE_FILENAME,
 ]);
 
 // Pre-2026-09-10, calendar-file.js wrote a "Shoot Info" folder (holding

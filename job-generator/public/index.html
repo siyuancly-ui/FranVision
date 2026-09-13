@@ -194,12 +194,23 @@
 
 <div class="section-divider" style="border-top:none;">
   <h2 class="section-title">Job Drafts</h2>
-  <p class="field-hint">For a shoot that isn't locked in yet -- date confirmed but time TBD, package still being negotiated, a reschedule risk, or who's shooting it still undecided. Saving a draft only writes a small local record here in Job Generator (and, once Shoot Time is set, a draft calendar file) -- no job folder, job.json, or Dropbox mirror is created until you click Create Job below.</p>
+  <p class="field-hint">For a shoot that isn't locked in yet -- date confirmed but time/package/who's shooting it may still change before the shoot. <strong>Save as Draft</strong> creates the real job folder, job.json, and Dropbox mirror right away (so it's ready to update at any point before the shoot) -- the only thing it withholds is the Job ID. Click a draft below to reopen it; click Create Job when the shoot is done to assign its ID.</p>
 </div>
 <div class="layout" style="grid-template-columns: 1fr;">
   <div class="panel">
     <div id="drafts-list"></div>
     <div id="drafts-empty-hint" class="empty-hint">No saved drafts.</div>
+  </div>
+</div>
+
+<div class="section-divider">
+  <h2 class="section-title">Recent Jobs</h2>
+  <p class="field-hint">Real jobs (a Job ID already assigned) created in the last 3 days -- click one to reopen it and adjust anything that only became clear after the shoot (an extra Feature Sheet, the final Virtual Staging count, &hellip;). Updating a job here never changes its Job ID.</p>
+</div>
+<div class="layout" style="grid-template-columns: 1fr;">
+  <div class="panel">
+    <div id="recent-jobs-list"></div>
+    <div id="recent-jobs-empty-hint" class="empty-hint">No jobs created in the last 3 days.</div>
   </div>
 </div>
 
@@ -327,7 +338,7 @@
         <button type="button" class="browse-btn" id="draft-clear-btn">Start New</button>
       </div>
 
-      <div class="field-hint" style="margin-bottom:12px;"><strong>Save as Draft</strong> keeps an editable copy here (no folder, no Dropbox, no Job ID) while the shoot isn't locked in. <strong>Create Job</strong> is the real thing — folder, job.json, Dropbox. If a job for this same Shoot Date + Address + Client already exists, Create Job <strong>updates</strong> it instead of making a second one.</div>
+      <div class="field-hint" style="margin-bottom:12px;"><strong>Save as Draft</strong> creates/updates the real folder, job.json, and Dropbox mirror but withholds the Job ID -- for a shoot that isn't locked in yet. <strong>Create Job</strong> assigns the Job ID (finalizing a Draft, or minting a brand-new job) -- or, if a job for this same Shoot Date + Address + Client already has an ID, <strong>updates</strong> it in place instead.</div>
 
       <div class="field-row">
         <label class="field-label" for="rootFolder">Job Root Folder</label>
@@ -455,9 +466,10 @@
   // Each entry is either { kind: 'file', file: File } -- a freshly-picked
   // upload, not yet base64 (converting up front would waste work if the
   // user removes it or never submits) -- or { kind: 'saved', filename,
-  // dataBase64 } -- an image that came back from loading a Draft
-  // (draft-store.js), already on disk there, shown as an attached chip
-  // without asking the user to re-select it. Both kinds get normalized to
+  // dataBase64 } -- an image that came back from loading a Draft or Recent
+  // Job (see loadJobIntoForm()/calendar-file.js#readExistingImages),
+  // already on disk there, shown as an attached chip without asking the
+  // user to re-select it. Both kinds get normalized to
   // {filename, dataBase64} right before a Save Draft/Create Job request.
   // Limits mirror calendar-file.js's server-side ones exactly; the server
   // re-validates regardless (never trust the client), this is purely for
@@ -539,25 +551,31 @@
     renderShootNotesImages();
   });
 
-  // ---- Job Drafts (draft-store.js) ----
-  // Entirely separate from Create Job's folder/job.json/Dropbox side
-  // effects -- a draft only ever writes its own small local record (plus,
-  // once Shoot Time is set, a draft calendar file) under
-  // job-generator/drafts/. null/falsy currentDraftId means "this form is
-  // a brand-new, unsaved entry, not tied to any draft yet".
-  let currentDraftId = null;
-  let currentDraftCreatedAt = null;
+  // ---- Job Drafts + Recent Jobs (job-list.js / form-state.js) ----
+  // A "Draft" is a real job folder (folder, job.json, Dropbox mirror --
+  // everything Create Job makes) that's simply missing its Job ID
+  // (job.json's jobId: null) -- see id-generator.js / root CLAUDE.md's
+  // "Draft/Job unification" note, 2026-09-13. Save as Draft withholds the
+  // ID; Create Job assigns it (finalizing the draft) or, if this exact
+  // Shoot Date + Address + Client already has a real ID, updates that job
+  // in place instead -- see refreshFolderPreview()'s matchesExistingDraft/
+  // matchesExistingJob below, which is what actually decides that, fresh
+  // from the current form fields on every change. `currentlyEditing` here
+  // is UI-only bookkeeping (which row's banner/label to show after loading
+  // one) -- it never affects what Save Draft / Create Job themselves do.
+  let currentlyEditing = null; // { folderName, jobId (null for a draft) } | null
 
   function updateDraftBanner() {
     const banner = el('draft-banner');
-    if (!currentDraftId) { banner.style.display = 'none'; return; }
+    if (!currentlyEditing) { banner.style.display = 'none'; return; }
     banner.style.display = '';
-    el('draft-banner-text').textContent = 'Editing a saved draft -- Create Job will finalize it and remove the draft.';
+    el('draft-banner-text').textContent = currentlyEditing.jobId
+      ? 'Editing Recent Job ' + currentlyEditing.jobId + ' -- Create Job will update it (same Job ID).'
+      : 'Editing a saved Draft -- Create Job will assign it a Job ID and finalize it.';
   }
 
   function clearCurrentDraft() {
-    currentDraftId = null;
-    currentDraftCreatedAt = null;
+    currentlyEditing = null;
     updateDraftBanner();
   }
 
@@ -604,37 +622,44 @@
     refreshFolderPreview();
   }
 
-  function draftTimeLabel(draft) {
-    if (!draft.shootDate) return 'date TBD';
-    return draft.shootDate + (draft.shootTime ? ' ' + draft.shootTime : ' (time TBD)');
+  function shootTimeLabel(job) {
+    if (!job.shootDate) return 'date TBD';
+    return job.shootDate + (job.shootTime ? ' ' + job.shootTime : ' (time TBD)');
   }
 
-  function renderDraftsList(drafts) {
-    const list = el('drafts-list');
+  // Shared row renderer for both the Drafts list and the Recent Jobs list
+  // -- `withDelete` adds a Delete button (Drafts only; a real job has no
+  // delete/undo, see DESIGN-job-update.md).
+  function renderJobRows(listElId, emptyHintId, jobs, { withDelete }) {
+    const list = el(listElId);
     list.innerHTML = '';
-    el('drafts-empty-hint').style.display = drafts.length ? 'none' : '';
-    drafts.forEach((draft) => {
+    el(emptyHintId).style.display = jobs.length ? 'none' : '';
+    jobs.forEach((job) => {
       const row = document.createElement('div');
       row.className = 'draft-row';
 
       const info = document.createElement('div');
       info.className = 'info';
       info.innerHTML =
-        '<div class="primary">' + (draft.clientName || '(no client name yet)') + (draft.address ? ' -- ' + draft.address : '') + '</div>' +
-        '<div class="meta">' + draftTimeLabel(draft) + ' &middot; saved ' + new Date(draft.updatedAt).toLocaleString() + '</div>';
-      info.addEventListener('click', () => loadDraft(draft.draftId));
-
-      const actions = document.createElement('div');
-      actions.className = 'actions';
-      const delBtn = document.createElement('button');
-      delBtn.type = 'button';
-      delBtn.className = 'browse-btn';
-      delBtn.textContent = 'Delete';
-      delBtn.addEventListener('click', () => deleteDraftUI(draft.draftId));
-      actions.appendChild(delBtn);
+        '<div class="primary">' + (job.jobId ? '<code>' + job.jobId + '</code> ' : '') +
+          (job.clientName || '(no client name yet)') + (job.address ? ' -- ' + job.address : '') + '</div>' +
+        '<div class="meta">' + shootTimeLabel(job) + ' &middot; ' + (job.jobId ? 'created' : 'saved') + ' ' + new Date(job.updatedAt || job.createdAt).toLocaleString() + '</div>';
+      info.addEventListener('click', () => loadJobIntoForm(job.folderName));
 
       row.appendChild(info);
-      row.appendChild(actions);
+
+      if (withDelete) {
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'browse-btn';
+        delBtn.textContent = 'Delete';
+        delBtn.addEventListener('click', () => deleteDraftUI(job.folderName));
+        actions.appendChild(delBtn);
+        row.appendChild(actions);
+      }
+
       list.appendChild(row);
     });
   }
@@ -642,23 +667,38 @@
   async function refreshDraftsList() {
     const res = await fetch('/api/drafts');
     const data = await res.json();
-    renderDraftsList(data.drafts || []);
+    renderJobRows('drafts-list', 'drafts-empty-hint', data.drafts || [], { withDelete: true });
   }
 
-  async function deleteDraftUI(draftId) {
-    if (!confirm('Delete this draft? This cannot be undone.')) return;
-    await fetch('/api/drafts/' + draftId, { method: 'DELETE' });
-    if (draftId === currentDraftId) clearCurrentDraft();
+  async function refreshRecentJobsList() {
+    const res = await fetch('/api/recent-jobs');
+    const data = await res.json();
+    renderJobRows('recent-jobs-list', 'recent-jobs-empty-hint', data.jobs || [], { withDelete: false });
+  }
+
+  async function deleteDraftUI(folderName) {
+    if (!confirm('Delete this draft? This deletes its folder locally AND on Dropbox. This cannot be undone.')) return;
+    const res = await fetch('/api/drafts', {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folderName, rootFolder: el('rootFolder').value.trim() }),
+    });
+    if (res.ok && currentlyEditing && currentlyEditing.folderName === folderName) clearCurrentDraft();
     refreshDraftsList();
   }
 
-  async function loadDraft(draftId) {
-    const res = await fetch('/api/drafts/' + draftId);
-    if (!res.ok) { refreshDraftsList(); return; }
+  // Shared loader for both a Drafts-list row and a Recent-Jobs-list row --
+  // see /api/job-detail (server.js) for why job.json alone isn't enough
+  // (form-state.js's sidecar fills in shootTime/notes/chosenCandidateIndex/
+  // commission checkboxes, none of which job.json itself carries).
+  async function loadJobIntoForm(folderName) {
+    const res = await fetch('/api/job-detail', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folderName, rootFolder: el('rootFolder').value.trim() }),
+    });
+    if (!res.ok) { refreshDraftsList(); refreshRecentJobsList(); return; }
     const data = await res.json();
 
-    currentDraftId = data.draftId;
-    currentDraftCreatedAt = data.createdAt;
+    currentlyEditing = { folderName: data.folderName, jobId: data.jobId };
     updateDraftBanner();
 
     el('clientName').value = data.clientName || '';
@@ -679,9 +719,9 @@
     await refreshPricing();
     await refreshCommission(true);
     // refreshCommission(true) just rendered the SERVER'S DEFAULT selection
-    // for this photographer/order -- overwrite the DOM with the draft's
-    // actual saved overrides (if any), then re-derive from that so the
-    // displayed total matches exactly what was saved, not the defaults.
+    // for this photographer/order -- overwrite the DOM with the saved
+    // overrides (if any), then re-derive from that so the displayed total
+    // matches exactly what was saved, not the defaults.
     if (data.photographerName) {
       const checkedIds = (data.commission && data.commission.checkedItemIds) || [];
       const travelCents = (data.commission && data.commission.travelCents) || 0;
@@ -702,27 +742,28 @@
     if (problem) { el('shoot-notes-error').textContent = problem; return; }
     updateShootTimeError();
     if (el('shootTime-error').textContent) return;
+    if (!el('rootFolder').value.trim()) { el('save-draft-result').textContent = 'Job Root Folder is required.'; return; }
 
     const inputs = readJobInputs();
     if (latestPrice && latestPrice.status === 'ambiguous') inputs.chosenCandidateIndex = selectedCandidateIndex;
     inputs.commission = { checkedItemIds: commissionCheckedIds || [], travelCents: commissionTravelCents };
-    if (currentDraftId) inputs.draftId = currentDraftId;
-    if (currentDraftCreatedAt) inputs.createdAt = currentDraftCreatedAt;
+    inputs.saveAsDraft = true;
 
     el('save-draft-btn').disabled = true;
     el('save-draft-result').textContent = shootNotesImages.length ? 'Preparing images…' : 'Saving…';
     try {
       inputs.images = await resolveImagesForSubmit();
-      const res = await fetch('/api/drafts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(inputs) });
+      const res = await fetch('/api/create-job', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(inputs) });
       const result = await res.json();
       if (!res.ok) {
         el('save-draft-result').textContent = result.error || 'Failed to save draft.';
         return;
       }
-      currentDraftId = result.draftId;
+      currentlyEditing = { folderName: result.folderName, jobId: null };
       updateDraftBanner();
       el('save-draft-result').textContent = 'Draft saved' + (result.calendar ? ' (calendar file updated)' : '') + '.';
       refreshDraftsList();
+      refreshFolderPreview();
     } catch (err) {
       el('save-draft-result').textContent = err.message;
     } finally {
@@ -834,32 +875,45 @@
   // older response could otherwise land after a newer one and show a
   // stale (mid-keystroke) folder name/Job ID.
   let folderPreviewRequestSeq = 0;
-  // Set from /api/plan: the Job ID this Create Job click would UPDATE
-  // (same Shoot Date + Address + Client as an existing job), or null for
-  // a brand-new job. Drives the button label + the result message.
+  // Set from /api/plan, fresh from the current Shoot Date + Address +
+  // Client fields on every change -- a real job with this exact identity
+  // (matchesExistingJob), a Save-Draft'd one with no ID yet
+  // (matchesExistingDraft), or neither (a brand-new folder). Drives both
+  // button labels + the result message. Mutually exclusive by construction
+  // (see id-generator.js#findExistingJob).
   let matchesExistingJob = null;
+  let matchesExistingDraft = false;
 
   async function refreshFolderPreview() {
     const thisRequestSeq = ++folderPreviewRequestSeq;
     const inputs = readJobInputs();
-    if (!inputs.rootFolder) { el('folder-preview').innerHTML = ''; matchesExistingJob = null; updateCreateButtonLabel(); return; }
+    if (!inputs.rootFolder) {
+      el('folder-preview').innerHTML = '';
+      matchesExistingJob = null;
+      matchesExistingDraft = false;
+      updateCreateButtonLabel();
+      return;
+    }
     const res = await fetch('/api/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(inputs) });
     const plan = await res.json();
     if (thisRequestSeq !== folderPreviewRequestSeq) return; // a newer request has since started -- this response is stale
 
     matchesExistingJob = plan.matchesExistingJob || null;
+    matchesExistingDraft = !!plan.matchesExistingDraft;
     updateCreateButtonLabel();
 
     let head;
     if (plan.existingFolderUnreadable) {
       head = '<div style="color:#7a1f1f;">⚠ A folder named <code>' + plan.folderName + '</code> already exists but its job.json can\'t be read. Create Job will refuse until it\'s fixed by hand.</div>';
     } else if (matchesExistingJob) {
-      head = '<div style="color:#6b510f;">↻ Matches existing job <code>' + matchesExistingJob + '</code> — Create Job will <strong>update</strong> it (same Job ID).</div>';
+      head = '<div style="color:#6b510f;">↻ Matches existing job <code>' + matchesExistingJob + '</code> — Create Job will <strong>update</strong> it (same Job ID). Save as Draft is unavailable here (a real job can\'t go back to being a draft).</div>';
       // Price delta vs. what this job was last saved with.
       const now = currentSelectedTotalCents();
       if (Number.isInteger(plan.existingTotalCents) && now !== null && now !== plan.existingTotalCents) {
         head += '<div style="color:#6b510f;">Price will change: saved ' + centsToDisplay(plan.existingTotalCents) + ' &rarr; current selection ' + centsToDisplay(now) + '.</div>';
       }
+    } else if (matchesExistingDraft) {
+      head = '<div style="color:#6b510f;">↻ Matches an existing Draft (no Job ID yet) — Save as Draft updates it in place; Create Job assigns it <code>' + plan.jobIdPreview + '</code> and finalizes it.</div>';
     } else {
       head = '<div>Job ID (preview): <code>' + plan.jobIdPreview + '</code></div>';
     }
@@ -898,6 +952,11 @@
 
   function updateCreateButtonLabel() {
     el('create-btn').textContent = matchesExistingJob ? 'Update ' + matchesExistingJob : 'Create Job';
+    // Save Draft can never strip an ID a job already has -- see
+    // server.js#/api/create-job's saveAsDraft-vs-hasRealId guard.
+    el('save-draft-btn').disabled = !!matchesExistingJob;
+    el('save-draft-btn').title = matchesExistingJob ? 'This is already a real job -- it can\'t be saved back as a Draft.' : '';
+    el('save-draft-btn').textContent = matchesExistingDraft ? 'Update Draft' : 'Save as Draft';
   }
 
   // Commission Breakdown -- entirely separate round trip from
@@ -1062,10 +1121,11 @@
       inputs.chosenCandidateIndex = selectedCandidateIndex;
     }
     inputs.commission = { checkedItemIds: commissionCheckedIds || [], travelCents: commissionTravelCents };
-    // If this job started life as a Draft, finalizing it deletes that
-    // draft record server-side (see draft-store.js) -- no separate draft
-    // history is kept once the real job.json/Job Info.txt exist.
-    if (currentDraftId) inputs.draftId = currentDraftId;
+    // saveAsDraft is deliberately omitted/false here -- this button always
+    // either mints/assigns a real Job ID or updates one that already
+    // exists (see server.js#/api/create-job). If this form was loaded from
+    // a Draft, finalizing it here is just that same folder getting its
+    // first real ID -- no separate delete/migration step needed.
     el('create-result').innerHTML = '';
     el('create-btn').disabled = true;
 
@@ -1126,9 +1186,10 @@
         }
       }
 
+      const jobStatusLabel = result.finalizedFromDraft ? 'finalized from Draft' : (isUpdate ? 'updated' : 'created');
       el('create-result').innerHTML =
         '<div class="result-box success">' +
-        '<div><strong>Job ' + (isUpdate ? 'updated' : 'created') + ': ' + result.jobId + '</strong></div>' +
+        '<div><strong>Job ' + jobStatusLabel + ': ' + result.jobId + '</strong></div>' +
         '<div class="path">' + result.jobFolderPath + '</div>' +
         '<div>Job Info.txt and job.json ' + (isUpdate ? 'rewritten' : 'written') + '.</div>' +
         updateHtml +
@@ -1145,10 +1206,12 @@
       renderShootNotesImages();
       el('shoot-notes-error').textContent = '';
 
-      // The draft (if any) this job was finalized from is gone server-side --
-      // disconnect the form from it and refresh the Drafts list.
+      // Whatever this call did (created, updated, or finalized a Draft),
+      // it now has a real Job ID -- disconnect the form's editing banner
+      // from a Draft it might have started as, and refresh both lists.
       clearCurrentDraft();
       refreshDraftsList();
+      refreshRecentJobsList();
       // The job folder now exists -- re-run the preview so the button
       // becomes "Update FVS-…" (a further tweak + click would update it).
       refreshFolderPreview();
@@ -1358,6 +1421,7 @@
   refreshPricing();
   refreshCommission(true);
   refreshDraftsList();
+  refreshRecentJobsList();
 })();
 </script>
 

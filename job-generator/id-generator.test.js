@@ -154,6 +154,27 @@ test('findExistingJob: returns jobId/createdAt/previousTotalCents/order for a re
   }
 });
 
+test('findExistingJob: jobId: null (a Save-Draft\'d job, no ID assigned yet) is a valid match, not "unreadable"', () => {
+  const root = makeTmpDir();
+  const name = '2026.9.20 1 Main St_Jane';
+  try {
+    fs.mkdirSync(path.join(root, name));
+    fs.writeFileSync(path.join(root, name, 'job.json'), JSON.stringify({
+      jobId: null,
+      createdAt: '2026-09-20T10:00:00.000Z',
+      pricing: { totalCents: 11074 },
+      services: { photography: 'standard' },
+    }));
+    const found = findExistingJob(root, name);
+    assert.strictEqual(found.unreadable, undefined);
+    assert.strictEqual(found.jobId, null);
+    assert.strictEqual(found.createdAt, '2026-09-20T10:00:00.000Z');
+    assert.strictEqual(found.previousTotalCents, 11074);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('findExistingJob: { unreadable: true } when the folder exists but job.json is missing or malformed', () => {
   const root = makeTmpDir();
   try {

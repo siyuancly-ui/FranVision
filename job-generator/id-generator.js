@@ -81,9 +81,19 @@ function getNextJobId(jobRootFolder, date) {
 //   null                                  -- no folder with that name
 //   { folderName, folderPath, jobId,      -- a real, updatable job
 //     createdAt, previousTotalCents, order }
+//   { folderName, folderPath, jobId: null, -- a Save-Draft'd job: real
+//     createdAt, previousTotalCents, order }  folder + job.json, no ID
+//                                            assigned yet (2026-09-13, see
+//                                            root CLAUDE.md's "Draft/Job
+//                                            unification" note) -- treated
+//                                            the same as a real match for
+//                                            update-in-place purposes, just
+//                                            without a jobId to keep
 //   { folderName, folderPath, unreadable: true }
 //                                         -- folder exists but has no
-//                                            readable job.json; the
+//                                            readable job.json, or jobId is
+//                                            neither a string nor null
+//                                            (corrupted/garbage); the
 //                                            caller should refuse rather
 //                                            than write a 2nd identity in
 function findExistingJob(jobRootFolder, folderName) {
@@ -102,7 +112,10 @@ function findExistingJob(jobRootFolder, folderName) {
   } catch (err) {
     return { folderName, folderPath, unreadable: true };
   }
-  if (!data || typeof data.jobId !== 'string') {
+  // `jobId: null` is our own deliberate "no ID assigned yet" sentinel
+  // (a Save-Draft'd job) -- distinct from a missing/garbage jobId, which
+  // means the file is corrupted and must not be treated as either state.
+  if (!data || (typeof data.jobId !== 'string' && data.jobId !== null)) {
     return { folderName, folderPath, unreadable: true };
   }
 

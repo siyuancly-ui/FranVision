@@ -276,6 +276,35 @@ await testAsync('syncJobFolderToDropbox: a property-tag failure never throws, co
   });
 });
 
+await testAsync('syncJobFolderToDropbox: jobId: null (a Save-Draft\'d job) creates folders but skips tagging, and that alone is still success', async () => {
+  const created = [];
+  const fakeDbx = {
+    filesCreateFolderV2: async ({ path }) => { created.push(path); return { result: {} }; },
+    filePropertiesPropertiesAdd: async () => { throw new Error('should not be called -- nothing to tag yet'); },
+  };
+  await withFakeCredentials(async () => {
+    const result = await syncJobFolderToDropbox({ folderName: 'Job', componentFolders: ['HDR Photos'], jobId: null, client: fakeDbx });
+    assert.strictEqual(result.success, true);
+    assert.strictEqual(result.propertiesTagged, false);
+    assert.strictEqual(result.error, null);
+    assert.deepStrictEqual(created.sort(), ['/Job', '/Job/HDR Photos']);
+  });
+});
+
+await testAsync('syncJobFolderToDropbox: promoting a draft to a real Job ID tags it on the very next call', async () => {
+  const tagged = [];
+  const fakeDbx = {
+    filesCreateFolderV2: async () => ({ result: {} }), // already exists from the earlier draft save
+    filePropertiesPropertiesAdd: async (arg) => { tagged.push(arg); return { result: null }; },
+  };
+  await withFakeCredentials(async () => {
+    const result = await syncJobFolderToDropbox({ folderName: 'Job', componentFolders: [], jobId: 'FVS-20260913-001', client: fakeDbx });
+    assert.strictEqual(result.success, true);
+    assert.strictEqual(result.propertiesTagged, true);
+    assert.strictEqual(tagged[0].property_groups[0].fields[0].value, 'FVS-20260913-001');
+  });
+});
+
 await testAsync('updateJobFoldersOnDropbox: skips cleanly when not configured', async () => {
   const saved = process.env.DROPBOX_APP_KEY;
   delete process.env.DROPBOX_APP_KEY;
@@ -426,6 +455,52 @@ await testAsync('createSharedLink: never throws -- a real failure comes back as 
   };
   await withFakeCredentials(async () => {
     const result = await dropboxSync.createSharedLink({ dropboxPath: '/Job/HDR Photos', client: fakeDbx });
+    assert.strictEqual(result.success, false);
+    assert.ok(result.error);
+  });
+});
+
+// ---- deleteJobFolderFromDropbox (deleting a Save-Draft'd job the user
+// decided not to go ahead with, 2026-09-13) ----
+
+await testAsync('deleteJobFolderFromDropbox: skips cleanly when not configured', async () => {
+  const saved = process.env.DROPBOX_APP_KEY;
+  delete process.env.DROPBOX_APP_KEY;
+  try {
+    const result = await dropboxSync.deleteJobFolderFromDropbox({ folderName: 'Job' });
+    assert.strictEqual(result.attempted, false);
+    assert.strictEqual(result.skipped, true);
+  } finally {
+    if (saved !== undefined) process.env.DROPBOX_APP_KEY = saved;
+  }
+});
+
+await testAsync('deleteJobFolderFromDropbox: deletes the whole top-level folder', async () => {
+  const deleted = [];
+  const fakeDbx = { filesDeleteV2: async ({ path }) => { deleted.push(path); return { result: {} }; } };
+  await withFakeCredentials(async () => {
+    const result = await dropboxSync.deleteJobFolderFromDropbox({ folderName: 'Job', client: fakeDbx });
+    assert.strictEqual(result.success, true);
+    assert.deepStrictEqual(deleted, ['/Job']);
+  });
+});
+
+await testAsync('deleteJobFolderFromDropbox: already-gone (path_not_found) is success, not an error', async () => {
+  const fakeDbx = {
+    filesDeleteV2: async () => { const e = new Error('x'); e.error = { error_summary: 'path_lookup/not_found/..' }; throw e; },
+  };
+  await withFakeCredentials(async () => {
+    const result = await dropboxSync.deleteJobFolderFromDropbox({ folderName: 'Job', client: fakeDbx });
+    assert.strictEqual(result.success, true);
+  });
+});
+
+await testAsync('deleteJobFolderFromDropbox: never throws -- a real failure comes back as success:false', async () => {
+  const fakeDbx = {
+    filesDeleteV2: async () => { const e = new Error('boom'); e.error = { error_summary: 'internal_error/..' }; throw e; },
+  };
+  await withFakeCredentials(async () => {
+    const result = await dropboxSync.deleteJobFolderFromDropbox({ folderName: 'Job', client: fakeDbx });
     assert.strictEqual(result.success, false);
     assert.ok(result.error);
   });

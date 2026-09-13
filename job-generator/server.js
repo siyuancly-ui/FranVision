@@ -13,7 +13,8 @@
 //   commission-engine.js -- Photographer Commission (independent of pricing)
 //   file-sync.js         -- two-way (Push/Pull) local <-> Dropbox FILE sync for an existing job
 //   calendar-file.js     -- optional .ics calendar file (Shoot Time + notes + images)
-//   draft-store.js       -- Job Drafts (save/load/delete before a shoot is finalized)
+//   form-state.js         -- per-job sidecar so a Draft/Recent Job reloads fully into the form
+//   job-list.js           -- Drafts panel + Recent Jobs panel listings (scans job.json files)
 
 const http = require('http');
 const fs = require('fs');
@@ -32,7 +33,8 @@ const commissionEngine = require('./commission-engine.js');
 const commissionConfig = require('./commission-config.js');
 const fileSync = require('./file-sync.js');
 const calendarFile = require('./calendar-file.js');
-const draftStore = require('./draft-store.js');
+const formState = require('./form-state.js');
+const jobList = require('./job-list.js');
 const deliveryEmail = require('./delivery-email.js');
 
 const PORT = 4173;
@@ -205,66 +207,106 @@ async function handleApi(req, res, urlPath) {
       // If a job folder with this exact canonical name already exists,
       // Create Job will UPDATE it (keep its Job ID) rather than mint a new
       // one -- see DESIGN-job-update.md. Surfaced here so the UI can
-      // relabel the button to "Update FVS-…" before the click.
+      // relabel the button to "Update FVS-…" before the click. A folder
+      // that exists but has no real Job ID yet (jobId: null) is a
+      // Save-Draft'd job (see id-generator.js / root CLAUDE.md's
+      // "Draft/Job unification", 2026-09-13) -- also surfaced, so the UI
+      // can relabel Create Job to "assign an ID to this draft" instead of
+      // "brand new job" or "update".
       const existing = idGenerator.findExistingJob(effectiveRootFolder, folderName);
-      const jobIdPreview = existing && existing.jobId ? null : idGenerator.getNextJobId(effectiveRootFolder);
+      const folderExists = !!existing && !existing.unreadable;
+      const hasRealId = folderExists && typeof existing.jobId === 'string';
+      const jobIdPreview = hasRealId ? null : idGenerator.getNextJobId(effectiveRootFolder);
       return sendJson(res, 200, {
         folderName,
         componentFolders,
         jobIdPreview,
-        matchesExistingJob: existing && existing.jobId ? existing.jobId : null,
-        // The saved total of the job this would update -- so the UI can
-        // show "was $X" next to the current selection's total.
-        existingTotalCents: existing && existing.jobId ? existing.previousTotalCents : null,
+        matchesExistingJob: hasRealId ? existing.jobId : null,
+        matchesExistingDraft: folderExists && !hasRealId,
+        // The saved total of the job/draft this would update -- so the UI
+        // can show "was $X" next to the current selection's total.
+        existingTotalCents: folderExists ? existing.previousTotalCents : null,
         existingFolderUnreadable: !!(existing && existing.unreadable),
         rootFolder: effectiveRootFolder,
       });
     }
 
-    // Job Drafts -- see draft-store.js. Kept separate from /api/create-job:
-    // a draft never creates a folder, job.json, or a Dropbox mirror, only
-    // its own local Shoot Info (calendar + images) inside job-generator/drafts/.
+    // Drafts panel + Recent Jobs panel -- see job-list.js. Both just scan
+    // the Job Root Folder's job.json files; a "Draft" IS a real job folder
+    // (jobId: null), not a separate storage tier -- see root CLAUDE.md's
+    // "Draft/Job unification" note (2026-09-13).
     if (urlPath === '/api/drafts' && req.method === 'GET') {
-      return sendJson(res, 200, { drafts: draftStore.listDrafts() });
+      return sendJson(res, 200, { drafts: jobList.listDrafts(rootFolder) });
     }
 
-    if (urlPath === '/api/drafts' && req.method === 'POST') {
+    if (urlPath === '/api/recent-jobs' && req.method === 'GET') {
+      return sendJson(res, 200, { jobs: jobList.listRecentJobs(rootFolder) });
+    }
+
+    // Loads a job folder's full record back into the Create Job form --
+    // for re-opening a Draft OR a Recent Job (neither had this before
+    // 2026-09-13; Drafts had their own separate loader, Recent Jobs is
+    // brand new -- see form-state.js for why job.json alone isn't enough).
+    if (urlPath === '/api/job-detail' && req.method === 'POST') {
       const body = await readJsonBody(req);
-      // Shoot Time (if given) and images are validated the same as
-      // /api/create-job -- Shoot Date's FORMAT is deliberately NOT
-      // validated here, a draft exists specifically for "the date isn't
-      // locked in yet". It's still required, though, the moment Shoot
-      // Time is also given -- there's no calendar event without a real
-      // date to put it on (calendar-file.js#writeCalendarFile enforces
-      // this too; checked here first for a clean 400 instead of a 500).
-      const shootTimeGiven = body.shootTime && String(body.shootTime).trim();
-      if (shootTimeGiven && !validate.isValidShootTime(body.shootTime)) {
-        return sendJson(res, 400, { error: 'Shoot Time must be in HH:MM 24-hour format (e.g. 14:30).' });
+      const effectiveRootFolder = body.rootFolder || rootFolder;
+      const jobFolderPath = path.join(effectiveRootFolder, body.folderName || '');
+      let data;
+      try {
+        data = JSON.parse(fs.readFileSync(path.join(jobFolderPath, 'job.json'), 'utf8'));
+      } catch (err) {
+        return sendJson(res, 404, { error: 'Job not found (or its job.json is unreadable).' });
       }
-      if (shootTimeGiven && !validate.isValidShootDate(body.shootDate)) {
-        return sendJson(res, 400, { error: 'Shoot Date must be set (valid yyyy/mm/dd) before a calendar file can be generated -- leave Shoot Time blank if the date isn\'t decided yet.' });
-      }
-      const imageProblems = calendarFile.validateImages(body.images);
-      if (imageProblems.length) {
-        return sendJson(res, 400, { error: 'Invalid image(s): ' + imageProblems.join(' ') });
-      }
-      const saved = draftStore.saveDraft(body.draftId, body);
+      const saved = formState.readFormState(jobFolderPath);
       return sendJson(res, 200, {
-        draftId: saved.draftId,
-        updatedAt: saved.record.updatedAt,
-        calendar: saved.calendarResult ? { icsPath: saved.calendarResult.icsPath, imageCount: saved.calendarResult.attachedImages.length } : null,
+        found: true,
+        folderName: body.folderName,
+        jobId: data.jobId,
+        createdAt: data.createdAt,
+        clientName: (data.client && data.client.name) || '',
+        photographerName: data.photographer || '',
+        address: (data.property && data.property.address) || '',
+        propertyType: (data.property && data.property.propertyType) || '',
+        shootDate: data.shootDate || '',
+        order: data.services || {},
+        shootTime: saved.shootTime,
+        notes: saved.notes,
+        chosenCandidateIndex: saved.chosenCandidateIndex,
+        commission: saved.commission,
+        images: calendarFile.readExistingImages(jobFolderPath),
       });
     }
 
-    if (urlPath.startsWith('/api/drafts/') && req.method === 'GET') {
-      const draft = draftStore.getDraft(urlPath.slice('/api/drafts/'.length));
-      if (!draft) return sendJson(res, 404, { error: 'Draft not found.' });
-      return sendJson(res, 200, draft);
-    }
-
-    if (urlPath.startsWith('/api/drafts/') && req.method === 'DELETE') {
-      draftStore.deleteDraft(urlPath.slice('/api/drafts/'.length));
-      return sendJson(res, 200, { success: true });
+    // Deletes a Save-Draft'd job (local folder + best-effort Dropbox
+    // mirror) -- explicit user requirement, 2026-09-13: a draft can be
+    // deleted outright, unlike a real job (no delete/undo for those, see
+    // DESIGN-job-update.md). Refuses anything that already has a real Job
+    // ID as a safety guard -- this must never be a way to delete a job.
+    if (urlPath === '/api/drafts' && req.method === 'DELETE') {
+      const body = await readJsonBody(req);
+      const effectiveRootFolder = body.rootFolder || rootFolder;
+      const folderName = body.folderName || '';
+      const jobFolderPath = path.join(effectiveRootFolder, folderName);
+      let data;
+      try {
+        data = JSON.parse(fs.readFileSync(path.join(jobFolderPath, 'job.json'), 'utf8'));
+      } catch (err) {
+        return sendJson(res, 404, { error: 'Draft not found (or its job.json is unreadable).' });
+      }
+      if (!data || (typeof data.jobId !== 'string' && data.jobId !== null)) {
+        return sendJson(res, 400, { error: 'This folder\'s job.json is corrupted -- resolve it by hand before deleting.' });
+      }
+      if (data.jobId !== null) {
+        return sendJson(res, 409, { error: 'This is already a real job (' + data.jobId + '), not a draft -- it can\'t be deleted this way.' });
+      }
+      fs.rmSync(jobFolderPath, { recursive: true, force: true });
+      let dropboxDelete;
+      try {
+        dropboxDelete = await dropboxSync.deleteJobFolderFromDropbox({ folderName });
+      } catch (err) {
+        dropboxDelete = { attempted: true, success: false, error: 'Unexpected Dropbox delete failure: ' + err.message };
+      }
+      return sendJson(res, 200, { success: true, dropboxDelete });
     }
 
     if (urlPath === '/api/create-job' && req.method === 'POST') {
@@ -294,10 +336,13 @@ async function handleApi(req, res, urlPath) {
         return sendJson(res, 400, { error: 'Invalid image(s): ' + calendarImageProblems.join(' ') });
       }
 
-      // Does a job with this exact canonical name already exist? If so
-      // this is an UPDATE (keep its Job ID), not a new job -- see
-      // DESIGN-job-update.md. A folder with the name but no readable
-      // job.json is refused rather than adopted as a second identity.
+      // Does a job/draft with this exact canonical name already exist? If
+      // so this is an UPDATE (keep its Job ID, or keep it a Draft) rather
+      // than a new folder -- see DESIGN-job-update.md, extended 2026-09-13
+      // (root CLAUDE.md's "Draft/Job unification" note) to also cover a
+      // Save-Draft'd job (jobId: null). A folder with the name but no
+      // readable job.json is refused rather than adopted as a second
+      // identity.
       const folderName = sanitize.buildJobFolderName({
         shootDate: body.shootDate, address: body.address, clientName: body.clientName,
       });
@@ -309,15 +354,27 @@ async function handleApi(req, res, urlPath) {
             + 'Delete or fix it by hand before creating/updating this job.',
         });
       }
-      const isUpdate = !!(existing && existing.jobId);
+      const folderExists = !!existing;
+      const hasRealId = folderExists && typeof existing.jobId === 'string';
+      const saveAsDraft = !!body.saveAsDraft;
+      // Save Draft can never strip an ID a job already has -- once a job
+      // is real, the only way to change it is Update (assignId, below).
+      if (saveAsDraft && hasRealId) {
+        return sendJson(res, 409, {
+          error: 'This job already has an ID (' + existing.jobId + ') -- Save Draft can\'t remove it. Click Create Job to update it instead.',
+        });
+      }
 
-      // For an update, the calendar file is regenerated from scratch -- so
-      // any images the job already had would be lost unless we carry them
-      // forward (the update form has no "load existing job" step). Merge
-      // them here (a fresh upload with the same name replaces the old one)
-      // and re-check the combined total BEFORE any folder side effects.
+      // For an update (real job OR an already-Save-Draft'd folder), the
+      // calendar file is regenerated from scratch -- so any images already
+      // attached would be lost unless we carry them forward (the "load
+      // existing job/draft into the form" step -- see /api/job-detail --
+      // still re-sends whatever it read, but a caller that skips it, e.g.
+      // re-submitting the form after a create, would otherwise lose them).
+      // Merge here (a fresh upload with the same name replaces the old
+      // one) and re-check the combined total BEFORE any folder side effects.
       let effectiveImages = body.images || [];
-      if (isUpdate && shootTimeGiven) {
+      if (folderExists && shootTimeGiven) {
         effectiveImages = calendarFile.mergeImages(calendarFile.readExistingImages(jobFolderPath), body.images);
         const mergedProblems = calendarFile.validateImages(effectiveImages);
         if (mergedProblems.length) {
@@ -363,11 +420,24 @@ async function handleApi(req, res, urlPath) {
         : undefined;
 
       const nowIso = new Date().toISOString();
-      // UPDATE reuses the existing Job ID and preserves the original
-      // createdAt; a fresh job mints a new ID. jobFolderPath / folderName
-      // were computed up above (needed for findExistingJob).
-      const jobId = isUpdate ? existing.jobId : idGenerator.getNextJobId(effectiveRootFolder);
-      const createdAt = isUpdate ? (existing.createdAt || nowIso) : nowIso;
+      // Job ID: kept as-is if the folder already has a real one (ordinary
+      // update); left null if this call is Save Draft; otherwise minted
+      // fresh -- whether that's a brand-new job OR a Save-Draft'd folder
+      // finally being turned into a real one by clicking Create Job. In
+      // every case the ID's own embedded date (see id-generator.js) is
+      // TODAY, i.e. the moment this call happens -- for a promoted draft
+      // that's normally the shoot day (or just after), not whenever the
+      // draft was first saved, which is exactly the "assign the real
+      // sequence number after the shoot" behavior this was built for.
+      // createdAt is preserved from the existing folder either way (real
+      // job or draft) -- jobFolderPath / folderName were computed up above
+      // (needed for findExistingJob).
+      const jobId = saveAsDraft ? null : (hasRealId ? existing.jobId : idGenerator.getNextJobId(effectiveRootFolder));
+      const createdAt = folderExists ? (existing.createdAt || nowIso) : nowIso;
+      // True only on the one call that actually turns a Save-Draft'd
+      // folder into a real job -- lets the response (and the UI) say
+      // something more specific than the generic "updated".
+      const finalizedFromDraft = folderExists && !hasRealId && !!jobId;
 
       // Deliberately does NOT persist effectiveRootFolder as the default --
       // that's opt-in via the UI's "Save as default path" checkbox
@@ -392,13 +462,14 @@ async function handleApi(req, res, urlPath) {
       folderBuilder.createJobFolders(jobFolderPath, order);
       const componentFolders = folderBuilder.getComponentFolders(order);
 
-      // UPDATE only: prune component folders that are no longer part of the
-      // selected services -- but ONLY when they're empty (no real files).
-      // A folder that still holds work is left alone and reported.
+      // Updating an existing folder (real job OR draft) only: prune
+      // component folders that are no longer part of the selected
+      // services -- but ONLY when they're empty (no real files). A folder
+      // that still holds work is left alone and reported.
       let foldersAdded = [];
       let foldersRemoved = [];
       let foldersKeptWithFiles = [];
-      if (isUpdate) {
+      if (folderExists) {
         const diff = folderBuilder.diffComponentFolders(order, existing.order);
         foldersAdded = diff.toCreate;
         for (const rel of diff.toRemove) {
@@ -413,12 +484,12 @@ async function handleApi(req, res, urlPath) {
         }
       }
 
-      // Calendar file. On an update where Shoot Time has been cleared,
-      // drop any previously-generated calendar folder. Otherwise
-      // (re)generate it -- with `effectiveImages` (fresh + preserved) on
-      // an update, or just the fresh images on a first create.
+      // Calendar file. On an update (real job or draft) where Shoot Time
+      // has been cleared, drop any previously-generated calendar folder.
+      // Otherwise (re)generate it -- with `effectiveImages` (fresh +
+      // preserved) on an update, or just the fresh images on a first save.
       let calendarResult;
-      if (isUpdate && !shootTimeGiven) {
+      if (folderExists && !shootTimeGiven) {
         fs.rmSync(path.join(jobFolderPath, calendarFile.ICS_FILENAME), { force: true });
         fs.rmSync(path.join(jobFolderPath, calendarFile.LEGACY_FOLDER_NAME), { recursive: true, force: true });
         calendarResult = null;
@@ -442,7 +513,7 @@ async function handleApi(req, res, urlPath) {
         dropboxResult = { attempted: true, success: false, error: 'Unexpected Dropbox sync failure: ' + err.message };
       }
       let dropboxPruneResult;
-      if (isUpdate && (foldersRemoved.length || foldersKeptWithFiles.length)) {
+      if (folderExists && (foldersRemoved.length || foldersKeptWithFiles.length)) {
         try {
           const diff = folderBuilder.diffComponentFolders(order, existing.order);
           dropboxPruneResult = await dropboxSync.updateJobFoldersOnDropbox({
@@ -460,16 +531,41 @@ async function handleApi(req, res, urlPath) {
       // Worker ever writes into it), then generate both language files.
       // Never blocks/fails job creation -- wrapped in try/catch on top of
       // both callees' own never-throw contract.
-      let deliveryEmailResult;
-      try {
-        await dropboxSync.ensureMlsForDownloadFolder({ folderName });
-        deliveryEmailResult = await deliveryEmail.generateDeliveryEmails({
-          jobFolderPath, folderName, clientName: body.clientName, address: body.address,
-          order, componentFolders, totalCents: price.totalCents, preTaxCents: price.finalSubtotalCents,
-        });
-      } catch (err) {
-        deliveryEmailResult = { attempted: true, success: false, error: 'Unexpected delivery-email failure: ' + err.message };
+      //
+      // Deliberately SKIPPED while this is still a Save-Draft'd job (no
+      // jobId yet) -- explicit user decision, 2026-09-13: generating the
+      // client-facing delivery text before the shoot has even happened
+      // (with dead/placeholder Dropbox links, since there's nothing in
+      // "MLS for download" yet) risks it being sent to a client by
+      // accident before the job is ever finalized. Runs on the one call
+      // that assigns the real ID (finalizedFromDraft) same as any other
+      // create/update.
+      let deliveryEmailResult = null;
+      if (jobId) {
+        try {
+          await dropboxSync.ensureMlsForDownloadFolder({ folderName });
+          deliveryEmailResult = await deliveryEmail.generateDeliveryEmails({
+            jobFolderPath, folderName, clientName: body.clientName, address: body.address,
+            order, componentFolders, totalCents: price.totalCents, preTaxCents: price.finalSubtotalCents,
+          });
+        } catch (err) {
+          deliveryEmailResult = { attempted: true, success: false, error: 'Unexpected delivery-email failure: ' + err.message };
+        }
       }
+
+      // Form-reload sidecar (see form-state.js) -- written every call,
+      // draft or real, so a Draft OR a Recent Job can be re-opened later
+      // with Shoot Time/notes/the pricing candidate chosen/commission
+      // checkboxes intact (none of which job.json itself carries).
+      formState.writeFormState(jobFolderPath, {
+        shootTime: body.shootTime,
+        notes: body.notes,
+        chosenCandidateIndex: Number.isInteger(Number(body.chosenCandidateIndex)) ? Number(body.chosenCandidateIndex) : null,
+        commission: {
+          checkedItemIds: (body.commission && body.commission.checkedItemIds) || [],
+          travelCents: (body.commission && body.commission.travelCents) || 0,
+        },
+      });
 
       const jobData = {
         jobId,
@@ -490,26 +586,20 @@ async function handleApi(req, res, urlPath) {
       const written = jobFiles.writeJobFiles(jobFolderPath, jobData);
       const pendingConfirmation = jobFiles.computePendingConfirmation(jobData);
 
-      // Finalizing a Draft into a real job means the draft has done its
-      // job -- Job Info.txt/job.json above already hold whatever was true
-      // at the end, and no separate draft history is kept (explicit user
-      // decision, 2026-09-09). Best-effort: a failure to delete the local
-      // draft folder should never fail an otherwise-successful job creation.
-      if (body.draftId) {
-        try { draftStore.deleteDraft(body.draftId); } catch (err) { /* leftover draft folder, harmless */ }
-      }
-
       return sendJson(res, 200, {
         success: true,
-        mode: isUpdate ? 'updated' : 'created',
+        mode: folderExists ? 'updated' : 'created',
+        isDraft: !jobId,
+        finalizedFromDraft,
         jobId,
+        folderName,
         jobFolderPath,
         componentFolders,
         calendar: calendarResult ? { icsPath: calendarResult.icsPath, imageCount: calendarResult.attachedImages.length } : null,
         jobInfoPath: written.infoPath,
         jobJsonPath: written.jsonPath,
         price,
-        previousTotalCents: isUpdate ? existing.previousTotalCents : null,
+        previousTotalCents: folderExists ? existing.previousTotalCents : null,
         foldersAdded,
         foldersRemoved,
         foldersKeptWithFiles,

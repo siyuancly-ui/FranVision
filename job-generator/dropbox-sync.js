@@ -141,6 +141,14 @@ function isSharedLinkAlreadyExistsError(err) {
   return typeof msg === 'string' && msg.indexOf('shared_link_already_exists') !== -1;
 }
 
+// True when a call failed because the path is simply already gone --
+// treated as success (idempotent) for deleteJobFolderFromDropbox() below,
+// same idempotency reasoning as isFolderAlreadyExistsError() above.
+function isPathNotFoundError(err) {
+  const msg = extractDropboxErrorMessage(err);
+  return typeof msg === 'string' && msg.indexOf('not_found') !== -1;
+}
+
 // ---- The one function server.js calls ----
 
 // Creates the full folder tree in Dropbox and tags the top-level folder
@@ -187,9 +195,18 @@ async function syncJobFolderToDropbox({ folderName, componentFolders, jobId, cli
 
     const topLevelFailed = folderErrors.some((e) => e.path === topLevelPath);
 
+    // A Save-Draft'd job (see id-generator.js's `jobId: null` sentinel,
+    // 2026-09-13) has no Job ID yet -- there is nothing to tag it with, so
+    // the property-tagging step is intentionally skipped rather than
+    // attempted with a null value. `propertiesTagged` stays false but that
+    // does NOT count against `success` below in this case; the tag gets
+    // added on the very next sync call after a real Job ID exists, since
+    // this function runs unconditionally on every create-job/update/promote
+    // (property_group_already_exists on a later call is itself treated as
+    // success, so re-tagging once promoted is naturally idempotent too).
     let propertiesTagged = false;
     let propertyError = null;
-    if (!topLevelFailed) {
+    if (!topLevelFailed && jobId) {
       try {
         await dbx.filePropertiesPropertiesAdd({
           path: topLevelPath,
@@ -208,7 +225,7 @@ async function syncJobFolderToDropbox({ folderName, componentFolders, jobId, cli
       }
     }
 
-    const success = !topLevelFailed && folderErrors.length === 0 && propertiesTagged;
+    const success = !topLevelFailed && folderErrors.length === 0 && (propertiesTagged || !jobId);
     let error = null;
     if (!success) {
       if (topLevelFailed) {
@@ -368,6 +385,34 @@ async function createSharedLink({ dropboxPath, client }) {
   }
 }
 
+// Deletes a job's ENTIRE top-level Dropbox folder, recursively, whatever
+// it contains -- unlike updateJobFoldersOnDropbox()'s prune (which only
+// ever removes an EMPTY component folder), this is a real, unconditional
+// delete. Added 2026-09-13 for deleting a Save-Draft'd job the user has
+// decided not to go ahead with (explicit user requirement: deleting a
+// draft removes its Dropbox mirror too, not just the local copy) --
+// server.js is responsible for only ever calling this on a folder it has
+// verified is still a draft (jobId: null), never a real job. Same
+// never-throw / best-effort contract as everything else here: a failed
+// Dropbox delete never blocks the local delete, which is the critical
+// path and already done by the time this runs.
+async function deleteJobFolderFromDropbox({ folderName, client }) {
+  if (!isConfigured()) {
+    return { attempted: false, success: false, skipped: true, error: 'Dropbox is not configured -- local delete is unaffected.' };
+  }
+  const dropboxPath = '/' + folderName;
+  try {
+    const dbx = client || getClient();
+    await dbx.filesDeleteV2({ path: dropboxPath });
+    return { attempted: true, success: true, dropboxPath };
+  } catch (err) {
+    if (isPathNotFoundError(err)) {
+      return { attempted: true, success: true, dropboxPath }; // already gone -- idempotent
+    }
+    return { attempted: true, success: false, dropboxPath, error: extractDropboxErrorMessage(err) };
+  }
+}
+
 module.exports = {
   TEMPLATE_NAME,
   MLS_FOR_DOWNLOAD_SUBFOLDER,
@@ -378,8 +423,10 @@ module.exports = {
   isFolderAlreadyExistsError,
   isPropertyGroupAlreadyExistsError,
   isSharedLinkAlreadyExistsError,
+  isPathNotFoundError,
   syncJobFolderToDropbox,
   updateJobFoldersOnDropbox,
   ensureMlsForDownloadFolder,
   createSharedLink,
+  deleteJobFolderFromDropbox,
 };

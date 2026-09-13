@@ -93,7 +93,7 @@ function buildJobInfoText(jobData) {
   lines.push('FranVision Job Info');
   lines.push('===================');
   lines.push('');
-  lines.push('Job ID:        ' + jobData.jobId);
+  lines.push('Job ID:        ' + (jobData.jobId || '(not assigned yet -- this is a Draft; click Create Job to assign one)'));
   lines.push('Client:        ' + jobData.clientName);
   lines.push('Photographer:  ' + jobData.photographerName);
   lines.push('Address:       ' + jobData.address);
