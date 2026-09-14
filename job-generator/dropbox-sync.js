@@ -413,6 +413,43 @@ async function deleteJobFolderFromDropbox({ folderName, client }) {
   }
 }
 
+// Renames/moves a job's ENTIRE top-level Dropbox folder from oldFolderName
+// to newFolderName in one call (Dropbox's move_v2 IS the rename op --
+// there's no separate rename endpoint). Added 2026-09-13 for the
+// "unlock identity fields" escape hatch on a Recent Job (see
+// server.js#/api/create-job's `renameFromFolderName` handling) -- fixing
+// a typo'd Shoot Date/Address/Client Name on an ALREADY-REAL job now
+// renames its folder (local AND Dropbox) in place, keeping the same Job
+// ID, instead of orphaning the old folder and minting a new ID (the
+// default behavior for everyone else, unchanged -- see DESIGN-job-update.md).
+//
+// Same never-throw / best-effort contract as everything else here: the
+// LOCAL rename (server.js#fs.renameSync) is the critical path and has
+// already happened by the time this runs -- a failed Dropbox rename never
+// undoes it, it just leaves local and Dropbox names mismatched until
+// fixed (surfaced via `pendingConfirmation`, same as any other Dropbox
+// sync failure). No source folder on Dropbox (e.g. Dropbox was never
+// configured, or this job was never successfully synced before) is
+// treated as success-with-nothing-to-do, not a failure -- the very next
+// normal sync call creates the folder fresh under the new name anyway.
+async function renameJobFolderOnDropbox({ oldFolderName, newFolderName, client }) {
+  if (!isConfigured()) {
+    return { attempted: false, success: false, skipped: true, error: 'Dropbox is not configured -- local rename is unaffected.' };
+  }
+  const fromPath = '/' + oldFolderName;
+  const toPath = '/' + newFolderName;
+  try {
+    const dbx = client || getClient();
+    await dbx.filesMoveV2({ from_path: fromPath, to_path: toPath });
+    return { attempted: true, success: true, fromPath, toPath };
+  } catch (err) {
+    if (isPathNotFoundError(err)) {
+      return { attempted: true, success: true, skippedNoSource: true, fromPath, toPath }; // nothing there to rename -- idempotent
+    }
+    return { attempted: true, success: false, fromPath, toPath, error: extractDropboxErrorMessage(err) };
+  }
+}
+
 module.exports = {
   TEMPLATE_NAME,
   MLS_FOR_DOWNLOAD_SUBFOLDER,
@@ -429,4 +466,5 @@ module.exports = {
   ensureMlsForDownloadFolder,
   createSharedLink,
   deleteJobFolderFromDropbox,
+  renameJobFolderOnDropbox,
 };

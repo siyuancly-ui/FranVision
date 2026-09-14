@@ -506,6 +506,55 @@ await testAsync('deleteJobFolderFromDropbox: never throws -- a real failure come
   });
 });
 
+// ---- renameJobFolderOnDropbox (the "unlock identity fields" escape
+// hatch on a Recent Job, fixing a typo'd Shoot Date/Address/Client Name
+// in place instead of orphaning the old folder + minting a new Job ID,
+// 2026-09-13) ----
+
+await testAsync('renameJobFolderOnDropbox: skips cleanly when not configured', async () => {
+  const saved = process.env.DROPBOX_APP_KEY;
+  delete process.env.DROPBOX_APP_KEY;
+  try {
+    const result = await dropboxSync.renameJobFolderOnDropbox({ oldFolderName: 'Old', newFolderName: 'New' });
+    assert.strictEqual(result.attempted, false);
+    assert.strictEqual(result.skipped, true);
+  } finally {
+    if (saved !== undefined) process.env.DROPBOX_APP_KEY = saved;
+  }
+});
+
+await testAsync('renameJobFolderOnDropbox: moves the whole top-level folder', async () => {
+  const moved = [];
+  const fakeDbx = { filesMoveV2: async (arg) => { moved.push(arg); return { result: {} }; } };
+  await withFakeCredentials(async () => {
+    const result = await dropboxSync.renameJobFolderOnDropbox({ oldFolderName: 'Old Name', newFolderName: 'New Name', client: fakeDbx });
+    assert.strictEqual(result.success, true);
+    assert.deepStrictEqual(moved, [{ from_path: '/Old Name', to_path: '/New Name' }]);
+  });
+});
+
+await testAsync('renameJobFolderOnDropbox: no source folder on Dropbox (path_not_found) is success, not an error', async () => {
+  const fakeDbx = {
+    filesMoveV2: async () => { const e = new Error('x'); e.error = { error_summary: 'from_lookup/not_found/..' }; throw e; },
+  };
+  await withFakeCredentials(async () => {
+    const result = await dropboxSync.renameJobFolderOnDropbox({ oldFolderName: 'Old', newFolderName: 'New', client: fakeDbx });
+    assert.strictEqual(result.success, true);
+    assert.strictEqual(result.skippedNoSource, true);
+  });
+});
+
+await testAsync('renameJobFolderOnDropbox: never throws -- a real failure (e.g. target already exists) comes back as success:false', async () => {
+  const fakeDbx = {
+    filesMoveV2: async () => { const e = new Error('x'); e.error = { error_summary: 'to/conflict/folder/..' }; throw e; },
+  };
+  await withFakeCredentials(async () => {
+    const result = await dropboxSync.renameJobFolderOnDropbox({ oldFolderName: 'Old', newFolderName: 'New', client: fakeDbx });
+    assert.strictEqual(result.success, false);
+    assert.ok(result.error);
+  });
+});
+
 }
 
 runAsyncTests().then(() => {

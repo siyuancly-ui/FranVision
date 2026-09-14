@@ -83,6 +83,7 @@
     font-family: inherit;
   }
   textarea { resize: vertical; }
+  input[readonly] { background: #f0efec; color: var(--muted); cursor: not-allowed; }
   .field-row { margin-bottom: 14px; }
   .field-row:last-child { margin-bottom: 0; }
   .field-hint { font-size: 12px; color: var(--muted); margin-top: 3px; }
@@ -338,6 +339,11 @@
         <button type="button" class="browse-btn" id="draft-clear-btn">Start New</button>
       </div>
 
+      <div id="identity-lock-row" class="check-row" style="display:none; margin-bottom:12px;">
+        <input type="checkbox" id="identity-unlock-checkbox">
+        <label for="identity-unlock-checkbox">🔓 Unlock Shoot Date / Address / Client Name (only to fix a typo) -- renames the existing folder in place, local + Dropbox, keeping the same Job ID. Does NOT create a new job.</label>
+      </div>
+
       <div class="field-hint" style="margin-bottom:12px;"><strong>Save as Draft</strong> creates/updates the real folder, job.json, and Dropbox mirror but withholds the Job ID -- for a shoot that isn't locked in yet. <strong>Create Job</strong> assigns the Job ID (finalizing a Draft, or minting a brand-new job) -- or, if a job for this same Shoot Date + Address + Client already has an ID, <strong>updates</strong> it in place instead.</div>
 
       <div class="field-row">
@@ -564,19 +570,54 @@
   // is UI-only bookkeeping (which row's banner/label to show after loading
   // one) -- it never affects what Save Draft / Create Job themselves do.
   let currentlyEditing = null; // { folderName, jobId (null for a draft) } | null
+  let identityUnlocked = false;
 
   function updateDraftBanner() {
     const banner = el('draft-banner');
     if (!currentlyEditing) { banner.style.display = 'none'; return; }
     banner.style.display = '';
     el('draft-banner-text').textContent = currentlyEditing.jobId
-      ? 'Editing Recent Job ' + currentlyEditing.jobId + ' -- Create Job will update it (same Job ID).'
+      ? 'Job ' + currentlyEditing.jobId + ' -- identity fields locked below (see why); Create Job updates it in place (same Job ID).'
       : 'Editing a saved Draft -- Create Job will assign it a Job ID and finalize it.';
   }
 
+  // Shoot Date / Address / Client Name are the job's IDENTITY
+  // (sanitize.js#buildJobFolderName) -- editing any of them on an
+  // ALREADY-REAL job would normally mint a brand-new Job ID and orphan
+  // the old folder (DESIGN-job-update.md's accepted "no rename on an
+  // identity edit" limitation, 2026-09-10). That was rarely hit by
+  // accident before, because triggering an Update meant retyping all 3
+  // fields by hand -- Recent Jobs (2026-09-13) makes reopening a real job
+  // this easy, so a careless date tweak could now silently burn a new ID
+  // and leave a duplicate folder behind. Locking these 3 fields by
+  // default whenever the form represents a real job (any time after a
+  // successful Create Job, not just via the Recent Jobs list) is the
+  // fix -- unlocking is still possible, but only via the explicit
+  // checkbox below, which renames the existing folder in place (local +
+  // Dropbox, same Job ID -- see server.js's `renameFromFolderName`
+  // handling) instead of quietly creating a second job. A Draft
+  // (jobId: null) is never locked -- editing these pre-shoot is exactly
+  // what Drafts are for.
+  function updateIdentityLockUI() {
+    const isRealJob = !!(currentlyEditing && currentlyEditing.jobId);
+    el('identity-lock-row').style.display = isRealJob ? '' : 'none';
+    if (!isRealJob) identityUnlocked = false;
+    el('identity-unlock-checkbox').checked = identityUnlocked;
+    const locked = isRealJob && !identityUnlocked;
+    ['shootDate', 'address', 'clientName'].forEach((id) => { el(id).readOnly = locked; });
+    el('shootdate-today-btn').disabled = locked;
+  }
+
+  el('identity-unlock-checkbox').addEventListener('change', (e) => {
+    identityUnlocked = e.target.checked;
+    updateIdentityLockUI();
+  });
+
   function clearCurrentDraft() {
     currentlyEditing = null;
+    identityUnlocked = false;
     updateDraftBanner();
+    updateIdentityLockUI();
   }
 
   // Sets every form control from an `order` object (readOrder()'s exact
@@ -699,7 +740,9 @@
     const data = await res.json();
 
     currentlyEditing = { folderName: data.folderName, jobId: data.jobId };
+    identityUnlocked = false;
     updateDraftBanner();
+    updateIdentityLockUI();
 
     el('clientName').value = data.clientName || '';
     el('photographerName').value = data.photographerName || '';
@@ -760,7 +803,9 @@
         return;
       }
       currentlyEditing = { folderName: result.folderName, jobId: null };
+      identityUnlocked = false;
       updateDraftBanner();
+      updateIdentityLockUI();
       el('save-draft-result').textContent = 'Draft saved' + (result.calendar ? ' (calendar file updated)' : '') + '.';
       refreshDraftsList();
       refreshFolderPreview();
@@ -953,9 +998,14 @@
   function updateCreateButtonLabel() {
     el('create-btn').textContent = matchesExistingJob ? 'Update ' + matchesExistingJob : 'Create Job';
     // Save Draft can never strip an ID a job already has -- see
-    // server.js#/api/create-job's saveAsDraft-vs-hasRealId guard.
-    el('save-draft-btn').disabled = !!matchesExistingJob;
-    el('save-draft-btn').title = matchesExistingJob ? 'This is already a real job -- it can\'t be saved back as a Draft.' : '';
+    // server.js#/api/create-job's saveAsDraft-vs-hasRealId guard. Also
+    // disabled for the whole duration of editing a real job's identity
+    // fields (even mid-typo-fix, when the edited fields may briefly not
+    // match anything) -- Save as Draft has no idea about the in-progress
+    // rename and would otherwise just create an unrelated new draft.
+    const editingRealJob = !!(currentlyEditing && currentlyEditing.jobId);
+    el('save-draft-btn').disabled = !!matchesExistingJob || editingRealJob;
+    el('save-draft-btn').title = (matchesExistingJob || editingRealJob) ? 'This is already a real job -- it can\'t be saved back as a Draft.' : '';
     el('save-draft-btn').textContent = matchesExistingDraft ? 'Update Draft' : 'Save as Draft';
   }
 
@@ -1126,6 +1176,16 @@
     // exists (see server.js#/api/create-job). If this form was loaded from
     // a Draft, finalizing it here is just that same folder getting its
     // first real ID -- no separate delete/migration step needed.
+    //
+    // The identity fields' "unlock" checkbox (see updateIdentityLockUI())
+    // is only ever visible/checkable while editing a real job -- when
+    // checked, this is the one case where an identity-field edit should
+    // rename the existing folder in place instead of minting a new Job
+    // ID (server.js's `renameFromFolderName` handling).
+    if (identityUnlocked && currentlyEditing && currentlyEditing.jobId) {
+      inputs.renameFromFolderName = currentlyEditing.folderName;
+      inputs.renameFromJobId = currentlyEditing.jobId;
+    }
     el('create-result').innerHTML = '';
     el('create-btn').disabled = true;
 
@@ -1187,11 +1247,16 @@
       }
 
       const jobStatusLabel = result.finalizedFromDraft ? 'finalized from Draft' : (isUpdate ? 'updated' : 'created');
+      const renameHtml = result.renamedFrom
+        ? '<div>Folder renamed from <code>' + result.renamedFrom + '</code> to <code>' + result.folderName + '</code> (same Job ID)'
+          + (result.dropboxRename && result.dropboxRename.success === false ? ', but the Dropbox-side rename failed -- see below' : ', including on Dropbox') + '.</div>'
+        : '';
       el('create-result').innerHTML =
         '<div class="result-box success">' +
         '<div><strong>Job ' + jobStatusLabel + ': ' + result.jobId + '</strong></div>' +
         '<div class="path">' + result.jobFolderPath + '</div>' +
         '<div>Job Info.txt and job.json ' + (isUpdate ? 'rewritten' : 'written') + '.</div>' +
+        renameHtml +
         updateHtml +
         calendarHtml +
         deliveryEmailHtml +
@@ -1206,10 +1271,15 @@
       renderShootNotesImages();
       el('shoot-notes-error').textContent = '';
 
-      // Whatever this call did (created, updated, or finalized a Draft),
-      // it now has a real Job ID -- disconnect the form's editing banner
-      // from a Draft it might have started as, and refresh both lists.
-      clearCurrentDraft();
+      // Whatever this call did (created, updated, finalized a Draft, or
+      // renamed one in place), it now has a real Job ID -- (re-)lock the
+      // identity fields against this job's new state (see
+      // updateIdentityLockUI()) rather than fully clearing the banner, so
+      // a further accidental edit right after this one is still guarded.
+      currentlyEditing = { folderName: result.folderName, jobId: result.jobId };
+      identityUnlocked = false;
+      updateDraftBanner();
+      updateIdentityLockUI();
       refreshDraftsList();
       refreshRecentJobsList();
       // The job folder now exists -- re-run the preview so the button

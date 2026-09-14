@@ -369,6 +369,59 @@ async function handleApi(req, res, urlPath) {
         shootDate: body.shootDate, address: body.address, clientName: body.clientName,
       });
       const jobFolderPath = path.join(effectiveRootFolder, folderName);
+
+      // "Unlock identity fields" escape hatch for a Recent Job (2026-09-13,
+      // see root CLAUDE.md's "Draft/Job unification" note). Normally,
+      // editing Shoot Date/Address/Client Name on an already-real job
+      // mints a NEW Job ID and orphans the old folder (DESIGN-job-update.md,
+      // accepted 2026-09-10) -- public/index.html locks those 3 fields once
+      // a Recent Job is loaded specifically to prevent that by accident,
+      // but offers an explicit "unlock, this renames the folder in place"
+      // checkbox for the one legitimate case: fixing a typo. When used,
+      // the client sends `renameFromFolderName` (+ `renameFromJobId` as a
+      // same-folder safety cross-check, in case the on-disk job changed
+      // since it was loaded) -- this renames the ORIGINAL folder (local,
+      // then best-effort Dropbox) to the new canonical name BEFORE the
+      // findExistingJob() lookup below, so everything downstream (folder
+      // diff, calendar regen, job.json rewrite, Dropbox resync) just finds
+      // the already-renamed folder and proceeds as an ordinary update --
+      // same Job ID, no new one minted, nothing orphaned.
+      let renamedFrom = null;
+      let dropboxRenameResult = null;
+      if (body.renameFromFolderName && body.renameFromFolderName !== folderName) {
+        const oldFolderPath = path.join(effectiveRootFolder, body.renameFromFolderName);
+        let oldData;
+        try {
+          oldData = JSON.parse(fs.readFileSync(path.join(oldFolderPath, 'job.json'), 'utf8'));
+        } catch (err) {
+          return sendJson(res, 409, { error: 'Cannot rename -- the original job folder ("' + body.renameFromFolderName + '") has no readable job.json.' });
+        }
+        if (!oldData || typeof oldData.jobId !== 'string') {
+          return sendJson(res, 409, {
+            error: 'Cannot rename -- the original folder has no Job ID yet (it\'s a Draft, not a real job). '
+              + 'A Draft with a changed identity just creates/updates a differently-named draft; no rename is needed for that case.',
+          });
+        }
+        if (body.renameFromJobId && body.renameFromJobId !== oldData.jobId) {
+          return sendJson(res, 409, {
+            error: 'Cannot rename -- the job you loaded (' + body.renameFromJobId + ') no longer matches what\'s on disk '
+              + '(' + oldData.jobId + '). Reload it and try again.',
+          });
+        }
+        if (fs.existsSync(jobFolderPath)) {
+          return sendJson(res, 409, {
+            error: 'Cannot rename to "' + folderName + '" -- a folder with that name already exists. Resolve the collision by hand before retrying.',
+          });
+        }
+        fs.renameSync(oldFolderPath, jobFolderPath);
+        renamedFrom = body.renameFromFolderName;
+        try {
+          dropboxRenameResult = await dropboxSync.renameJobFolderOnDropbox({ oldFolderName: body.renameFromFolderName, newFolderName: folderName });
+        } catch (err) {
+          dropboxRenameResult = { attempted: true, success: false, error: 'Unexpected Dropbox rename failure: ' + err.message };
+        }
+      }
+
       const existing = idGenerator.findExistingJob(effectiveRootFolder, folderName);
       if (existing && existing.unreadable) {
         return sendJson(res, 409, {
@@ -607,12 +660,25 @@ async function handleApi(req, res, urlPath) {
       };
       const written = jobFiles.writeJobFiles(jobFolderPath, jobData);
       const pendingConfirmation = jobFiles.computePendingConfirmation(jobData);
+      // A failed Dropbox-side rename leaves local and Dropbox folder names
+      // mismatched (local already moved -- that's the critical path and
+      // always succeeds first) -- flag it the same way any other Dropbox
+      // sync problem is flagged, since the next Push would otherwise
+      // silently create a duplicate folder on Dropbox under the new name.
+      if (dropboxRenameResult && !dropboxRenameResult.success && !dropboxRenameResult.skipped) {
+        pendingConfirmation.push(
+          'Local folder renamed to "' + folderName + '", but the matching Dropbox rename failed: ' + dropboxRenameResult.error
+          + ' -- rename it by hand in Dropbox (from "' + renamedFrom + '") before the next Sync to Dropbox, or it will create a duplicate.'
+        );
+      }
 
       return sendJson(res, 200, {
         success: true,
         mode: folderExists ? 'updated' : 'created',
         isDraft: !jobId,
         finalizedFromDraft,
+        renamedFrom,
+        dropboxRename: dropboxRenameResult,
         jobId,
         folderName,
         jobFolderPath,
