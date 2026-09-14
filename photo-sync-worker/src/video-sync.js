@@ -102,6 +102,19 @@ export async function processVideoBatch(env, deps, msg) {
   for (const item of deletes) {
     try {
       const videoId = await contentId(jobId, item.relPathFromJob);
+
+      // Best-effort: free the Stream copy so deleted videos don't keep
+      // accruing storage cost. Never lets a Stream failure block the
+      // Supabase pending_review flag below.
+      try {
+        const existing = await sb.getProjectVideo(jobId, videoId);
+        if (existing && existing.streamUid) {
+          await stream.deleteVideo(existing.streamUid);
+        }
+      } catch (err) {
+        log({ evt: 'video_stream_delete_failed', jobId, videoId, path: item.path, error: String(err && err.message || err) });
+      }
+
       await sb.rpc('videos_mark_pending', { p_project_id: jobId, p_video_id: videoId });
       log({ evt: 'video_pending_review', jobId, videoId, path: item.path });
     } catch (err) {

@@ -428,6 +428,23 @@ export async function runBackfill(env, deps, { jobId: onlyJobId } = {}) {
     }
   }
 
-  log({ evt: 'backfill_dispatched', scope: onlyJobId || 'all', entries: entries.length, files: classified.length, jobs: groups.size, dispatched });
-  return { scope: onlyJobId || 'all', files: classified.length, jobs: groups.size, dispatched };
+  // Video: same walked entries, classified/grouped independently (mirrors runDelta).
+  const videoCfg = readVideoConfig(env);
+  const videoClassified = classifyForVideoSync(entries, videoCfg).filter((i) => i.type === 'upsert');
+  const videoGroups = groupByJob(videoClassified);
+  let videoDispatched = 0;
+  for (const [, g] of videoGroups) {
+    const jid = knownJobId || (await resolveJobId(dbx, g.jobFolderPath, cfg.templateId, jobCache));
+    if (!jid) continue;
+    for (const part of chunk(g.items, 100)) {
+      await enqueue({ type: 'video-batch', jobId: jid, jobFolderPath: g.jobFolderPath, items: part });
+      videoDispatched++;
+    }
+  }
+
+  log({
+    evt: 'backfill_dispatched', scope: onlyJobId || 'all', entries: entries.length, files: classified.length, jobs: groups.size, dispatched,
+    videoFiles: videoClassified.length, videoJobs: videoGroups.size, videoDispatched,
+  });
+  return { scope: onlyJobId || 'all', files: classified.length, jobs: groups.size, dispatched, videoFiles: videoClassified.length, videoDispatched };
 }

@@ -103,5 +103,17 @@ export function createSupabase(env) {
       });
       return readJson(res);
     },
+
+    // One video's current record from projects.data.videos[], or null. Used
+    // before a Dropbox-side delete to find the streamUid to free in Stream.
+    async getProjectVideo(projectId, videoId) {
+      const res = await fetch(`${BASE}/rest/v1/projects?id=eq.${encodeURIComponent(projectId)}&select=data`, {
+        headers: authHeaders,
+      });
+      const rows = await readJson(res);
+      const row = Array.isArray(rows) ? rows[0] : rows;
+      const videos = (row && row.data && row.data.videos) || [];
+      return videos.find((v) => v.videoId === videoId) || null;
+    },
   };
 }

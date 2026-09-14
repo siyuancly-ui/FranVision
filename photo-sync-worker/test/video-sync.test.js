@@ -17,7 +17,7 @@ function makeDbx(over = {}) {
 }
 
 function makeStream(over = {}) {
-  const calls = { copies: [], statuses: [] };
+  const calls = { copies: [], statuses: [], deletes: [] };
   return {
     calls,
     async copyFromUrl(url, meta) {
@@ -27,6 +27,10 @@ function makeStream(over = {}) {
     async getStatus(uid) {
       calls.statuses.push(uid);
       return { readyToStream: false, status: { state: 'inprogress' } };
+    },
+    async deleteVideo(uid) {
+      calls.deletes.push(uid);
+      return {};
     },
     ...over,
   };
@@ -48,6 +52,9 @@ function makeSb(over = {}) {
     },
     async deletePendingVideo(id) {
       calls.deletedPending.push(id);
+    },
+    async getProjectVideo() {
+      return null;
     },
     ...over,
   };
@@ -106,21 +113,50 @@ test('processVideoBatch: upsert gets a temp link, kicks off a Stream copy, write
   assert.equal(sb.calls.pending[0].streamUid, rpcCall.args.p_video.streamUid);
 });
 
-test('processVideoBatch: delete marks pending_review, does not touch Stream', async () => {
+const deleteItem = (over = {}) => ({
+  type: 'delete', path: '/JobA/Video/old.mp4', subFolder: 'Video', relPathFromJob: 'Video/old.mp4', filename: 'old.mp4', ...over,
+});
+
+test('processVideoBatch: delete with no existing Supabase record marks pending_review, does not call Stream delete', async () => {
   const dbx = makeDbx();
   const stream = makeStream();
-  const sb = makeSb();
+  const sb = makeSb(); // getProjectVideo -> null by default
 
   const res = await processVideoBatch({}, { dbx, sb, stream }, {
-    jobId: 'FV-1',
-    jobFolderPath: '/JobA',
-    items: [{ type: 'delete', path: '/JobA/Video/old.mp4', subFolder: 'Video', relPathFromJob: 'Video/old.mp4', filename: 'old.mp4' }],
+    jobId: 'FV-1', jobFolderPath: '/JobA', items: [deleteItem()],
   });
 
   assert.equal(res.deletes, 1);
   const rpcCall = sb.calls.rpc.find((c) => c.fn === 'videos_mark_pending');
   assert.ok(rpcCall);
-  assert.equal(stream.calls.copies.length, 0);
+  assert.equal(stream.calls.deletes.length, 0);
+});
+
+test('processVideoBatch: delete with an existing streamUid frees it in Cloudflare Stream', async () => {
+  const dbx = makeDbx();
+  const stream = makeStream();
+  const sb = makeSb({ async getProjectVideo() { return { videoId: 'v-old', streamUid: 'uid-old' }; } });
+
+  const res = await processVideoBatch({}, { dbx, sb, stream }, {
+    jobId: 'FV-1', jobFolderPath: '/JobA', items: [deleteItem()],
+  });
+
+  assert.equal(res.deletes, 1);
+  assert.deepEqual(stream.calls.deletes, ['uid-old']);
+  assert.ok(sb.calls.rpc.find((c) => c.fn === 'videos_mark_pending'));
+});
+
+test('processVideoBatch: a Stream delete failure is best-effort, still marks pending_review', async () => {
+  const dbx = makeDbx();
+  const stream = makeStream({ async deleteVideo() { throw new Error('stream 500'); } });
+  const sb = makeSb({ async getProjectVideo() { return { videoId: 'v-old', streamUid: 'uid-old' }; } });
+
+  const res = await processVideoBatch({}, { dbx, sb, stream }, {
+    jobId: 'FV-1', jobFolderPath: '/JobA', items: [deleteItem()],
+  });
+
+  assert.equal(res.deletes, 1);
+  assert.ok(sb.calls.rpc.find((c) => c.fn === 'videos_mark_pending'));
 });
 
 test('processVideoBatch: one bad item is skipped, does not sink the batch', async () => {

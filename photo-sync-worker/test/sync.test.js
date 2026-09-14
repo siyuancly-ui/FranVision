@@ -398,6 +398,30 @@ test('runBackfill(all): walks root and enqueues per job, no cursor writes', asyn
   assert.equal(sb.calls.patch.length, 0); // backfill never touches the cursor
 });
 
+test('runBackfill(all): also walks VIDEO_SYNC_FOLDERS and enqueues video-batch per job', async () => {
+  const dbx = makeDbx({
+    async listFolder() {
+      return {
+        entries: [
+          { '.tag': 'file', path_display: '/JobA/MLS/a.jpg', path_lower: '/joba/mls/a.jpg', id: 'id:1' },
+          { '.tag': 'file', path_display: '/JobA/Video/walkthrough.mp4', path_lower: '/joba/video/walkthrough.mp4', id: 'id:2' },
+        ],
+        has_more: false,
+      };
+    },
+  });
+  const sb = makeSb();
+  const enqueued = [];
+  const res = await runBackfill({ ...ENV, VIDEO_SYNC_FOLDERS: 'Video,VLOG' }, { dbx, sb, enqueue: (m) => enqueued.push(m) }, {});
+
+  assert.equal(res.dispatched, 1);
+  assert.equal(res.videoDispatched, 1);
+  const videoMsg = enqueued.find((m) => m.type === 'video-batch');
+  assert.ok(videoMsg);
+  assert.equal(videoMsg.jobId, 'FV-1');
+  assert.equal(videoMsg.items[0].filename, 'walkthrough.mp4');
+});
+
 test('runBackfill(jobId): locates the folder via propertiesSearch', async () => {
   const dbx = makeDbx({
     async propertiesSearch() { return { id: 'id:folder', path: '/JobA' }; },
