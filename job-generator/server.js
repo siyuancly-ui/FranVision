@@ -60,21 +60,43 @@ function setAndPersistRootFolder(newRootFolder) {
   configStore.setRootFolder(newRootFolder);
 }
 
-// Native "choose folder" dialog -- AppleScript on macOS. No npm
-// dependency. Resolves { cancelled: true } (not a rejection) whenever the
-// user dismisses the dialog, the tool isn't available, or anything else
-// goes wrong -- the UI's Job Root Folder field is always typeable as a
-// fallback, so a missing picker must never be fatal. (Windows support --
-// a PowerShell FolderBrowserDialog branch here plus Job Generator.bat --
-// was written and tested on macOS only, never verified on a real Windows
-// box, and is intentionally kept off main for now; see the
-// job-generator-delivery-email-followup branch if picking it back up.)
+// Native "choose folder" dialog -- AppleScript on macOS, a PowerShell
+// FolderBrowserDialog on Windows. No npm dependency either way. Resolves
+// { cancelled: true } (not a rejection) whenever the user dismisses the
+// dialog, the tool isn't available, or anything else goes wrong -- the
+// UI's Job Root Folder field is always typeable as a fallback, so a
+// missing picker must never be fatal. (Re-added 2026-09-13 on the
+// `windows-package` branch, built for Franky's Windows test package --
+// was written and tested on macOS only in September, never verified on a
+// real Windows box, and had been deliberately kept off `main`/
+// `combined-test` since; see `job-generator-delivery-email-followup` for
+// the original commit if this needs picking back up again later.)
 function pickFolderNative() {
   return new Promise((resolve) => {
     if (process.platform === 'darwin') {
       execFile('osascript', ['-e', 'POSIX path of (choose folder with prompt "Select Job Root Folder:")'], (err, stdout) => {
         if (err) return resolve({ cancelled: true });
         resolve({ cancelled: false, path: stdout.trim() });
+      });
+      return;
+    }
+
+    if (process.platform === 'win32') {
+      // -STA is required for FolderBrowserDialog (PowerShell 7 defaults to
+      // MTA and would throw); Windows PowerShell 5.1 -- present on every
+      // Win10/11 box -- honours it. Prints the chosen path on OK, nothing
+      // on Cancel.
+      const ps = [
+        'Add-Type -AssemblyName System.Windows.Forms;',
+        '$d = New-Object System.Windows.Forms.FolderBrowserDialog;',
+        "$d.Description = 'Select Job Root Folder:';",
+        '$d.ShowNewFolderButton = $true;',
+        "if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($d.SelectedPath) }",
+      ].join(' ');
+      execFile('powershell.exe', ['-NoProfile', '-STA', '-Command', ps], { windowsHide: true }, (err, stdout) => {
+        if (err) return resolve({ cancelled: true });
+        const picked = String(stdout).replace(/^﻿/, '').trim();
+        resolve(picked ? { cancelled: false, path: picked } : { cancelled: true });
       });
       return;
     }
