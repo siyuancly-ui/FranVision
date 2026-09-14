@@ -53,7 +53,10 @@
 
     // Sub-folders (directly under a job folder) whose images get mirrored.
     // Comma-separated, case-insensitive, surrounding spaces trimmed.
-    "SYNC_FOLDERS": "MLS,Virtual Staging,Floorplan,Local Report",
+    // "MLS" was renamed to "HDR Photos" by Job Generator on 2026-09-12 --
+    // both names stay listed so pre-rename jobs (still named "MLS" on
+    // Dropbox) keep syncing alongside new "HDR Photos" jobs.
+    "SYNC_FOLDERS": "MLS,HDR Photos,Virtual Staging,Floorplan,Local Report",
 
     // Sub-folders whose videos get copied into Cloudflare Stream. Same
     // comma-separated/case-insensitive parsing as SYNC_FOLDERS.
@@ -77,8 +80,9 @@
 
     // Sub-folders that ALSO get a downloadable compressed copy written back
     // into Dropbox (the "MLS for download" delivery set). Subset of
-    // SYNC_FOLDERS. The 1024 bytes are reused -- compressed once.
-    "DOWNLOAD_SET_FOLDERS": "MLS",
+    // SYNC_FOLDERS. The 1024 bytes are reused -- compressed once. Same
+    // MLS -> HDR Photos rename as SYNC_FOLDERS above.
+    "DOWNLOAD_SET_FOLDERS": "MLS,HDR Photos",
     "DOWNLOAD_SUBFOLDER": "MLS for download",
 
     // Safety cap: max delta entries pulled per queue message before the
