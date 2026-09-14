@@ -11,6 +11,7 @@
  *   wrangler secret put DROPBOX_APP_KEY        # + APP_SECRET, REFRESH_TOKEN
  *   wrangler secret put SUPABASE_URL           # + SERVICE_ROLE_KEY
  *   wrangler secret put ADMIN_TOKEN
+ *   wrangler secret put CF_STREAM_API_TOKEN    # Cloudflare Stream:Edit token
  *   wrangler deploy
  *
  * Requires the Workers Paid plan (Queues + higher subrequest limits).
@@ -53,6 +54,14 @@
     // Sub-folders (directly under a job folder) whose images get mirrored.
     // Comma-separated, case-insensitive, surrounding spaces trimmed.
     "SYNC_FOLDERS": "MLS,Virtual Staging,Floorplan,Local Report",
+
+    // Sub-folders whose videos get copied into Cloudflare Stream. Same
+    // comma-separated/case-insensitive parsing as SYNC_FOLDERS.
+    "VIDEO_SYNC_FOLDERS": "Video,VLOG",
+
+    // Cloudflare account id that owns the Stream product used for video
+    // hosting. Not sensitive -- the API token (a secret) is what's guarded.
+    "CF_ACCOUNT_ID": "6f3c289ac50b8015fed5082696db622b",
 
     // Dropbox get_thumbnail size for the Gallery / Supabase thumbnail.
     "THUMB_SIZE": "w1024h768",

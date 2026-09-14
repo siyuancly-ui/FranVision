@@ -321,6 +321,31 @@ test('runDelta: fans out one photo-batch per tagged job, advances cursor', async
   assert.equal(sb.calls.release, 1);
 });
 
+test('runDelta: also fans out one video-batch per tagged job, alongside photo-batch', async () => {
+  const dbx = makeDbx({
+    async listFolderContinue() {
+      return {
+        entries: [
+          { '.tag': 'file', path_display: '/JobA/MLS/a.jpg', path_lower: '/joba/mls/a.jpg', id: 'id:1', rev: 'r1' },
+          { '.tag': 'file', path_display: '/JobA/Video/walkthrough.mp4', path_lower: '/joba/video/walkthrough.mp4', id: 'id:2', rev: 'r2' },
+        ],
+        cursor: 'C1',
+        has_more: false,
+      };
+    },
+  });
+  const sb = makeSb();
+  const enqueued = [];
+  const res = await runDelta({ ...ENV, VIDEO_SYNC_FOLDERS: 'Video,VLOG' }, { dbx, sb, enqueue: (m) => enqueued.push(m), now: () => 'T' });
+
+  assert.equal(res.dispatched, 1);
+  assert.equal(res.videoDispatched, 1);
+  const videoMsg = enqueued.find((m) => m.type === 'video-batch');
+  assert.ok(videoMsg);
+  assert.equal(videoMsg.jobId, 'FV-1');
+  assert.equal(videoMsg.items[0].filename, 'walkthrough.mp4');
+});
+
 test('runDelta: skips when the lease is held', async () => {
   const dbx = makeDbx();
   const sb = makeSb({ async acquireLease() { return false; } });

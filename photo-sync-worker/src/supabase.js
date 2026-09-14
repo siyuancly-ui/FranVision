@@ -76,5 +76,32 @@ export function createSupabase(env) {
       });
       return readJson(res);
     },
+
+    // One row per video awaiting Cloudflare Stream encoding.
+    async insertPendingVideo({ projectId, videoId, streamUid }) {
+      const res = await fetch(`${BASE}/rest/v1/video_sync_pending`, {
+        method: 'POST',
+        headers: {
+          ...authHeaders,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal,resolution=merge-duplicates',
+        },
+        body: JSON.stringify({ project_id: projectId, video_id: videoId, stream_uid: streamUid }),
+      });
+      return readJson(res);
+    },
+
+    async listPendingVideos() {
+      const res = await fetch(`${BASE}/rest/v1/video_sync_pending?select=*`, { headers: authHeaders });
+      return (await readJson(res)) || [];
+    },
+
+    async deletePendingVideo(id) {
+      const res = await fetch(`${BASE}/rest/v1/video_sync_pending?id=eq.${id}`, {
+        method: 'DELETE',
+        headers: { ...authHeaders, Prefer: 'return=minimal' },
+      });
+      return readJson(res);
+    },
   };
 }

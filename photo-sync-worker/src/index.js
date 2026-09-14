@@ -9,7 +9,9 @@
 import { verifyDropboxSignature, timingSafeEqual } from './webhook.js';
 import { createDropbox } from './dropbox.js';
 import { createSupabase } from './supabase.js';
+import { createStream } from './stream.js';
 import { runDelta, processPhotoBatch, runBackfill } from './sync.js';
+import { processVideoBatch, processVideoPoll } from './video-sync.js';
 
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } });
@@ -20,6 +22,7 @@ function makeDeps(env) {
   return {
     dbx: createDropbox(env),
     sb: createSupabase(env),
+    stream: createStream(env),
     enqueue: (msg) => env.SYNC_QUEUE.send(msg),
     now: () => new Date().toISOString(),
   };
@@ -108,6 +111,10 @@ export default {
           await runDelta(env, deps);
         } else if (body.type === 'photo-batch') {
           await processPhotoBatch(env, deps, body);
+        } else if (body.type === 'video-batch') {
+          await processVideoBatch(env, deps, body);
+        } else if (body.type === 'video-poll') {
+          await processVideoPoll(env, deps);
         } else if (body.type === 'backfill') {
           await runBackfill(env, deps, { jobId: body.jobId || null });
         } else {
@@ -126,6 +133,11 @@ export default {
     ctx.waitUntil(
       env.SYNC_QUEUE.send({ type: 'delta' }).catch((err) =>
         log({ evt: 'cron_enqueue_failed', error: String(err && err.message || err) }),
+      ),
+    );
+    ctx.waitUntil(
+      env.SYNC_QUEUE.send({ type: 'video-poll' }).catch((err) =>
+        log({ evt: 'cron_video_poll_enqueue_failed', error: String(err && err.message || err) }),
       ),
     );
     void event;

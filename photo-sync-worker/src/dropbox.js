@@ -91,6 +91,12 @@ export function createDropbox(env) {
       return rpc(env, API, 'files/list_folder/continue', { cursor });
     },
 
+    // A ~4h-lived direct-download URL for a file -- handed to Cloudflare
+    // Stream's "copy from URL" so the Worker never proxies video bytes.
+    async getTemporaryLink(path) {
+      return rpc(env, API, 'files/get_temporary_link', { path });
+    },
+
     async getMetadata(path, { withPropertyGroups = false, includeMediaInfo = false } = {}) {
       const arg = { path };
       if (withPropertyGroups && TEMPLATE_ID) {

@@ -4,10 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working in this
 
 ## What this is
 
-A standalone **Cloudflare Worker** (`franvision-photo-sync`) that mirrors compressed thumbnails of the photos in Dropbox job folders into the **same Supabase project the Feature Sheet Builder uses**, so the (not-yet-built) Wix Gallery and the Feature Sheet Builder can display and pick from them without ever talking to Dropbox directly.
+A standalone **Cloudflare Worker** (`franvision-photo-sync`) that mirrors compressed thumbnails of the photos in Dropbox job folders into the **same Supabase project the Feature Sheet Builder uses**, so the (not-yet-built) Wix Gallery and the Feature Sheet Builder can display and pick from them without ever talking to Dropbox directly. It also mirrors job **videos** (the `Video`/`VLOG` sub-folders) into **Cloudflare Stream**, writing the resulting playback info into the same Supabase project's `projects.data.videos[]` — same "Dropbox is the only archive, Supabase is a display index" shape as photos.
 
-- Originals stay in Dropbox and remain the only archive. Each synced photo record keeps a `dropboxFileId` pointing back to the high-res file for the future print/PDF path.
-- Supabase here is a **display cache + index**. Wiping Supabase Storage loses nothing permanent — re-run the backfill and every thumbnail regenerates.
+- Originals stay in Dropbox and remain the only archive. Each synced photo record keeps a `dropboxFileId` pointing back to the high-res file for the future print/PDF path; each synced video record keeps a `dropboxFileId`/`dropboxPath` the same way.
+- Supabase here is a **display cache + index**. Wiping Supabase Storage loses nothing permanent — re-run the backfill and every thumbnail regenerates. (Video re-encoding on Stream isn't covered by the photo backfill — see Known limitations.)
 - It also writes a **larger delivery render back into Dropbox** (see "Two renders" below) — so unlike every other module, this Worker both reads *and writes* the studio's live Dropbox.
 
 Independent service, its own repo-in-waiting: `photo-sync-worker/` is self-contained and can be split into its own GitHub repo later. It is **not** part of the Feature Sheet Builder despite sharing its Supabase project.
@@ -31,10 +31,10 @@ Zero runtime dependencies — Dropbox and Supabase are both driven with raw `fet
 
 ```bash
 cd photo-sync-worker
-npm test           # node --test, 43 cases, NO network
+npm test           # node --test, 54 cases, NO network
 ```
 
-Pure helpers (`paths.js`, `photo-id.js`, `webhook.js`, the classify/collapse/group functions in `sync.js`) are unit-tested directly. The runners (`runDelta` / `processPhotoBatch` / `runBackfill`) take an injectable `deps` bag (`{ dbx, sb, enqueue, now }`) so tests hand in fake Dropbox/Supabase objects — the real API is never hit in tests.
+Pure helpers (`paths.js`, `photo-id.js`, `webhook.js`, the classify/collapse/group functions in `sync.js`) are unit-tested directly. The runners (`runDelta` / `processPhotoBatch` / `runBackfill`) take an injectable `deps` bag (`{ dbx, sb, enqueue, now }`) so tests hand in fake Dropbox/Supabase objects — the real API is never hit in tests. The video pipeline (`video-sync.js`) follows the same pattern with an extra fake `stream` object; see `test/video-sync.test.js`.
 
 **Verifying anything beyond the fake-`deps` tests means running against the studio's real, live production Dropbox account AND the live Supabase project the Feature Sheet Builder uses.** Same rule as `job-generator/`: use an obviously-fake job name, and delete whatever you create (Dropbox folder, the `projects` row, its Storage objects) when done.
 
@@ -45,7 +45,8 @@ cd photo-sync-worker
 npx wrangler queues create photo-sync-jobs        # once
 npx wrangler queues create photo-sync-dlq         # once
 npx wrangler secret put DROPBOX_APP_KEY           # + APP_SECRET, REFRESH_TOKEN,
-                                                 #   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, ADMIN_TOKEN
+                                                 #   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, ADMIN_TOKEN,
+                                                 #   CF_STREAM_API_TOKEN
 npx wrangler deploy
 # then: run supabase/schema.sql once in the Supabase SQL editor,
 #       and register https://<worker>/webhook in the Dropbox App Console (FranVision OS -> Settings -> Webhooks)
@@ -60,10 +61,14 @@ Dropbox change ─webhook (HMAC-verified)─┐
 2-min cron (reconciliation) ────────────┤─▶ enqueue {type:"delta"} ─▶ Queue photo-sync-jobs
                                                                          │
    delta message: acquire lease lock in photo_sync_state, read cursor,   │
-   files/list_folder/continue, collapse to last-state-per-path, keep     │
-   only files/deletes under SYNC_FOLDERS, group by top-level job folder, │
-   resolve the hidden jobId property per folder (skip untagged), fan out │
-   one {type:"photo-batch", jobId, items} per job, advance the cursor. ──┤
+   files/list_folder/continue, collapse to last-state-per-path. The SAME  │
+   collapsed entries are classified TWICE, independently:                │
+     - photos: keep files/deletes under SYNC_FOLDERS, group by job,      │
+       fan out one {type:"photo-batch", jobId, items} per job.           │
+     - videos: keep files/deletes under VIDEO_SYNC_FOLDERS, group by     │
+       job, fan out one {type:"video-batch", jobId, items} per job.      │
+   Both resolve the hidden jobId property per folder (skip untagged,     │
+   shared cache), then the cursor advances. ───────────────────────────┤
                                                                          ▼
    photo-batch message, per job:
      1. get_thumbnail_batch(THUMB_SIZE=w1024h768) -> Supabase Storage
@@ -71,6 +76,18 @@ Dropbox change ─webhook (HMAC-verified)─┐
      2. (MLS only) second get_thumbnail_batch(DOWNLOAD_THUMB_SIZE=w2048h1536)
         -> files/upload to <jobFolder>/MLS for download/<name>.jpg   (best-effort)
      deletes -> photos_mark_pending() + delete the MLS-for-download copy
+
+   video-batch message, per job:
+     1. files/get_temporary_link -> Cloudflare Stream "copy from URL"
+        (Stream fetches the Dropbox file itself, async; Worker never
+        proxies video bytes) -> videos_upsert() RPC, status:"processing"
+        + one row in video_sync_pending
+     deletes -> videos_mark_pending() (Stream object itself not freed yet)
+
+2-min cron ALSO enqueues {type:"video-poll"} -> for each video_sync_pending
+row, check Stream's encode status; readyToStream -> videos_upsert() with
+status:"ok" + playbackUrl/thumbnailUrl, row removed; Stream-reported error ->
+status:"error", row removed; still encoding -> left for the next tick.
 ```
 
 ### Module map
@@ -81,10 +98,12 @@ Dropbox change ─webhook (HMAC-verified)─┐
 | `src/webhook.js` | Dropbox `X-Dropbox-Signature` HMAC-SHA256 verification (`DROPBOX_APP_SECRET`), constant-time compare |
 | `src/dropbox.js` | Raw-fetch Dropbox client bound to `env`; module-scope access-token cache (minted from the refresh token, 401 → force-refresh-once). `list_folder`(+`get_latest_cursor`,`/continue`), `get_metadata` (property groups / media_info), `get_thumbnail_batch`, `get_thumbnail_v2` (single-file fallback), `files/upload`, `files/delete_v2`, `file_properties/properties/search` |
 | `src/supabase.js` | Raw-fetch: Storage upload (`x-upsert`), PostgREST `/rpc/*`, and `photo_sync_state` read/write incl. the lease lock (one conditional `PATCH`) |
-| `src/sync.js` | The engine. Pure helpers (`collapseEntries`, `classifyForSync`, `groupByJob`, `dimsFromMediaInfo`) + the runners `runDelta` / `processPhotoBatch` / `runBackfill` (injectable `deps`) |
-| `src/paths.js` | Pure path parsing: job folder / sub-folder / relative path / extension, `SYNC_FOLDERS` matching, the `MLS for download` loop-guard, `downloadCopyPath` |
-| `src/photo-id.js` | `photoId = base64url(sha256(jobId + '/' + relPathFromJob)).slice(0,22)` |
-| `supabase/schema.sql` | Run once in the Supabase SQL editor — the 3 objects below |
+| `src/sync.js` | The photo engine. Pure helpers (`collapseEntries`, `classifyForSync`, `groupByJob`, `dimsFromMediaInfo`) + the runners `runDelta` / `processPhotoBatch` / `runBackfill` (injectable `deps`). `runDelta` also classifies the same collapsed entries for video and dispatches `video-batch` messages (see `video-sync.js`) |
+| `src/video-sync.js` | The video engine, deliberately parallel to `sync.js` rather than merged in. `classifyForVideoSync` (video-only counterpart of `classifyForSync`) + the runners `processVideoBatch` (kicks off a Stream ingest per video) / `processVideoPoll` (checks `video_sync_pending`, finalizes ready/errored videos) |
+| `src/stream.js` | Raw-fetch Cloudflare Stream client bound to `env`: `copyFromUrl` (ingest by URL, async), `getStatus`, `deleteVideo` |
+| `src/paths.js` | Pure path parsing: job folder / sub-folder / relative path / extension, `SYNC_FOLDERS`/`VIDEO_SYNC_FOLDERS` matching, the `MLS for download` loop-guard, `downloadCopyPath` |
+| `src/photo-id.js` | `photoId = base64url(sha256(jobId + '/' + relPathFromJob)).slice(0,22)` — also reused (imported under a local alias) as the id derivation for videos in `video-sync.js`; the hash itself has no photo-specific logic |
+| `supabase/schema.sql` | Run once in the Supabase SQL editor — the 6 objects below |
 
 ### What it adds to the shared Supabase project (`papaswihicvajzcubbri`, the Feature Sheet Builder's)
 
@@ -92,6 +111,9 @@ Dropbox change ─webhook (HMAC-verified)─┐
 - **`photos_upsert(p_project_id, p_photo jsonb)`** — atomic merge of one photo into `projects.data.photos[]`: creates the row if missing, `SELECT … FOR UPDATE` serializes concurrent writers (this Worker's own batches AND a human in the Feature Sheet Builder), matches by `photoId`, shallow-merges so Feature-Sheet-Builder-owned keys (`role`, sort order, …) survive.
 - **`photos_mark_pending(p_project_id, p_photo_id)`** — flag one photo `status:"pending_review"`, remove nothing.
 - New keys the Worker writes on each `projects.data.photos[]` entry: `photoId`, `filename`, `width`, `height`, `hasThumb`, `dropboxFileId`, `dropboxPath`, `dropboxRev`, `folder`, `status`, `syncedAt`, and (MLS only) `downloadDropboxPath`. Storage bucket + path rule are unchanged from the Feature Sheet Builder: `photos/<jobId>/<photoId>_thumb.jpg`.
+- **`video_sync_pending`** table — one row per video awaiting Cloudflare Stream encoding (`project_id`, `video_id`, `stream_uid`), polled and deleted once finalized. No `anon` access.
+- **`videos_upsert(p_project_id, p_video jsonb)`** / **`videos_mark_pending(p_project_id, p_video_id)`** — same shape as the photo functions above, targeting `projects.data.videos[]` matched by `videoId`.
+- Keys the Worker writes on each `projects.data.videos[]` entry: `videoId`, `filename`, `folder`, `dropboxFileId`, `dropboxPath`, `dropboxRev`, `streamUid`, `status` (`processing`/`ok`/`error`/`pending_review`), `syncedAt`, and once ready: `durationSec`, `playbackUrl`, `thumbnailUrl`. No Storage bucket involved — the encoded video lives in Cloudflare Stream, not Supabase Storage.
 
 ## Confirmed design decisions (several were the road not taken first — re-read before "fixing")
 
@@ -105,17 +127,22 @@ Dropbox change ─webhook (HMAC-verified)─┐
 - **Idempotent throughout.** Delta collapsed to last-state-per-path; `projects` writes via the atomic RPC keyed on `photoId`; Storage upload is `x-upsert`; delivery copy is `mode:overwrite` at a deterministic path.
 - **Best-effort layering.** A single bad photo is logged (`thumb_skip` / `photo_error`) and skipped, never sinking the batch. The delivery-copy pass is entirely best-effort (`download_copy_failed` / `delivery_batch_failed`) — the Gallery record is already saved; the next sync/backfill retries. Only a whole-batch infra failure (`get_thumbnail_batch` throws, Supabase down) throws, so the Queue message retries with backoff; after `max_retries: 5` it lands in `photo-sync-dlq`.
 - **`width`/`height`** come from the delta entry's `media_info`; Dropbox generates that asynchronously after upload, so when it's missing the Worker does one `get_metadata(include_media_info)` refetch, and still tolerates `null`.
-- **Backfill is manual and cursor-independent.** `POST /admin/backfill` (bearer `ADMIN_TOKEN`), empty body = all tagged jobs, `{"jobId":"FVS-…"}` = one. Not run on deploy. Use it to seed pre-existing jobs, or to re-generate every delivery copy after changing `DOWNLOAD_THUMB_SIZE`.
+- **Backfill is manual and cursor-independent.** `POST /admin/backfill` (bearer `ADMIN_TOKEN`), empty body = all tagged jobs, `{"jobId":"FVS-…"}` = one. Not run on deploy. Use it to seed pre-existing jobs, or to re-generate every delivery copy after changing `DOWNLOAD_THUMB_SIZE`. **Photo-only** — it does not (yet) walk `VIDEO_SYNC_FOLDERS`; see Known limitations.
+- **Video host: Cloudflare Stream, not Vimeo/YouTube.** Chosen for cost (duration-based pricing, not GB-based — resolution/bitrate don't move the price) and because it's the same Cloudflare account/API surface this Worker already uses, minimizing integration work. See the project's conversation history for the full comparison.
+- **Video sync is additive and parallel to the photo pipeline, not merged into it.** `video-sync.js` is a separate file from `sync.js`; `runDelta` classifies the same collapsed delta entries twice (once per pipeline) and dispatches a separate `video-batch` message type. Deliberate: the already-shipped, acceptance-tested photo flow is never touched by video changes.
+- **No proxying of video bytes through the Worker.** Cloudflare Stream's "copy from URL" (`POST /stream/copy`) lets Stream fetch the source itself, async. The Worker only needs a short-lived direct-download URL for the Dropbox file (`files/get_temporary_link`, ~4h validity) — multi-GB 4K files never touch the Worker's CPU/memory/body-size limits.
+- **Video encoding completion is polled, not pushed via a Stream webhook.** A `video_sync_pending` table (one row per in-flight upload) is checked by the existing 2-min cron (`{type:"video-poll"}`, alongside the existing `{type:"delta"}`). Simpler than adding a second signed-webhook scheme; consistent with how this Worker already treats Dropbox itself as "poll on a timer, webhook is just a wake-up hint."
+- **`videoId` reuses the exact same derivation as `photoId`** (`hash(jobId + '/' + relPathFromJob)`, imported under a local alias) — no separate hashing logic, and the same self-heal property falls out: delete + same-name re-upload keeps the same `videoId`, though note it goes through a **fresh Stream upload** (new `streamUid`) since the old Stream video isn't reused.
 
 ## Environment / secrets
 
 Set with `wrangler secret put` (never a committed file; `.dev.vars` is gitignored, `.dev.vars.example` documents the list):
-`DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, `DROPBOX_REFRESH_TOKEN` (the **same** three the Job Generator uses — same "FranVision OS" app, Full Dropbox; the token needs `files.metadata.read/write` + `files.content.read/write`, which cover the File Properties API too — there is no separate `file_properties` scope), `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (service-role — bypasses RLS), `ADMIN_TOKEN` (guards `/admin/*`).
-Non-secret config is `vars` in `wrangler.jsonc`: `DROPBOX_JOBS_ROOT`, `SYNC_FOLDERS`, `THUMB_SIZE`, `DOWNLOAD_THUMB_SIZE`, `DROPBOX_TEMPLATE_ID` (`ptid:R599LCPosWEAAAAAAAAIFA`, the shared jobId PropertyGroupTemplate), `DOWNLOAD_SET_FOLDERS`, `DOWNLOAD_SUBFOLDER`, `MAX_DELTA_ENTRIES_PER_RUN`.
+`DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, `DROPBOX_REFRESH_TOKEN` (the **same** three the Job Generator uses — same "FranVision OS" app, Full Dropbox; the token needs `files.metadata.read/write` + `files.content.read/write`, which cover the File Properties API too — there is no separate `file_properties` scope), `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (service-role — bypasses RLS), `ADMIN_TOKEN` (guards `/admin/*`), `CF_STREAM_API_TOKEN` (needs Stream:Edit permission on the account named by `CF_ACCOUNT_ID`).
+Non-secret config is `vars` in `wrangler.jsonc`: `DROPBOX_JOBS_ROOT`, `SYNC_FOLDERS`, `VIDEO_SYNC_FOLDERS` (default `Video,VLOG`), `THUMB_SIZE`, `DOWNLOAD_THUMB_SIZE`, `DROPBOX_TEMPLATE_ID` (`ptid:R599LCPosWEAAAAAAAAIFA`, the shared jobId PropertyGroupTemplate), `DOWNLOAD_SET_FOLDERS`, `DOWNLOAD_SUBFOLDER`, `MAX_DELTA_ENTRIES_PER_RUN`, `CF_ACCOUNT_ID` (not sensitive, but paired with the `CF_STREAM_API_TOKEN` secret above).
 
 ## Observability
 
-`npx wrangler tail --format pretty` (add `--search "<jobId>"` to cut through webhook noise during a bulk upload). Structured `console.log` events: `delta_done`, `photo_batch_done`, `photo_healed`, `photo_pending_review`, `thumb_skip`, `photo_error`, `download_copy_failed`, `delivery_batch_failed`, `dims_refetch_failed`, `webhook_bad_signature`, `delta_skipped_locked`. `GET /admin/status` (bearer auth) returns the cursor state + last run stats.
+`npx wrangler tail --format pretty` (add `--search "<jobId>"` to cut through webhook noise during a bulk upload). Structured `console.log` events: `delta_done`, `photo_batch_done`, `photo_healed`, `photo_pending_review`, `thumb_skip`, `photo_error`, `download_copy_failed`, `delivery_batch_failed`, `dims_refetch_failed`, `webhook_bad_signature`, `delta_skipped_locked`, and for video: `video_batch_done`, `video_ready`, `video_encode_error`, `video_pending_review`, `video_error`, `video_delete_error`, `video_poll_done`, `video_poll_status_failed`. `GET /admin/status` (bearer auth) returns the cursor state + last run stats.
 
 ## Known limitations
 
@@ -124,5 +151,7 @@ Non-secret config is `vars` in `wrangler.jsonc`: `DROPBOX_JOBS_ROOT`, `SYNC_FOLD
 - **Webhook storm during a photographer's bulk upload**: every changed file fires a webhook → many cheap `delta_done` runs (mostly `entries:0`, most changes land in `0 RAW` and are filtered out). Harmless and keeps up in real time; there is deliberately **no debounce** yet.
 - **A queued `photo-batch` message lost after the cursor advanced** is not recovered by the cron (which resumes from the advanced cursor) — it relies on Cloudflare Queues' at-least-once delivery, with `POST /admin/backfill` as the manual repair. Low risk; noted.
 - **No retention/cleanup** for the Supabase free tier (1 GB) yet — a cron to drop thumbnails + `pending_review` rows for jobs older than N months is a future item (originals are safe in Dropbox; backfill rebuilds).
-- **`pending_review` has no human-facing surface yet** — it's a field in `projects.data.photos[]`; showing it is a Gallery / Feature Sheet Builder UI concern.
-- **Video / VLOG** are out of scope — a Dropbox link does not embed/play reliably in Wix; a real video host (Vimeo/YouTube) is the plan, wired in later.
+- **`pending_review` has no human-facing surface yet** — it's a field in `projects.data.photos[]`/`projects.data.videos[]`; showing it is a Gallery / Feature Sheet Builder UI concern.
+- **`POST /admin/backfill` does not cover video yet** — it only walks `SYNC_FOLDERS` (photos). Re-seeding video for a pre-existing job currently means a fresh Dropbox write to nudge the delta (or extending the admin endpoint later).
+- **A Dropbox-side video delete doesn't free Cloudflare Stream storage.** `videos_mark_pending` flags the Supabase record (like photos), but the encoded copy stays in Stream, accruing storage cost. `stream.deleteVideo(uid)` exists but isn't wired into the delete path yet — deferred so the first cut didn't need to read back the prior record's `streamUid` before deleting.
+- **3D tours are out of scope by design** — inserted as a manual external link (e.g. Matterport), not sourced from Dropbox at all; no code here can or should touch them.
