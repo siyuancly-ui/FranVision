@@ -249,7 +249,7 @@
         <label class="field-label" for="shootDate">Shoot Date</label>
         <div class="stub-row">
           <input type="text" id="shootDate" placeholder="yyyy/mm/dd">
-          <button class="browse-btn" type="button" id="shootdate-today-btn">Today</button>
+          <button class="browse-btn" type="button" id="shootdate-today-btn">Tomorrow</button>
         </div>
         <div class="field-hint" id="shootdate-hint">Format: yyyy/mm/dd</div>
       </div>
@@ -1317,14 +1317,23 @@
     el(id).addEventListener('input', () => { updateCreateButtonState(); refreshFolderPreview(); });
   });
 
-  // "Today" helper for Shoot Date -- fills yyyy/mm/dd for the local date.
-  function todayYmd() {
-    const d = new Date();
+  // Shoot Date helpers -- format a Date as yyyy/mm/dd in local time.
+  function formatYmd(d) {
     return d.getFullYear() + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0');
+  }
+  function todayYmd() {
+    return formatYmd(new Date());
+  }
+  // "Tomorrow" helper for Shoot Date -- most shoots are booked a day ahead,
+  // so one click fills the more commonly-needed date rather than today's.
+  function tomorrowYmd() {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return formatYmd(d);
   }
   el('shootdate-hint').textContent = 'Format: yyyy/mm/dd  —  today is ' + todayYmd();
   el('shootdate-today-btn').addEventListener('click', () => {
-    el('shootDate').value = todayYmd();
+    el('shootDate').value = tomorrowYmd();
     updateCreateButtonState();
     refreshFolderPreview();
   });
