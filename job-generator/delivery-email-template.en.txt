@@ -1,33 +1,28 @@
-Hi {{CLIENT_NAME}},
+Hello {{CLIENT_NAME}},
 
-Your listing deliverables for {{PROPERTY_ADDRESS}} are ready — thank you for your patience.
+Your photos for {{PROPERTY_ADDRESS}} are ready — thank you for your patience.
 
-All in One for MLS Virtual Tour URL:
+Preview Link:
 {{ALL_IN_ONE_LINK}}
 
-You can use the All-in-One link above to preview and share the listing online.
+You can use the link above to preview the photos. If you'd like the download links, please complete payment first.
 
-Please note that the All-in-One website is for preview and sharing only. All downloadable files will be provided separately through Dropbox after payment.
+Payment — choose one of the two options below:
 
-Payment
-Total amount due: {{PRETAX_AMOUNT}}+HST= {{TOTAL_AMOUNT}}. You can complete the payment by E-Transfer or Credit Card.
-
-E-Transfer: Please send the payment to:
-frankystudio@mail.com
+Fee: {{PRETAX_AMOUNT}}+HST= {{TOTAL_AMOUNT}}
+E-Transfer: frankystudio@mail.com
 (Not Gmail!!)
 
-After the transfer is completed, please send the payment screenshot or confirmation to Franky.
-
-Credit Card: Please use the Wave payment link below:
+Or pay by credit card:
 {{WAVE_LINK}}
 
-After the credit card payment is completed, please also let Franky know so we can confirm the payment and provide the download links.
+After payment, please let us know or send a screenshot so we can send you the download links right away.
 
-The download links are below ⬇
-Please copy and paste the links into your browser if needed.
-Depending on the services included in your order, the following files are available:
+{{PROPERTY_ADDRESS}}:
 
-{{LINE:HDR}}HDR High-Resolution Photos:
+For the best experience, please open the links in a browser on PC or Mac. Thank you so much for your support!!!
+
+{{LINE:HDR}}High-Resolution Photos:
 {{LINE:HDR}}{{HDR_LINK}}
 {{LINE:HDR}}
 {{LINE:MLS}}MLS Photos:
@@ -45,6 +40,9 @@ Depending on the services included in your order, the following files are availa
 {{LINE:HOME_REPORT}}Home Report:
 {{LINE:HOME_REPORT}}{{HOME_REPORT_LINK}}
 {{LINE:HOME_REPORT}}
+All in One Virtual Tour URL:
+{{ALL_IN_ONE_LINK}}
+
 Thank you!
 Franky
 FranVision Media
