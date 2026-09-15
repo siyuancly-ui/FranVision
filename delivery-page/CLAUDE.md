@@ -33,11 +33,12 @@ npm test    # node --test, 12 cases, NO network
 cd delivery-page
 npx wrangler secret put SUPABASE_URL              # + SUPABASE_SERVICE_ROLE_KEY, ADMIN_TOKEN
 npx wrangler deploy
-# then run supabase/schema.sql once in the Supabase SQL editor (adds
-# project_set_delivery_info()) if not already applied.
+# supabase/schema.sql (project_set_delivery_info()) already applied in the
+# SQL editor as of 2026-09-15 -- no need to re-run unless working against a
+# different Supabase project.
 ```
 
-Not yet deployed to production as of 2026-09-15 — this module was just scaffolded and unit-tested; no real Job has been rendered against live Supabase yet. Do the first real end-to-end test (real `jobId`, real photos/video already synced by photo-sync-worker) before trusting this in front of a client.
+**Not yet deployed to production as of 2026-09-15**, but **local end-to-end verified against real data the same day**: created a real test Job (`FVS-20260915-001`) via job-generator, uploaded real HDR/Floorplan/Local Report photos + a video, confirmed photo-sync-worker synced them into Supabase, ran `wrangler dev` here with real `.dev.vars`, set `address` via `POST /admin/jobs/<jobId>`, and viewed `/delivery/FVS-20260915-001` in an actual browser. All data-backed sections rendered correctly: hero photo + Arima Madurai address overlay, Cloudflare Stream video iframe, full gallery slider, the Local Report image (real HoodQ screenshot) in the neighborhood section, closing photo, and the Google Maps embed (correctly geocoded a real address; the fake test address predictably landed on an unrelated nearby result — expected, not a bug). Tour section correctly stayed hidden (no `tourUrl` set for this test job). Test job left in place (not cleaned up — reusable for future local testing, unlike the disposable test jobs used elsewhere in this project).
 
 ## Architecture
 
