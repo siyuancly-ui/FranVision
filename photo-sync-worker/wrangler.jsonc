@@ -92,6 +92,13 @@
     "DOWNLOAD_SET_FOLDERS": "MLS,HDR Photos",
     "DOWNLOAD_SUBFOLDER": "MLS for download",
 
+    // Sub-folders that ALSO get a large (DOWNLOAD_THUMB_SIZE) render
+    // uploaded to Supabase Storage as <photoId>_large.jpg, for delivery-
+    // page's full-bleed sections (hero/closing/aerial/neighborhood-report).
+    // Deliberately NOT the main gallery (MLS/HDR Photos) -- those stay
+    // small-only; see photo-sync-worker/CLAUDE.md for why.
+    "LARGE_THUMB_FOLDERS": "Cover Photo,Closing Photo,Drone Callout,Local Report",
+
     // Safety cap: max delta entries pulled per queue message before the
     // cursor is saved and processing continues in a fresh message.
     "MAX_DELTA_ENTRIES_PER_RUN": "2000"

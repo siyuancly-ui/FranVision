@@ -29,6 +29,19 @@ export function createSupabase(env) {
       return readJson(res);
     },
 
+    // photos/<jobId>/<photoId>_large.jpg -- the w2048h1536 render for
+    // delivery-page's full-bleed slots (Cover Photo/Closing Photo/Drone
+    // Callout/Local Report). Same upsert semantics as uploadThumb.
+    async uploadLarge(jobId, photoId, bytes) {
+      const path = `photos/${encodeURIComponent(jobId)}/${photoId}_large.jpg`;
+      const res = await fetch(`${BASE}/storage/v1/object/${path}`, {
+        method: 'POST',
+        headers: { ...authHeaders, 'Content-Type': 'image/jpeg', 'x-upsert': 'true', 'cache-control': '3600' },
+        body: bytes,
+      });
+      return readJson(res);
+    },
+
     async rpc(fn, args) {
       const res = await fetch(`${BASE}/rest/v1/rpc/${fn}`, {
         method: 'POST',

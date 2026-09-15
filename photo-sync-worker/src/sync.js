@@ -113,6 +113,11 @@ export function readConfig(env) {
     root: env.DROPBOX_JOBS_ROOT || '',
     syncFolders: parseFolderList(env.SYNC_FOLDERS),
     downloadSetFolders: parseFolderList(env.DOWNLOAD_SET_FOLDERS),
+    // Folders that also get a w2048h1536 "large" render uploaded to
+    // Supabase (delivery-page's full-bleed slots: Cover Photo/Closing
+    // Photo/Drone Callout/Local Report). Deliberately NOT the whole main
+    // gallery (HDR Photos/MLS) -- see photo-sync-worker/CLAUDE.md.
+    largeThumbFolders: parseFolderList(env.LARGE_THUMB_FOLDERS),
     downloadSubfolder: env.DOWNLOAD_SUBFOLDER || 'MLS for download',
     thumbSize: env.THUMB_SIZE || 'w1024h768',
     // Bigger render for the downloadable delivery set written back to
@@ -376,6 +381,42 @@ export async function processPhotoBatch(env, deps, msg) {
         await dbx.filesUpload(dest, bytes);
       } catch (err) {
         log({ evt: 'download_copy_failed', jobId, path: dest, error: String(err && err.message || err) });
+      }
+    }
+  }
+
+  // ---- large render: a bigger (w2048h1536) copy for delivery-page's
+  // full-bleed slots (Cover Photo/Closing Photo/Drone Callout/Local
+  // Report), uploaded to Supabase Storage as <photoId>_large.jpg.
+  // Separate pass, own thumbnail request -- the main Gallery/Supabase
+  // thumb above stays small. Entirely best-effort: the Gallery record is
+  // already saved; a failure here just means delivery-page falls back to
+  // the small thumb for that one photo.
+  const largeItems = succeeded.filter((i) => folderMatches(i.subFolder, cfg.largeThumbFolders));
+  for (const part of chunk(largeItems, 25)) {
+    let lbatch = null;
+    try {
+      lbatch = await dbx.getThumbnailBatch(part.map((i) => i.path), cfg.downloadThumbSize);
+    } catch (err) {
+      log({ evt: 'large_batch_failed', jobId, size: cfg.downloadThumbSize, error: String(err && err.message || err) });
+    }
+    const lresults = (lbatch && lbatch.entries) || [];
+    for (let k = 0; k < part.length; k++) {
+      const item = part[k];
+      const lr = lresults[k] || {};
+      try {
+        let bytes;
+        if (lr['.tag'] === 'success' && lr.thumbnail) {
+          bytes = base64ToBytes(lr.thumbnail);
+        } else {
+          // batch entry failed (or whole batch errored) -> single fallback
+          bytes = await dbx.getThumbnailV2(item.path, cfg.downloadThumbSize);
+        }
+        const pid = await photoId(jobId, item.relPathFromJob);
+        await sb.uploadLarge(jobId, pid, bytes);
+        await sb.rpc('photos_upsert', { p_project_id: jobId, p_photo: { photoId: pid, hasLarge: true } });
+      } catch (err) {
+        log({ evt: 'large_render_failed', jobId, path: item.path, error: String(err && err.message || err) });
       }
     }
   }

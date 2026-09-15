@@ -9,6 +9,7 @@ const ENV = {
   DOWNLOAD_SUBFOLDER: 'MLS for download',
   THUMB_SIZE: 'w1024h768',
   DOWNLOAD_THUMB_SIZE: 'w2048h1536',
+  LARGE_THUMB_FOLDERS: 'Cover Photo,Closing Photo,Drone Callout,Local Report',
   DROPBOX_TEMPLATE_ID: 'ptid:TEST',
   MAX_DELTA_ENTRIES_PER_RUN: '2000',
 };
@@ -60,11 +61,14 @@ function makeDbx(over = {}) {
 }
 
 function makeSb(over = {}) {
-  const calls = { thumbs: [], rpc: [], patch: [], lease: 0, release: 0 };
+  const calls = { thumbs: [], larges: [], rpc: [], patch: [], lease: 0, release: 0 };
   return {
     calls,
     async uploadThumb(jobId, photoId, bytes) {
       calls.thumbs.push({ jobId, photoId, len: bytes.length });
+    },
+    async uploadLarge(jobId, photoId, bytes) {
+      calls.larges.push({ jobId, photoId, len: bytes.length });
     },
     async rpc(fn, args) {
       calls.rpc.push({ fn, args });
@@ -177,6 +181,39 @@ test('processPhotoBatch: a failing address sync does not block the actual photo 
   });
 
   assert.equal(res.ok, 1); // the photo itself still synced fine
+});
+
+test('processPhotoBatch: a LARGE_THUMB_FOLDERS photo also gets a large render uploaded, with hasLarge:true', async () => {
+  const dbx = makeDbx();
+  const sb = makeSb();
+  const item = upsertItem({ path: '/JobA/Local Report/report.jpg', subFolder: 'Local Report', relPathFromJob: 'Local Report/report.jpg', filename: 'report.jpg' });
+  await processPhotoBatch(ENV, { dbx, sb, now: () => 'T' }, { jobId: 'FV-1', jobFolderPath: '/JobA', items: [item] });
+
+  assert.equal(sb.calls.larges.length, 1);
+  assert.equal(sb.calls.larges[0].jobId, 'FV-1');
+  assert.ok(dbx.calls.thumbBatch.some((b) => b.size === 'w2048h1536'));
+
+  const largeUpsert = sb.calls.rpc.find((c) => c.fn === 'photos_upsert' && c.args.p_photo.hasLarge === true);
+  assert.ok(largeUpsert, 'expected a follow-up photos_upsert marking hasLarge:true');
+});
+
+test('processPhotoBatch: a photo NOT in LARGE_THUMB_FOLDERS never gets a large render', async () => {
+  const dbx = makeDbx();
+  const sb = makeSb();
+  // default upsertItem() folder is "MLS", not in LARGE_THUMB_FOLDERS
+  await processPhotoBatch(ENV, { dbx, sb, now: () => 'T' }, { jobId: 'FV-1', jobFolderPath: '/JobA', items: [upsertItem()] });
+  assert.equal(sb.calls.larges.length, 0);
+});
+
+test('processPhotoBatch: a failing large render does not block the small thumb or the rest of the batch', async () => {
+  const dbx = makeDbx();
+  const sb = makeSb({
+    async uploadLarge() { throw new Error('storage down'); },
+  });
+  const item = upsertItem({ path: '/JobA/Local Report/report.jpg', subFolder: 'Local Report', relPathFromJob: 'Local Report/report.jpg', filename: 'report.jpg' });
+  const res = await processPhotoBatch(ENV, { dbx, sb, now: () => 'T' }, { jobId: 'FV-1', jobFolderPath: '/JobA', items: [item] });
+  assert.equal(res.ok, 1);
+  assert.equal(sb.calls.thumbs.length, 1); // the small thumb still uploaded fine
 });
 
 test('processPhotoBatch: delivery copy falls back to get_thumbnail_v2 when the batch entry fails', async () => {
