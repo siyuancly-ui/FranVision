@@ -105,6 +105,25 @@ export function folderMatches(subFolder, list) {
   return list.some((f) => f.toLowerCase() === s);
 }
 
+// Best-effort reverse of job-generator's sanitize.js#buildJobFolderName():
+// "YYYY.M.D Address_Client" -> "Address". Interim measure so delivery-page
+// has an address to show without job-generator pushing job.json data to
+// Supabase (job.json is local-only) -- see franvision-delivery-page-design
+// -spec.md's "Future automation goal". Returns null if the folder name
+// doesn't look like the expected shape (e.g. a legacy/hand-renamed folder),
+// never throws.
+const JOB_FOLDER_DATE_PREFIX = /^\d{4}\.\d{1,2}\.\d{1,2}\s+(.+)$/;
+
+export function parseAddressFromJobFolder(jobFolder) {
+  const m = JOB_FOLDER_DATE_PREFIX.exec(String(jobFolder || '').trim());
+  if (!m) return null;
+  const rest = m[1];
+  const idx = rest.lastIndexOf('_');
+  if (idx === -1) return null;
+  const address = rest.slice(0, idx).trim();
+  return address || null;
+}
+
 // Absolute Dropbox path of the compressed download copy for an MLS photo:
 // /<jobFolder>/<downloadSubfolder>/<basename>.jpg  (extension forced to jpg,
 // because the Dropbox thumbnail is always JPEG).

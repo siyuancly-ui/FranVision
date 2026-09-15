@@ -2,7 +2,7 @@
 // for unit tests; the runners (runDelta / runBackfill / processPhotoBatch)
 // take an injectable `deps` bag so tests can hand in fake Dropbox/Supabase.
 
-import { parseJobPath, isSyncCandidate, folderMatches, parseFolderList, downloadCopyPath } from './paths.js';
+import { parseJobPath, isSyncCandidate, folderMatches, parseFolderList, downloadCopyPath, parseAddressFromJobFolder } from './paths.js';
 import { photoId } from './photo-id.js';
 import { classifyForVideoSync, readVideoConfig } from './video-sync.js';
 
@@ -251,6 +251,19 @@ export async function processPhotoBatch(env, deps, msg) {
   const cfg = readConfig(env);
   const { dbx, sb, now = () => new Date().toISOString() } = deps;
   const { jobId, jobFolderPath, items } = msg;
+
+  // Best-effort: keep delivery-page's `address` fresh from the Dropbox job
+  // folder name (interim measure -- see paths.js#parseAddressFromJobFolder).
+  // Idempotent overwrite, never blocks the actual photo sync below.
+  try {
+    const jobFolder = String(jobFolderPath || '').split('/').filter(Boolean).pop();
+    const address = parseAddressFromJobFolder(jobFolder);
+    if (address) {
+      await sb.rpc('project_set_delivery_info', { p_project_id: jobId, p_fields: { address } });
+    }
+  } catch (err) {
+    log({ evt: 'address_sync_failed', jobId, error: String(err && err.message || err) });
+  }
 
   const upserts = items.filter((i) => i.type === 'upsert');
   const deletes = items.filter((i) => i.type === 'delete');

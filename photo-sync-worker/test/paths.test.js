@@ -11,6 +11,7 @@ import {
   isVideoSyncCandidate,
   folderMatches,
   downloadCopyPath,
+  parseAddressFromJobFolder,
 } from '../src/paths.js';
 
 test('normalizeRoot', () => {
@@ -111,4 +112,24 @@ test('downloadCopyPath forces .jpg', () => {
     downloadCopyPath('/FranVision Jobs/JobA', 'MLS for download', 'DSC_0001.jpg'),
     '/FranVision Jobs/JobA/MLS for download/DSC_0001.jpg',
   );
+});
+
+test('parseAddressFromJobFolder extracts the address between the date and the trailing _Client', () => {
+  assert.equal(
+    parseAddressFromJobFolder('2026.9.15 123 Delete Me Ave_Swan Si'),
+    '123 Delete Me Ave',
+  );
+  assert.equal(
+    parseAddressFromJobFolder('2025.9.26 23 Bonheur Rd_John Smith'),
+    '23 Bonheur Rd',
+  );
+  assert.equal(parseAddressFromJobFolder('2026.1.2 1 A St_B'), '1 A St');
+});
+
+test('parseAddressFromJobFolder returns null for unrecognized shapes', () => {
+  assert.equal(parseAddressFromJobFolder(''), null);
+  assert.equal(parseAddressFromJobFolder(null), null);
+  assert.equal(parseAddressFromJobFolder('Some Random Folder'), null); // no date prefix
+  assert.equal(parseAddressFromJobFolder('2026.9.15 No Underscore Here'), null); // no _Client
+  assert.equal(parseAddressFromJobFolder('2026.9.15 '), null); // empty after date, trimmed
 });

@@ -135,6 +135,50 @@ test('processPhotoBatch: MLS photo -> thumb + download copy + rpc', async () => 
   assert.equal(recB.downloadDropboxPath, undefined);
 });
 
+test('processPhotoBatch: date-prefixed jobFolderPath syncs address via project_set_delivery_info', async () => {
+  const dbx = makeDbx();
+  const sb = makeSb();
+  await processPhotoBatch(ENV, { dbx, sb, now: () => 'T' }, {
+    jobId: 'FV-1',
+    jobFolderPath: '/2026.9.15 123 Delete Me Ave_Swan Si',
+    items: [upsertItem()],
+  });
+
+  const addrCall = sb.calls.rpc.find((c) => c.fn === 'project_set_delivery_info');
+  assert.ok(addrCall, 'expected a project_set_delivery_info call');
+  assert.equal(addrCall.args.p_project_id, 'FV-1');
+  assert.equal(addrCall.args.p_fields.address, '123 Delete Me Ave');
+});
+
+test('processPhotoBatch: non-date-prefixed jobFolderPath skips address sync entirely', async () => {
+  const dbx = makeDbx();
+  const sb = makeSb();
+  await processPhotoBatch(ENV, { dbx, sb }, {
+    jobId: 'FV-1',
+    jobFolderPath: '/Some Legacy Folder Name',
+    items: [upsertItem()],
+  });
+
+  assert.equal(sb.calls.rpc.find((c) => c.fn === 'project_set_delivery_info'), undefined);
+});
+
+test('processPhotoBatch: a failing address sync does not block the actual photo sync', async () => {
+  const dbx = makeDbx();
+  const sb = makeSb({
+    async rpc(fn, args) {
+      if (fn === 'project_set_delivery_info') throw new Error('rpc down');
+      return { created: true, healed: false };
+    },
+  });
+  const res = await processPhotoBatch(ENV, { dbx, sb, now: () => 'T' }, {
+    jobId: 'FV-1',
+    jobFolderPath: '/2026.9.15 123 Delete Me Ave_Swan Si',
+    items: [upsertItem()],
+  });
+
+  assert.equal(res.ok, 1); // the photo itself still synced fine
+});
+
 test('processPhotoBatch: delivery copy falls back to get_thumbnail_v2 when the batch entry fails', async () => {
   const dbx = makeDbx({
     async getThumbnailBatch(paths, size) {
