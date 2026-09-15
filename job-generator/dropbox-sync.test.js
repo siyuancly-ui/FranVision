@@ -555,6 +555,65 @@ await testAsync('renameJobFolderOnDropbox: never throws -- a real failure (e.g. 
   });
 });
 
+// jobIdExistsOnDropbox -- the id-generator.js cross-machine collision guard.
+
+await testAsync('jobIdExistsOnDropbox: skips cleanly when not configured', async () => {
+  const saved = process.env.DROPBOX_APP_KEY;
+  delete process.env.DROPBOX_APP_KEY;
+  try {
+    const result = await dropboxSync.jobIdExistsOnDropbox('FVS-20260915-001');
+    assert.strictEqual(result.checked, false);
+    assert.strictEqual(result.exists, false);
+  } finally {
+    if (saved !== undefined) process.env.DROPBOX_APP_KEY = saved;
+  }
+});
+
+await testAsync('jobIdExistsOnDropbox: a live (non-deleted) match means exists:true', async () => {
+  const fakeDbx = {
+    filePropertiesPropertiesSearch: async () => ({
+      result: { matches: [{ path: '/Some Job', id: 'id:1', is_deleted: false }] },
+    }),
+  };
+  await withFakeCredentials(async () => {
+    const result = await dropboxSync.jobIdExistsOnDropbox('FVS-20260915-001', { client: fakeDbx });
+    assert.strictEqual(result.checked, true);
+    assert.strictEqual(result.exists, true);
+  });
+});
+
+await testAsync('jobIdExistsOnDropbox: no matches means exists:false', async () => {
+  const fakeDbx = { filePropertiesPropertiesSearch: async () => ({ result: { matches: [] } }) };
+  await withFakeCredentials(async () => {
+    const result = await dropboxSync.jobIdExistsOnDropbox('FVS-20260915-001', { client: fakeDbx });
+    assert.strictEqual(result.checked, true);
+    assert.strictEqual(result.exists, false);
+  });
+});
+
+await testAsync('jobIdExistsOnDropbox: only deleted matches means exists:false', async () => {
+  const fakeDbx = {
+    filePropertiesPropertiesSearch: async () => ({
+      result: { matches: [{ path: '/Old Job', id: 'id:1', is_deleted: true }] },
+    }),
+  };
+  await withFakeCredentials(async () => {
+    const result = await dropboxSync.jobIdExistsOnDropbox('FVS-20260915-001', { client: fakeDbx });
+    assert.strictEqual(result.checked, true);
+    assert.strictEqual(result.exists, false);
+  });
+});
+
+await testAsync('jobIdExistsOnDropbox: never throws -- a Dropbox error comes back as checked:false', async () => {
+  const fakeDbx = { filePropertiesPropertiesSearch: async () => { throw new Error('network blip'); } };
+  await withFakeCredentials(async () => {
+    const result = await dropboxSync.jobIdExistsOnDropbox('FVS-20260915-001', { client: fakeDbx });
+    assert.strictEqual(result.checked, false);
+    assert.strictEqual(result.exists, false);
+    assert.ok(result.error);
+  });
+});
+
 }
 
 runAsyncTests().then(() => {

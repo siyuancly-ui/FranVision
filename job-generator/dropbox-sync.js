@@ -450,6 +450,43 @@ async function renameJobFolderOnDropbox({ oldFolderName, newFolderName, client }
   }
 }
 
+// Checks whether a Job ID is already tagged (via the jobId property, see
+// syncJobFolderToDropbox above) on ANY Dropbox folder -- used as a
+// cross-machine collision guard by id-generator.js#getNextJobIdChecked
+// before finalizing a locally-computed candidate ID (Dropbox is the one
+// thing genuinely shared between this machine's local job.json files and
+// any other machine independently running Job Generator, e.g. Franky's
+// own Windows install -- see that function's own comment for the
+// 2026-09-15 incident this guards against).
+//
+// Same never-throw contract as the rest of this module, but the SHAPE of
+// "I couldn't check" is different from the other functions here: this
+// returns `{checked:false}` rather than `{success:false}`, since the
+// caller needs to distinguish "confirmed not a collision" from "have no
+// idea" -- getNextJobIdChecked treats `checked:false` as "give up on the
+// remote check, trust the local candidate" rather than "collision found".
+async function jobIdExistsOnDropbox(jobId, { client } = {}) {
+  if (!isConfigured()) {
+    return { checked: false, exists: false, error: 'Dropbox is not configured.' };
+  }
+  try {
+    const dbx = client || getClient();
+    const res = await dbx.filePropertiesPropertiesSearch({
+      queries: [{
+        query: jobId,
+        mode: { '.tag': 'field_name', field_name: 'jobId' },
+        logical_operator: 'or_operator',
+      }],
+      template_filter: { '.tag': 'filter_some', filter_some: [process.env.DROPBOX_TEMPLATE_ID] },
+    });
+    const matches = (res && res.result && res.result.matches) || [];
+    const exists = matches.some((m) => !m.is_deleted);
+    return { checked: true, exists };
+  } catch (err) {
+    return { checked: false, exists: false, error: extractDropboxErrorMessage(err) };
+  }
+}
+
 module.exports = {
   TEMPLATE_NAME,
   MLS_FOR_DOWNLOAD_SUBFOLDER,
@@ -467,4 +504,5 @@ module.exports = {
   createSharedLink,
   deleteJobFolderFromDropbox,
   renameJobFolderOnDropbox,
+  jobIdExistsOnDropbox,
 };
