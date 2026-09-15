@@ -90,7 +90,10 @@ test('renderDeliveryPage: omits sections with no data', () => {
   const out = renderDeliveryPage(model);
   assert.ok(out.includes('142 Cedarcrest Hollow'));
   assert.ok(!out.includes('id="galTrack"'));
-  assert.ok(!out.includes('<iframe'));
+  assert.ok(!out.includes('videodelivery.net'));
+  // The closing section's Google Maps embed IS expected whenever there's an
+  // address (see the dedicated map test below) -- that's the only iframe here.
+  assert.equal((out.match(/<iframe/g) || []).length, 1);
 });
 
 test('renderDeliveryPage: includes gallery/video/tour markup when present', () => {
@@ -108,6 +111,14 @@ test('renderDeliveryPage: includes gallery/video/tour markup when present', () =
   assert.ok(out.includes('gallery-track'));
   assert.ok(out.includes('iframe.videodelivery.net/abc'));
   assert.ok(out.includes('tour.example/x'));
+});
+
+test('renderDeliveryPage: closing section embeds a Google Maps iframe for the address, no API key', () => {
+  const model = buildDeliveryModel({ data: { address: '1 Main St, Toronto' } }, OPTS);
+  const out = renderDeliveryPage(model);
+  assert.ok(out.includes('google.com/maps?q=1%20Main%20St%2C%20Toronto'));
+  assert.ok(out.includes('output=embed'));
+  assert.ok(!out.includes('key='));
 });
 
 test('escapeHtml escapes markup-significant characters', () => {

@@ -22,7 +22,7 @@ npx wrangler dev                # GET /, GET /delivery/<jobId>, POST /admin/jobs
 
 ```bash
 cd delivery-page
-npm test    # node --test, 11 cases, NO network
+npm test    # node --test, 12 cases, NO network
 ```
 
 `src/render.js` is pure (`buildDeliveryModel` shapes a Supabase `projects` row into a template model; `renderDeliveryPage`/`renderNotFoundPage` are string-building functions) — fully unit-tested without touching Supabase. `src/index.js` (the Worker's `fetch` handler) and `src/supabase.js` (raw-fetch client) are thin and untested directly, same division of labor as photo-sync-worker.
@@ -69,11 +69,11 @@ POST /admin/jobs/<jobId>   (bearer ADMIN_TOKEN)
 - **Section visibility is data-presence-driven for v1, not purchased-services-driven.** A section renders iff its underlying data exists (a hero photo, a video, a `tourUrl`, gallery photos, a Local Report photo, an address) — see `franvision-delivery-page-design-spec.md`'s "Section visibility is service-driven, not fixed" note for the eventual target (which services/packages a Job's client purchased) and why v1 doesn't attempt that yet (job-generator/pricing data isn't in Supabase at all today).
 - **Floor Tour and 3D Tour share one field pair** (`tourUrl` + `tourType`), not two separate fields — confirmed mutually exclusive, same visual slot, no per-provider frontend difference (design-spec item 4).
 - **The neighborhood report (item 7) renders as a plain image for v1**, not the structured color-coded Schools/Parks/Transit/Safety layout from the visual mockup (see the separate Artifact draft) — the real content is a manually cropped HoodQ screenshot living in each Job's `Local Report` Dropbox folder, already synced by photo-sync-worker as an ordinary photo (folder `Local Report` was already in `SYNC_FOLDERS`). Rebuilding the structured layout needs real per-category data, not an image — only worth doing if/when a HoodQ API (or similar) is found (design-spec "Future automation goal").
-- **No map component for v1** — design-spec item 8 wants an embedded map; no provider (Google/Mapbox/Leaflet) has been chosen yet, so the closing section shows the address as plain text only. Revisit once a provider is picked.
+- **Map provider is Google Maps** (confirmed 2026-09-15) — the closing section embeds `https://www.google.com/maps?q=<address>&output=embed` in an iframe. No API key needed for this static single-pin embed form; if a future need calls for something the no-key embed can't do (custom pin styling, directions, etc.) that's when an API key / the JS Maps SDK would actually become necessary.
 
 ## Known limitations
 
-- **No curated hero/closing photo field yet.** `buildDeliveryModel` falls back to "first gallery photo, sorted by filename" for hero and "last gallery photo" for closing — there is no per-photo `role` (e.g. `"hero"`) a human can set. Whichever photo happens to sort first/last is what shows. Revisit once there's a real curation mechanism (an admin field, or a staff-facing picker) — don't just add an arbitrary `role` key without deciding where it's set from.
-- **Annotated aerial photo (design-spec item 6) has no data source at all** — no Dropbox folder is assigned to it in the confirmed folder structure ([[franvision-folder-structure-v2]]), so this Worker never renders that section. Needs a decision (new folder? reuse an existing one?) before it can be built, not just wired up.
+- **No curated hero/closing photo field yet.** `buildDeliveryModel` falls back to "first gallery photo, sorted by filename" for hero and "last gallery photo" for closing — there is no per-photo `role` (e.g. `"hero"`) a human can set. **The actual target here (confirmed 2026-09-15, see design-spec's "Future automation goal") is bigger than a manual flag** — an agent that learns Franky's/the photographers' own selection judgment and auto-picks hero/closing shots, not a field someone fills in by hand. Unscoped; the filename-sort fallback stays until that exists.
+- **Annotated aerial photo (design-spec item 6) has no data source at all** — no Dropbox folder is assigned to it in the confirmed folder structure ([[franvision-folder-structure-v2]]). **Direction confirmed 2026-09-15: it will likely get its own dedicated folder eventually**, but that folder doesn't exist yet, so this Worker still never renders that section. Don't build the read side until the folder is created and named.
 - **`project_set_delivery_info` is the only way to set `address`/`tourUrl`/`tourType` today** — via `POST /admin/jobs/<jobId>`, by hand (curl, or a future admin UI). No staff-facing form exists yet.
 - **Not deployed yet** — see "Deploy" above.

@@ -151,14 +151,22 @@ function localReportHtml(localReport) {
   </div>`;
 }
 
+// Google Maps confirmed as the provider (design-spec item 8, 2026-09-15).
+// The no-API-key `output=embed` form is enough for a static single-pin map.
+function googleMapsEmbedUrl(address) {
+  return `https://www.google.com/maps?q=${encodeURIComponent(address)}&output=embed`;
+}
+
 function closingHtml(model) {
   if (!model.closing && !model.address) return '';
   const photo = model.closing
     ? `<div class="closing-photo" style="background-image:url('${escapeHtml(model.closing.url)}');background-size:cover;background-position:center;"></div>`
     : '';
-  // No map provider chosen yet (design-spec item 8) -- address-as-text only.
   const addr = model.address
-    ? `<section><div class="wrap" style="padding-block:24px;"><p class="eyebrow">Location</p><p style="font-size:15px;">${escapeHtml(model.address)}</p></div></section>`
+    ? `<section><div class="wrap closing-map-wrap">
+    <iframe class="map-embed" src="${escapeHtml(googleMapsEmbedUrl(model.address))}" style="border:0;" loading="lazy" title="Map"></iframe>
+    <div><p class="eyebrow">Location</p><p style="font-size:15px;">${escapeHtml(model.address)}</p></div>
+  </div></section>`
     : '';
   return `${photo}\n${addr}`;
 }
@@ -221,6 +229,9 @@ const CSS = `
   .gallery-arrow.prev{left:14px;} .gallery-arrow.next{right:14px;}
   .gallery-arrow svg{width:16px;height:16px;}
   .closing-photo{height:52vh;min-height:320px;background-color:#3a3450;}
+  .closing-map-wrap{padding-block:48px;display:grid;grid-template-columns:1.1fr 1fr;gap:28px;align-items:center;}
+  .map-embed{width:100%;aspect-ratio:4/3;border-radius:var(--radius-m);}
+  @media (max-width:700px){ .closing-map-wrap{grid-template-columns:1fr;} }
   footer.site{padding:32px 24px 44px;text-align:center;color:var(--ink-soft);font-size:12.5px;letter-spacing:.02em;}
   .notfound{max-width:520px;margin:20vh auto;text-align:center;padding-inline:24px;}
   .notfound h1{font-size:22px;}
