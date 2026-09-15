@@ -154,7 +154,19 @@ function walkFiles(jobFolderPath) {
     try {
       entries = fs.readdirSync(absDir, { withFileTypes: true });
     } catch (err) {
-      return; // unreadable directory -- skip rather than throw
+      // A NESTED subdirectory being unreadable (permissions, a broken
+      // symlink) shouldn't kill the whole scan -- skip just that subtree.
+      // But the TOP-level call (relParts still empty) failing means
+      // jobFolderPath itself doesn't exist or isn't readable -- almost
+      // always a wrong path (e.g. a mis-decoded Chinese folder name from
+      // the Windows folder picker, found in real use 2026-09-15), not a
+      // legitimately-empty job folder. Silently treating that as "0 files
+      // here" made push/pull report a deceptive "0 uploaded, 0 deleted"
+      // success instead of surfacing the bad path -- throw here instead,
+      // caught by pushJobFilesToDropbox/pullJobFilesFromDropbox's own
+      // try/catch and turned into a proper {success:false, error} result.
+      if (relParts.length === 0) throw err;
+      return;
     }
     for (const entry of entries) {
       if (isExcludedName(entry.name)) continue;
