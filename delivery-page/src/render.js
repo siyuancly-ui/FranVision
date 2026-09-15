@@ -159,16 +159,23 @@ function googleMapsEmbedUrl(address) {
 
 function closingHtml(model) {
   if (!model.closing && !model.address) return '';
-  const photo = model.closing
-    ? `<div class="closing-photo" style="background-image:url('${escapeHtml(model.closing.url)}');background-size:cover;background-position:center;"></div>`
+
+  const card = model.address
+    ? `<div class="closing-card">
+    <iframe class="map-embed" src="${escapeHtml(googleMapsEmbedUrl(model.address))}" loading="lazy" title="Map"></iframe>
+    <div class="closing-card-address"><p class="eyebrow">Location</p><p>${escapeHtml(model.address)}</p></div>
+  </div>`
     : '';
-  const addr = model.address
-    ? `<section><div class="wrap closing-map-wrap">
-    <iframe class="map-embed" src="${escapeHtml(googleMapsEmbedUrl(model.address))}" style="border:0;" loading="lazy" title="Map"></iframe>
-    <div><p class="eyebrow">Location</p><p style="font-size:15px;">${escapeHtml(model.address)}</p></div>
-  </div></section>`
-    : '';
-  return `${photo}\n${addr}`;
+
+  if (model.closing) {
+    // One composited section -- the map/address card floats over the closing
+    // photo (matches the Zenfolio reference), not two stacked blocks.
+    return `<section class="closing" style="background-image:url('${escapeHtml(model.closing.url)}');">${card}</section>`;
+  }
+
+  // No closing photo (rare -- a Job with an address but no synced photos
+  // yet) -- just the card, centered on the normal page background.
+  return `<section class="closing-standalone">${card}</section>`;
 }
 
 function page(title, body, opts = {}) {
@@ -228,10 +235,23 @@ const CSS = `
   .gallery-arrow{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;border:none;background:var(--paper);box-shadow:0 1px 4px rgba(0,0,0,0.12);display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:3;}
   .gallery-arrow.prev{left:14px;} .gallery-arrow.next{right:14px;}
   .gallery-arrow svg{width:16px;height:16px;}
-  .closing-photo{height:52vh;min-height:320px;background-color:#3a3450;}
-  .closing-map-wrap{padding-block:48px;display:grid;grid-template-columns:1.1fr 1fr;gap:28px;align-items:center;}
-  .map-embed{width:100%;aspect-ratio:4/3;border-radius:var(--radius-m);}
-  @media (max-width:700px){ .closing-map-wrap{grid-template-columns:1fr;} }
+  .closing{position:relative;height:92vh;min-height:560px;overflow:hidden;background-size:cover;background-position:center;}
+  .closing-card{
+    position:absolute;left:50%;bottom:10%;transform:translateX(-50%);
+    width:min(1100px,92%);display:flex;background:var(--paper);
+    border-radius:var(--radius-m);overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,0.28);
+  }
+  .closing-card .map-embed{flex:1 1 50%;height:320px;border:0;display:block;}
+  .closing-card-address{flex:1 1 50%;background:var(--bg-content-alt);display:flex;flex-direction:column;justify-content:center;padding:32px 40px;}
+  .closing-card-address .eyebrow{text-align:left;margin-bottom:10px;}
+  .closing-card-address p:last-child{font-size:16px;margin:0;}
+  .closing-standalone{padding-block:48px;display:flex;justify-content:center;}
+  .closing-standalone .closing-card{position:static;transform:none;width:min(1100px,100%);box-shadow:none;border:1px solid var(--line);}
+  @media (max-width:700px){
+    .closing-card{flex-direction:column;}
+    .closing-card .map-embed{height:220px;}
+    .closing{height:70vh;}
+  }
   footer.site{padding:32px 24px 44px;text-align:center;color:var(--ink-soft);font-size:12.5px;letter-spacing:.02em;}
   .notfound{max-width:520px;margin:20vh auto;text-align:center;padding-inline:24px;}
   .notfound h1{font-size:22px;}
