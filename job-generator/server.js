@@ -86,14 +86,38 @@ function pickFolderNative() {
       // MTA and would throw); Windows PowerShell 5.1 -- present on every
       // Win10/11 box -- honours it. Prints the chosen path on OK, nothing
       // on Cancel.
+      //
+      // Writes the path as raw UTF-8 BYTES directly to the process's
+      // stdout stream ([Console]::OpenStandardOutput(), bypassing
+      // [Console]::Out entirely) rather than `[Console]::Out.Write(...)`
+      // (found in real use, 2026-09-15: a Chinese client name round-tripped
+      // through Browse came back as replacement-character mojibake, which
+      // then made file-sync's Push/Pull silently no-op against a folder
+      // that doesn't actually exist on disk under that mangled name).
+      // `[Console]::Out`'s text encoding, when stdout is redirected to a
+      // pipe (as it always is here, captured by Node's execFile) rather
+      // than a real console window, defaults to the OS's OEM/ANSI code
+      // page (e.g. GBK on a Simplified Chinese Windows install) -- NOT
+      // UTF-8 -- regardless of what `[Console]::OutputEncoding` is set to
+      // (that setter can also throw outright when stdout isn't a real
+      // console, so it's not a fix either). Writing raw bytes through the
+      // underlying stream sidesteps that encoding entirely: we choose the
+      // bytes, Node (which defaults execFile's stdout decoding to UTF-8)
+      // reads them back correctly regardless of the Windows machine's
+      // locale/OEM code page.
       const ps = [
         'Add-Type -AssemblyName System.Windows.Forms;',
         '$d = New-Object System.Windows.Forms.FolderBrowserDialog;',
         "$d.Description = 'Select Job Root Folder:';",
         '$d.ShowNewFolderButton = $true;',
-        "if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($d.SelectedPath) }",
+        'if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {',
+        '$bytes = [System.Text.Encoding]::UTF8.GetBytes($d.SelectedPath);',
+        '$stream = [Console]::OpenStandardOutput();',
+        '$stream.Write($bytes, 0, $bytes.Length);',
+        '$stream.Flush();',
+        '}',
       ].join(' ');
-      execFile('powershell.exe', ['-NoProfile', '-STA', '-Command', ps], { windowsHide: true }, (err, stdout) => {
+      execFile('powershell.exe', ['-NoProfile', '-STA', '-Command', ps], { windowsHide: true, encoding: 'utf8' }, (err, stdout) => {
         if (err) return resolve({ cancelled: true });
         const picked = String(stdout).replace(/^﻿/, '').trim();
         resolve(picked ? { cancelled: false, path: picked } : { cancelled: true });
