@@ -469,6 +469,34 @@ await testAsync('pullJobFilesFromDropbox: refuses a component-subfolder path ins
   });
 });
 
+await testAsync('pushJobFilesToDropbox: a nonexistent job folder path surfaces a clear error instead of a false "0 uploaded" success', async () => {
+  // Regression for 2026-09-15: walkFiles() used to swallow ANY unreadable
+  // directory (including the top-level jobFolderPath itself) and just
+  // return no files, so pushing a wrong path (e.g. a Chinese folder name
+  // mis-decoded by the Windows folder picker) looked like a successful
+  // "0 uploaded, 0 deleted" sync instead of surfacing that the path was
+  // bad. This still throws for it, caught by pushJobFilesToDropbox's own
+  // try/catch below.
+  await withFakeDropboxEnv(async () => {
+    const fakeDbx = makeFakeDbx({ remoteFiles: [] });
+    const result = await pushJobFilesToDropbox({ jobFolderPath: '/Users/x/does-not-exist-��', dropboxJobFolderName: 'does-not-exist', client: fakeDbx });
+    assert.strictEqual(result.attempted, true);
+    assert.strictEqual(result.success, false);
+    assert.ok(result.error && /ENOENT|no such file/i.test(result.error));
+    assert.strictEqual(result.uploadedCount, 0);
+  });
+});
+
+await testAsync('pullJobFilesFromDropbox: a nonexistent job folder path surfaces a clear error instead of a false success', async () => {
+  await withFakeDropboxEnv(async () => {
+    const fakeDbx = makeFakeDbx({ remoteFiles: [{ relativePath: 'x.jpg', size: 1, rev: 'r1' }] });
+    const result = await pullJobFilesFromDropbox({ jobFolderPath: '/Users/x/does-not-exist-��', dropboxJobFolderName: 'does-not-exist', client: fakeDbx });
+    assert.strictEqual(result.attempted, true);
+    assert.strictEqual(result.success, false);
+    assert.ok(result.error && /ENOENT|no such file/i.test(result.error));
+  });
+});
+
 await testAsync('pushJobFilesToDropbox: uploads a new file end-to-end and records both-side manifest state', async () => {
   const dir = makeTmpDir();
   try {
