@@ -56,7 +56,14 @@
     // "MLS" was renamed to "HDR Photos" by Job Generator on 2026-09-12 --
     // both names stay listed so pre-rename jobs (still named "MLS" on
     // Dropbox) keep syncing alongside new "HDR Photos" jobs.
-    "SYNC_FOLDERS": "MLS,HDR Photos,Virtual Staging,Floorplan,Local Report",
+    //
+    // "Cover Photo" / "Closing Photo" / "Drone Callout" (2026-09-15) are
+    // delivery-page's manual-override folders (see delivery-page/CLAUDE.md
+    // and franvision-delivery-page-design-spec.md) -- Job Generator doesn't
+    // create these by default yet (deferred), but syncing them here means a
+    // manually-created Dropbox folder with the same name works immediately,
+    // no photo-sync-worker deploy needed once job-generator catches up.
+    "SYNC_FOLDERS": "MLS,HDR Photos,Virtual Staging,Floorplan,Local Report,Cover Photo,Closing Photo,Drone Callout",
 
     // Sub-folders whose videos get copied into Cloudflare Stream. Same
     // comma-separated/case-insensitive parsing as SYNC_FOLDERS.
