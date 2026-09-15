@@ -36,7 +36,10 @@ function pickVideo(videos, folders) {
 
 // project: the raw `projects` row ({ id, data, ... }) from Supabase, or null
 // if the Job has no row yet (nothing synced, nothing manually entered).
-export function buildDeliveryModel(project, { jobId, supabaseUrl, galleryFolders, localReportFolder, videoFolders }) {
+export function buildDeliveryModel(project, {
+  jobId, supabaseUrl, galleryFolders, localReportFolder, videoFolders,
+  coverPhotoFolder, closingPhotoFolder, droneCalloutFolder,
+}) {
   const data = (project && project.data) || {};
   const photos = data.photos || [];
   const videos = data.videos || [];
@@ -44,11 +47,21 @@ export function buildDeliveryModel(project, { jobId, supabaseUrl, galleryFolders
   const galleryPhotos = pickPhotos(photos, galleryFolders);
   const toImg = (p) => ({ photoId: p.photoId, url: photoUrl(supabaseUrl, jobId, p.photoId), width: p.width, height: p.height });
 
-  const heroPhoto = galleryPhotos[0] ? toImg(galleryPhotos[0]) : null;
-  // No per-photo "role" field exists yet to mark a specific curated closing
-  // shot -- falls back to the last gallery photo (distinct from hero when
-  // there's more than one). See CLAUDE.md "Known limitations".
-  const closingPhoto = galleryPhotos.length > 1 ? toImg(galleryPhotos[galleryPhotos.length - 1]) : heroPhoto;
+  // Manual-override folders (Cover Photo / Closing Photo / Drone Callout) --
+  // a human drops one photo in, no data-entry needed. Job Generator doesn't
+  // create these by default yet, so most jobs won't have anything in them;
+  // that's fine, everything below falls back cleanly.
+  const coverOverride = coverPhotoFolder ? pickPhotos(photos, [coverPhotoFolder])[0] : null;
+  const closingOverride = closingPhotoFolder ? pickPhotos(photos, [closingPhotoFolder])[0] : null;
+  const aerialPhoto = droneCalloutFolder ? pickPhotos(photos, [droneCalloutFolder])[0] : null;
+
+  const heroPhoto = coverOverride ? toImg(coverOverride) : (galleryPhotos[0] ? toImg(galleryPhotos[0]) : null);
+  // No override -> falls back to the last gallery photo sorted by filename
+  // (distinct from hero when there's more than one). See CLAUDE.md "Known
+  // limitations".
+  const closingPhoto = closingOverride
+    ? toImg(closingOverride)
+    : (galleryPhotos.length > 1 ? toImg(galleryPhotos[galleryPhotos.length - 1]) : heroPhoto);
 
   const localReportPhoto = pickPhotos(photos, [localReportFolder])[0];
   const video = pickVideo(videos, videoFolders);
@@ -65,6 +78,7 @@ export function buildDeliveryModel(project, { jobId, supabaseUrl, galleryFolders
     video: video ? { playbackUrl: `https://iframe.videodelivery.net/${video.streamUid}`, thumbnailUrl: video.thumbnailUrl || null } : null,
     tour: tourUrl ? { url: tourUrl, type: tourType } : null,
     gallery: galleryPhotos.map(toImg),
+    aerial: aerialPhoto ? toImg(aerialPhoto) : null,
     localReport: localReportPhoto ? toImg(localReportPhoto) : null,
     closing: closingPhoto,
   };
@@ -90,7 +104,8 @@ ${heroHtml(model)}
 ${section('<section>\n  <div class="section-head"><p class="eyebrow">Aerial Teaser</p><h2 class="section-title">See it from above</h2></div>', model.video && videoHtml(model.video))}
 ${section('<section class="section-alt">\n  <div class="section-head"><p class="eyebrow">Virtual Walkthrough</p><h2 class="section-title">Walk the space</h2></div>', model.tour && tourHtml(model.tour))}
 ${section('<section>\n  <div class="section-head"><p class="eyebrow">Full Gallery</p><h2 class="section-title">Every room, every angle</h2></div>', model.gallery.length > 0 && galleryHtml(model.gallery))}
-${section('<section class="section-alt">\n  <div class="section-head"><p class="eyebrow">The Neighborhood</p><h2 class="section-title">What\'s nearby</h2></div>', model.localReport && localReportHtml(model.localReport))}
+${section('<section class="section-alt">\n  <div class="section-head"><p class="eyebrow">Aerial Overview</p><h2 class="section-title">The neighborhood at a glance</h2></div>', model.aerial && aerialHtml(model.aerial))}
+${section('<section>\n  <div class="section-head"><p class="eyebrow">The Neighborhood</p><h2 class="section-title">What\'s nearby</h2></div>', model.localReport && localReportHtml(model.localReport))}
 ${closingHtml(model)}
 <footer class="site">FranVision Media — Photography for real estate professionals</footer>`;
   return page(model.address ? `${model.address} — FranVision Media` : 'FranVision Delivery Page', body);
@@ -137,6 +152,15 @@ function galleryHtml(gallery) {
     ${slides}
     </div>
     <button class="gallery-arrow next" id="galNext" aria-label="Next photo"><svg viewBox="0 0 24 24" fill="none" stroke="#23211C" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg></button>
+  </div>`;
+}
+
+// Drone Callout: a manually pre-annotated aerial photo (design-spec item 6)
+// -- a static image, same "drop one file in, no data entry" shape as
+// Local Report. No annotation/label-placement logic here, same reasoning.
+function aerialHtml(aerial) {
+  return `  <div class="media-frame">
+    <img src="${escapeHtml(aerial.url)}" alt="Aerial overview" style="width:100%;border-radius:6px;display:block;">
   </div>`;
 }
 

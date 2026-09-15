@@ -8,6 +8,9 @@ const OPTS = {
   galleryFolders: ['HDR Photos', 'MLS'],
   localReportFolder: 'Local Report',
   videoFolders: ['Video', 'VLOG'],
+  coverPhotoFolder: 'Cover Photo',
+  closingPhotoFolder: 'Closing Photo',
+  droneCalloutFolder: 'Drone Callout',
 };
 
 function photo(overrides = {}) {
@@ -22,6 +25,7 @@ test('buildDeliveryModel: empty project has no sections', () => {
   assert.equal(model.tour, null);
   assert.deepEqual(model.gallery, []);
   assert.equal(model.localReport, null);
+  assert.equal(model.aerial, null);
   assert.equal(model.address, null);
 });
 
@@ -43,6 +47,51 @@ test('buildDeliveryModel: single gallery photo is both hero and closing', () => 
   const project = { data: { photos: [photo()] } };
   const model = buildDeliveryModel(project, OPTS);
   assert.equal(model.hero.photoId, model.closing.photoId);
+});
+
+test('buildDeliveryModel: Cover Photo / Closing Photo folders override the auto first/last pick', () => {
+  const project = { data: { photos: [
+    photo({ photoId: 'p1', filename: 'a.jpg' }),
+    photo({ photoId: 'p2', filename: 'z.jpg' }),
+    photo({ photoId: 'cover', folder: 'Cover Photo' }),
+    photo({ photoId: 'closing', folder: 'Closing Photo' }),
+  ] } };
+  const model = buildDeliveryModel(project, OPTS);
+  assert.equal(model.hero.photoId, 'cover');
+  assert.equal(model.closing.photoId, 'closing');
+  // the override photos are not part of the gallery itself
+  assert.deepEqual(model.gallery.map((p) => p.photoId), ['p1', 'p2']);
+});
+
+test('buildDeliveryModel: Cover Photo present but Closing Photo absent -- closing still falls back normally', () => {
+  const project = { data: { photos: [
+    photo({ photoId: 'p1', filename: 'a.jpg' }),
+    photo({ photoId: 'p2', filename: 'z.jpg' }),
+    photo({ photoId: 'cover', folder: 'Cover Photo' }),
+  ] } };
+  const model = buildDeliveryModel(project, OPTS);
+  assert.equal(model.hero.photoId, 'cover');
+  assert.equal(model.closing.photoId, 'p2'); // last gallery photo by filename
+});
+
+test('buildDeliveryModel: a pending_review photo in Cover Photo folder does not override (falls back)', () => {
+  const project = { data: { photos: [
+    photo({ photoId: 'p1', filename: 'a.jpg' }),
+    photo({ photoId: 'cover', folder: 'Cover Photo', status: 'pending_review' }),
+  ] } };
+  const model = buildDeliveryModel(project, OPTS);
+  assert.equal(model.hero.photoId, 'p1');
+});
+
+test('buildDeliveryModel: Drone Callout photo populates aerial, absent means null', () => {
+  const withPhoto = buildDeliveryModel(
+    { data: { photos: [photo({ photoId: 'drone', folder: 'Drone Callout' })] } },
+    OPTS,
+  );
+  assert.equal(withPhoto.aerial.photoId, 'drone');
+
+  const without = buildDeliveryModel({ data: { photos: [photo()] } }, OPTS);
+  assert.equal(without.aerial, null);
 });
 
 test('buildDeliveryModel: non-ok or thumbless photos are excluded', () => {
@@ -100,7 +149,7 @@ test('renderDeliveryPage: includes gallery/video/tour markup when present', () =
   const project = {
     data: {
       address: '1 Main St',
-      photos: [photo()],
+      photos: [photo(), photo({ photoId: 'drone', folder: 'Drone Callout' })],
       videos: [{ videoId: 'v1', folder: 'Video', status: 'ok', streamUid: 'abc' }],
       tourUrl: 'https://tour.example/x',
       tourType: '3d_tour',
@@ -111,6 +160,7 @@ test('renderDeliveryPage: includes gallery/video/tour markup when present', () =
   assert.ok(out.includes('gallery-track'));
   assert.ok(out.includes('iframe.videodelivery.net/abc'));
   assert.ok(out.includes('tour.example/x'));
+  assert.ok(out.includes('drone_thumb.jpg'));
 });
 
 test('renderDeliveryPage: closing section embeds a Google Maps iframe for the address, no API key', () => {

@@ -24,6 +24,9 @@ async function handleDelivery(jobId, env) {
     galleryFolders: folderList(env, 'GALLERY_FOLDERS'),
     localReportFolder: env.LOCAL_REPORT_FOLDER || 'Local Report',
     videoFolders: folderList(env, 'VIDEO_FOLDERS'),
+    coverPhotoFolder: env.COVER_PHOTO_FOLDER || 'Cover Photo',
+    closingPhotoFolder: env.CLOSING_PHOTO_FOLDER || 'Closing Photo',
+    droneCalloutFolder: env.DRONE_CALLOUT_FOLDER || 'Drone Callout',
   });
   return html(renderDeliveryPage(model));
 }
@@ -40,8 +43,8 @@ async function handleAdminSetJob(jobId, request, env) {
   }
 
   const fields = {};
-  if (typeof body.address === 'string') fields.address = body.address.trim();
-  if (typeof body.tourUrl === 'string') fields.tourUrl = body.tourUrl.trim();
+  if (typeof body.address === 'string' || body.address === null) fields.address = typeof body.address === 'string' ? body.address.trim() : null;
+  if (typeof body.tourUrl === 'string' || body.tourUrl === null) fields.tourUrl = typeof body.tourUrl === 'string' ? body.tourUrl.trim() : null;
   if (body.tourType === 'floor_tour' || body.tourType === '3d_tour' || body.tourType === null) fields.tourType = body.tourType;
 
   if (Object.keys(fields).length === 0) return json({ error: 'no recognized fields (address, tourUrl, tourType)' }, 400);

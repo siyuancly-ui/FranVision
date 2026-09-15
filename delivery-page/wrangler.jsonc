@@ -29,6 +29,15 @@
     "LOCAL_REPORT_FOLDER": "Local Report",
 
     // Dropbox sub-folders (case-insensitive) treated as the video teaser.
-    "VIDEO_FOLDERS": "Video,VLOG"
+    "VIDEO_FOLDERS": "Video,VLOG",
+
+    // Manual-override folders (2026-09-15) -- a human drops ONE photo in,
+    // no data entry needed. Falls back to the automatic first/last-of-
+    // GALLERY_FOLDERS pick (cover/closing) or hides the section entirely
+    // (Drone Callout) when empty. Job Generator doesn't create these by
+    // default yet -- see delivery-page/CLAUDE.md.
+    "COVER_PHOTO_FOLDER": "Cover Photo",
+    "CLOSING_PHOTO_FOLDER": "Closing Photo",
+    "DRONE_CALLOUT_FOLDER": "Drone Callout"
   }
 }
