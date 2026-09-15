@@ -113,7 +113,18 @@ const MAX_REQUEST_BODY_BYTES = 100 * 1024 * 1024; // 100MB
 
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
-    let data = '';
+    // Collect raw Buffer chunks and only decode to a string ONCE, after
+    // concatenating them all (Buffer.concat). Chinese (and any other
+    // multi-byte UTF-8) client/address names would otherwise come out as
+    // mojibake intermittently: appending each chunk with `data += chunk`
+    // implicitly calls that chunk's OWN `.toString('utf8')` in isolation,
+    // and a multi-byte character split across a TCP chunk boundary (which
+    // happens on some requests and not others, depending on where the
+    // split happens to land -- this payload can be large, e.g. a Shoot
+    // Notes image) decodes as U+FFFD replacement characters on each side
+    // of the cut instead of the original character. Found in real use,
+    // 2026-09-14.
+    const chunks = [];
     let bytes = 0;
     let tooLarge = false;
     req.on('data', (chunk) => {
@@ -127,15 +138,48 @@ function readJsonBody(req) {
         reject(err);
         return;
       }
-      data += chunk;
+      chunks.push(chunk);
     });
     req.on('end', () => {
       if (tooLarge) return;
-      if (!data) return resolve({});
+      if (!bytes) return resolve({});
+      const data = Buffer.concat(chunks, bytes).toString('utf8');
       try { resolve(JSON.parse(data)); } catch (err) { reject(err); }
     });
     req.on('error', reject);
   });
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Windows transiently locks a folder's handle while Explorer has it open,
+// Dropbox/OneDrive's desktop client is scanning it, or antivirus is
+// indexing it -- fs.renameSync then throws EPERM (found in real use,
+// 2026-09-14, renaming a folder right after creating it, where the
+// client-side desktop sync app was still touching it). A few retries with
+// a short delay clears the transient case; a real, lasting lock (the
+// folder genuinely open in another program) still surfaces, but as a
+// clear, actionable message instead of a raw Node stack trace.
+async function renameFolderWithRetry(oldPath, newPath, { attempts = 5, delayMs = 300 } = {}) {
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      await fs.promises.rename(oldPath, newPath);
+      return;
+    } catch (err) {
+      const transient = err.code === 'EPERM' || err.code === 'EBUSY';
+      if (!transient || i === attempts) {
+        const wrapped = new Error(
+          'Could not rename the folder on disk (' + err.code + '). It may be open in File Explorer/Finder, '
+            + 'a cloud-sync app (Dropbox/OneDrive), or another program -- close anything using it and try again.',
+        );
+        wrapped.statusCode = 409;
+        throw wrapped;
+      }
+      await sleep(delayMs);
+    }
+  }
 }
 
 function sendJson(res, status, body) {
@@ -413,7 +457,7 @@ async function handleApi(req, res, urlPath) {
             error: 'Cannot rename to "' + folderName + '" -- a folder with that name already exists. Resolve the collision by hand before retrying.',
           });
         }
-        fs.renameSync(oldFolderPath, jobFolderPath);
+        await renameFolderWithRetry(oldFolderPath, jobFolderPath);
         renamedFrom = body.renameFromFolderName;
         try {
           dropboxRenameResult = await dropboxSync.renameJobFolderOnDropbox({ oldFolderName: body.renameFromFolderName, newFolderName: folderName });
