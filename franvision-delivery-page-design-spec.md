@@ -37,7 +37,11 @@ This spec describes the page **as it should be rebuilt in custom code** (not on 
 
 ## Future automation goal (not yet scoped)
 
-Item 4 (Floor Tour / 3D Tour) and item 7 (neighborhood report / Local Report) are all third-party-produced outputs that today require a human to paste a link or content into the Job's record. Longer-term intent: fetch these automatically via each provider's API and write them into the Job's data, the same shape as [[franvision-photo-sync-worker]]'s Dropbox→Supabase pull (or a push/webhook pattern, if a given provider supports one) — not a permanent manual-entry step. Not scoped or prioritized yet; revisit once the shared Supabase schema and the delivery page's data model exist.
+Item 4 (Floor Tour / 3D Tour) and item 7 (neighborhood report / Local Report) are all third-party-produced outputs that today require a human to paste a link or content into the Job's record. Longer-term intent: fetch these automatically and write them into the Job's data, the same shape as [[franvision-photo-sync-worker]]'s Dropbox→Supabase pull. Two possible mechanisms, not yet decided between:
+- **A provider API**, if one exists (preferred where available — see item 7's note above on HoodQ specifically).
+- **Browser automation as a fallback for providers with no API**: visit the provider's site, enter the Job's address, capture a screenshot, save it into the Job's `Local Report` folder in Dropbox — i.e. automate the exact manual steps a staff member does today for HoodQ, rather than a human doing it by hand each time.
+
+Not scoped or prioritized yet; revisit once the shared Supabase schema and the delivery page's data model exist.
 
 ## Notes / open items
 
