@@ -426,7 +426,7 @@ body.fsb-modal-open { overflow: hidden; }
 .fsb-mysheets-del:hover { color: #d64545; }
 
 /* ---- admin / "All feature sheets" view (v2) ---- */
-.fsb-admin { max-width: 1100px; margin: 0 auto; padding: 24px 20px 60px; }
+.fsb-admin { max-width: 1100px; margin: 0 auto; padding: 24px 20px 60px; flex: 1; min-height: 0; overflow-y: auto; }
 .fsb-admin-head {
   display: flex; align-items: center; justify-content: space-between;
   gap: 16px; flex-wrap: wrap; padding-bottom: 16px; margin-bottom: 8px;
