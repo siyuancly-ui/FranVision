@@ -83,6 +83,35 @@ test('buildDeliveryModel: a pending_review photo in Cover Photo folder does not 
   assert.equal(model.hero.photoId, 'p1');
 });
 
+test('buildDeliveryModel: hasLarge:true uses the _large.jpg render for full-bleed slots, gallery stays small', () => {
+  const project = { data: { photos: [
+    photo({ photoId: 'p1', filename: 'a.jpg' }),
+    photo({ photoId: 'cover', folder: 'Cover Photo', hasLarge: true }),
+    photo({ photoId: 'report', folder: 'Local Report', hasLarge: true }),
+    photo({ photoId: 'drone', folder: 'Drone Callout', hasLarge: true }),
+  ] } };
+  const model = buildDeliveryModel(project, OPTS);
+  assert.ok(model.hero.url.endsWith('cover_large.jpg'));
+  assert.ok(model.localReport.url.endsWith('report_large.jpg'));
+  assert.ok(model.aerial.url.endsWith('drone_large.jpg'));
+  // gallery photos never get the large variant, even if hasLarge were set
+  assert.ok(model.gallery[0].url.endsWith('p1_thumb.jpg'));
+});
+
+test('buildDeliveryModel: no hasLarge (or the plain gallery fallback) falls back to _thumb.jpg', () => {
+  const overrideNoLarge = buildDeliveryModel(
+    { data: { photos: [photo({ photoId: 'cover', folder: 'Cover Photo', hasLarge: false })] } },
+    OPTS,
+  );
+  assert.ok(overrideNoLarge.hero.url.endsWith('cover_thumb.jpg'));
+
+  const galleryFallback = buildDeliveryModel(
+    { data: { photos: [photo({ photoId: 'p1', filename: 'a.jpg' })] } }, // ordinary HDR Photos, never large
+    OPTS,
+  );
+  assert.ok(galleryFallback.hero.url.endsWith('p1_thumb.jpg'));
+});
+
 test('buildDeliveryModel: Drone Callout photo populates aerial, absent means null', () => {
   const withPhoto = buildDeliveryModel(
     { data: { photos: [photo({ photoId: 'drone', folder: 'Drone Callout' })] } },

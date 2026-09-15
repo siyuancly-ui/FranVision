@@ -16,8 +16,12 @@ export function escapeHtml(str) {
   }[c]));
 }
 
-function photoUrl(supabaseUrl, jobId, photoId) {
-  return `${supabaseUrl}/storage/v1/object/public/photos/${encodeURIComponent(jobId)}/${photoId}_thumb.jpg`;
+// variant: 'thumb' (default, ~1024px, the gallery/Feature-Sheet-Builder
+// size) or 'large' (~2048px, photo-sync-worker's LARGE_THUMB_FOLDERS
+// render -- only exists when the photo record has hasLarge:true).
+function photoUrl(supabaseUrl, jobId, photoId, variant) {
+  const suffix = variant === 'large' ? '_large.jpg' : '_thumb.jpg';
+  return `${supabaseUrl}/storage/v1/object/public/photos/${encodeURIComponent(jobId)}/${photoId}${suffix}`;
 }
 
 // Photos in one of `folders` (case-insensitive), synced ok, thumbnail ready,
@@ -46,6 +50,13 @@ export function buildDeliveryModel(project, {
 
   const galleryPhotos = pickPhotos(photos, galleryFolders);
   const toImg = (p) => ({ photoId: p.photoId, url: photoUrl(supabaseUrl, jobId, p.photoId), width: p.width, height: p.height });
+  // Full-bleed slots (hero/closing/local-report/aerial): use the large
+  // (w2048h1536) render when photo-sync-worker generated one for this
+  // photo's folder (LARGE_THUMB_FOLDERS), else fall back to the small
+  // thumb -- e.g. the hero/closing AUTO fallback below comes from the
+  // main gallery, which never gets a large render on purpose (see
+  // photo-sync-worker/CLAUDE.md), so this just gracefully stays small.
+  const toImgLarge = (p) => ({ photoId: p.photoId, url: photoUrl(supabaseUrl, jobId, p.photoId, p.hasLarge ? 'large' : 'thumb'), width: p.width, height: p.height });
 
   // Manual-override folders (Cover Photo / Closing Photo / Drone Callout) --
   // a human drops one photo in, no data-entry needed. Job Generator doesn't
@@ -55,13 +66,13 @@ export function buildDeliveryModel(project, {
   const closingOverride = closingPhotoFolder ? pickPhotos(photos, [closingPhotoFolder])[0] : null;
   const aerialPhoto = droneCalloutFolder ? pickPhotos(photos, [droneCalloutFolder])[0] : null;
 
-  const heroPhoto = coverOverride ? toImg(coverOverride) : (galleryPhotos[0] ? toImg(galleryPhotos[0]) : null);
+  const heroPhoto = coverOverride ? toImgLarge(coverOverride) : (galleryPhotos[0] ? toImgLarge(galleryPhotos[0]) : null);
   // No override -> falls back to the last gallery photo sorted by filename
   // (distinct from hero when there's more than one). See CLAUDE.md "Known
   // limitations".
   const closingPhoto = closingOverride
-    ? toImg(closingOverride)
-    : (galleryPhotos.length > 1 ? toImg(galleryPhotos[galleryPhotos.length - 1]) : heroPhoto);
+    ? toImgLarge(closingOverride)
+    : (galleryPhotos.length > 1 ? toImgLarge(galleryPhotos[galleryPhotos.length - 1]) : heroPhoto);
 
   const localReportPhoto = pickPhotos(photos, [localReportFolder])[0];
   const video = pickVideo(videos, videoFolders);
@@ -78,8 +89,8 @@ export function buildDeliveryModel(project, {
     video: video ? { playbackUrl: `https://iframe.videodelivery.net/${video.streamUid}`, thumbnailUrl: video.thumbnailUrl || null } : null,
     tour: tourUrl ? { url: tourUrl, type: tourType } : null,
     gallery: galleryPhotos.map(toImg),
-    aerial: aerialPhoto ? toImg(aerialPhoto) : null,
-    localReport: localReportPhoto ? toImg(localReportPhoto) : null,
+    aerial: aerialPhoto ? toImgLarge(aerialPhoto) : null,
+    localReport: localReportPhoto ? toImgLarge(localReportPhoto) : null,
     closing: closingPhoto,
   };
 }
