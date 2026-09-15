@@ -1,0 +1,17 @@
+{
+  "name": "franvision-delivery-page",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker that renders the per-Job client delivery page (/delivery/<jobId>) from the shared Supabase project (photo-sync-worker's photos/videos + delivery-specific fields).",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "node --test",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^4.129.1"
+  }
+}

@@ -1,0 +1,120 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { buildDeliveryModel, renderDeliveryPage, renderNotFoundPage, escapeHtml } from '../src/render.js';
+
+const OPTS = {
+  jobId: 'FVS-20260915-001',
+  supabaseUrl: 'https://example.supabase.co',
+  galleryFolders: ['HDR Photos', 'MLS'],
+  localReportFolder: 'Local Report',
+  videoFolders: ['Video', 'VLOG'],
+};
+
+function photo(overrides = {}) {
+  return { photoId: 'p1', filename: 'a.jpg', folder: 'HDR Photos', status: 'ok', hasThumb: true, ...overrides };
+}
+
+test('buildDeliveryModel: empty project has no sections', () => {
+  const model = buildDeliveryModel(null, OPTS);
+  assert.equal(model.found, false);
+  assert.equal(model.hero, null);
+  assert.equal(model.video, null);
+  assert.equal(model.tour, null);
+  assert.deepEqual(model.gallery, []);
+  assert.equal(model.localReport, null);
+  assert.equal(model.address, null);
+});
+
+test('buildDeliveryModel: gallery folder photos become hero + gallery + closing', () => {
+  const project = { id: OPTS.jobId, data: { photos: [
+    photo({ photoId: 'p1', filename: 'b.jpg' }),
+    photo({ photoId: 'p2', filename: 'a.jpg' }),
+    photo({ photoId: 'p3', filename: 'c.jpg' }),
+  ] } };
+  const model = buildDeliveryModel(project, OPTS);
+  // sorted by filename: a, b, c -> hero is 'a' (p2), closing is 'c' (p3)
+  assert.equal(model.gallery.length, 3);
+  assert.equal(model.hero.photoId, 'p2');
+  assert.equal(model.closing.photoId, 'p3');
+  assert.ok(model.hero.url.includes('/storage/v1/object/public/photos/FVS-20260915-001/p2_thumb.jpg'));
+});
+
+test('buildDeliveryModel: single gallery photo is both hero and closing', () => {
+  const project = { data: { photos: [photo()] } };
+  const model = buildDeliveryModel(project, OPTS);
+  assert.equal(model.hero.photoId, model.closing.photoId);
+});
+
+test('buildDeliveryModel: non-ok or thumbless photos are excluded', () => {
+  const project = { data: { photos: [
+    photo({ photoId: 'p1', status: 'pending_review' }),
+    photo({ photoId: 'p2', hasThumb: false }),
+    photo({ photoId: 'p3', folder: 'Floorplan' }),
+  ] } };
+  const model = buildDeliveryModel(project, OPTS);
+  assert.deepEqual(model.gallery, []);
+});
+
+test('buildDeliveryModel: Local Report photo is separate from gallery', () => {
+  const project = { data: { photos: [
+    photo({ photoId: 'p1', folder: 'HDR Photos' }),
+    photo({ photoId: 'p2', folder: 'Local Report' }),
+  ] } };
+  const model = buildDeliveryModel(project, OPTS);
+  assert.equal(model.gallery.length, 1);
+  assert.equal(model.localReport.photoId, 'p2');
+});
+
+test('buildDeliveryModel: video picked from VIDEO_FOLDERS, builds Stream iframe URL', () => {
+  const project = { data: { videos: [
+    { videoId: 'v1', folder: 'Video', status: 'ok', streamUid: 'abc123' },
+    { videoId: 'v2', folder: 'Video', status: 'processing', streamUid: 'zzz' },
+  ] } };
+  const model = buildDeliveryModel(project, OPTS);
+  assert.equal(model.video.playbackUrl, 'https://iframe.videodelivery.net/abc123');
+});
+
+test('buildDeliveryModel: tourUrl/tourType pass through, invalid tourType dropped', () => {
+  const project = { data: { tourUrl: '  https://floortour.example/x  ', tourType: 'floor_tour' } };
+  const model = buildDeliveryModel(project, OPTS);
+  assert.equal(model.tour.url, 'https://floortour.example/x');
+  assert.equal(model.tour.type, 'floor_tour');
+
+  const project2 = { data: { tourUrl: 'https://x', tourType: 'bogus' } };
+  const model2 = buildDeliveryModel(project2, OPTS);
+  assert.equal(model2.tour.type, null);
+});
+
+test('renderDeliveryPage: omits sections with no data', () => {
+  const model = buildDeliveryModel({ data: { address: '142 Cedarcrest Hollow' } }, OPTS);
+  const out = renderDeliveryPage(model);
+  assert.ok(out.includes('142 Cedarcrest Hollow'));
+  assert.ok(!out.includes('id="galTrack"'));
+  assert.ok(!out.includes('<iframe'));
+});
+
+test('renderDeliveryPage: includes gallery/video/tour markup when present', () => {
+  const project = {
+    data: {
+      address: '1 Main St',
+      photos: [photo()],
+      videos: [{ videoId: 'v1', folder: 'Video', status: 'ok', streamUid: 'abc' }],
+      tourUrl: 'https://tour.example/x',
+      tourType: '3d_tour',
+    },
+  };
+  const model = buildDeliveryModel(project, OPTS);
+  const out = renderDeliveryPage(model);
+  assert.ok(out.includes('gallery-track'));
+  assert.ok(out.includes('iframe.videodelivery.net/abc'));
+  assert.ok(out.includes('tour.example/x'));
+});
+
+test('escapeHtml escapes markup-significant characters', () => {
+  assert.equal(escapeHtml(`<script>"'&`), '&lt;script&gt;&quot;&#39;&amp;');
+});
+
+test('renderNotFoundPage includes the requested jobId', () => {
+  const out = renderNotFoundPage('FVS-BOGUS');
+  assert.ok(out.includes('FVS-BOGUS'));
+});

@@ -1,0 +1,34 @@
+/**
+ * FranVision Delivery Page Worker.
+ *
+ * A standalone Worker -- NOT the repo-root `wrangler.jsonc` (that one ships
+ * the Feature Sheet Builder). This one is deployed from inside
+ * `delivery-page/`:
+ *
+ *   cd delivery-page
+ *   wrangler secret put SUPABASE_URL          # + SERVICE_ROLE_KEY, ADMIN_TOKEN
+ *   wrangler deploy
+ *
+ * Reads (never writes) the `projects` table that photo-sync-worker fills in
+ * the same Supabase project -- see ../photo-sync-worker/CLAUDE.md for the
+ * data shape. Free plan is fine (no Queues, no cron).
+ */
+{
+  "name": "franvision-delivery-page",
+  "main": "src/index.js",
+  "compatibility_date": "2025-06-01",
+
+  "vars": {
+    // Dropbox sub-folder (case-insensitive) treated as the main photo set
+    // for the hero/gallery/closing photo -- matches photo-sync-worker's
+    // SYNC_FOLDERS naming (both names kept for pre-rename jobs).
+    "GALLERY_FOLDERS": "HDR Photos,MLS",
+
+    // Dropbox sub-folder the neighborhood-report screenshot lives in --
+    // see franvision-delivery-page-design-spec.md item 7 (HoodQ screenshot).
+    "LOCAL_REPORT_FOLDER": "Local Report",
+
+    // Dropbox sub-folders (case-insensitive) treated as the video teaser.
+    "VIDEO_FOLDERS": "Video,VLOG"
+  }
+}
