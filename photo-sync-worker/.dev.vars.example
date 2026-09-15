@@ -10,3 +10,9 @@ SUPABASE_SERVICE_ROLE_KEY=
 
 # Bearer token that protects POST /admin/* . Make it long and random.
 ADMIN_TOKEN=
+
+# Cloudflare Stream (video hosting). CF_ACCOUNT_ID is not sensitive (also set
+# as a `vars` entry in wrangler.jsonc for prod) but listed here too for local
+# runs. CF_STREAM_API_TOKEN needs Stream:Edit permission on that account.
+CF_ACCOUNT_ID=6f3c289ac50b8015fed5082696db622b
+CF_STREAM_API_TOKEN=

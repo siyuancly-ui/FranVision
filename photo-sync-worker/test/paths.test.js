@@ -5,8 +5,10 @@ import {
   parseFolderList,
   fileExt,
   isWebImage,
+  isVideoFile,
   parseJobPath,
   isSyncCandidate,
+  isVideoSyncCandidate,
   folderMatches,
   downloadCopyPath,
 } from '../src/paths.js';
@@ -75,6 +77,23 @@ test('isSyncCandidate', () => {
   assert.ok(!isSyncCandidate('/JobA/MLS/notes.pdf', cfg)); // not an image
   assert.ok(!isSyncCandidate('/JobA/MLS for download/x.jpg', cfg)); // loop guard: not in SYNC_FOLDERS
   assert.ok(!isSyncCandidate('/JobA/MLS', cfg)); // the folder itself, depth 2
+});
+
+test('isVideoFile', () => {
+  assert.ok(isVideoFile('clip.mp4'));
+  assert.ok(isVideoFile('clip.MOV'));
+  assert.ok(isVideoFile('clip.m4v'));
+  assert.ok(!isVideoFile('clip.jpg'));
+  assert.ok(!isVideoFile('clip.avi'));
+});
+
+test('isVideoSyncCandidate', () => {
+  const cfg = { root: '', videoSyncFolders: ['Video', 'VLOG'] };
+  assert.ok(isVideoSyncCandidate('/JobA/Video/walkthrough.mp4', cfg));
+  assert.ok(isVideoSyncCandidate('/JobA/vlog/day1.MOV', cfg)); // case-insensitive folder + ext
+  assert.ok(!isVideoSyncCandidate('/JobA/MLS/x.jpg', cfg)); // not a video-sync folder
+  assert.ok(!isVideoSyncCandidate('/JobA/Video/notes.pdf', cfg)); // not a video
+  assert.ok(!isVideoSyncCandidate('/JobA/Video', cfg)); // the folder itself, depth 2
 });
 
 test('folderMatches', () => {

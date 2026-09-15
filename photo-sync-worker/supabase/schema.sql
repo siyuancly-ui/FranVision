@@ -146,3 +146,124 @@ revoke all on function public.photos_upsert(text, jsonb)      from public, anon,
 revoke all on function public.photos_mark_pending(text, text) from public, anon, authenticated;
 grant execute on function public.photos_upsert(text, jsonb)      to service_role;
 grant execute on function public.photos_mark_pending(text, text) to service_role;
+
+-- ===========================================================================
+-- Video sync (Dropbox -> Cloudflare Stream -> projects.data.videos[])
+-- ===========================================================================
+-- Mirrors the photo objects above exactly, just targeting `videos` / `videoId`
+-- instead of `photos` / `photoId`, plus one extra table: Stream encodes
+-- asynchronously, so `video_sync_pending` tracks in-flight uploads for the
+-- 2-min cron to poll until Stream reports readyToStream (or error).
+
+-- ---------------------------------------------------------------------------
+-- 4. video_sync_pending -- one row per video awaiting Stream encoding
+-- ---------------------------------------------------------------------------
+create table if not exists public.video_sync_pending (
+  id          bigserial primary key,
+  project_id  text not null,
+  video_id    text not null,
+  stream_uid  text not null,
+  created_at  timestamptz not null default now(),
+  unique (project_id, video_id)
+);
+
+alter table public.video_sync_pending enable row level security;
+-- No policies => anon/authenticated get nothing. service_role bypasses RLS.
+
+-- ---------------------------------------------------------------------------
+-- 5. videos_upsert -- atomically merge one video into projects.data.videos[]
+-- ---------------------------------------------------------------------------
+-- Same shape/semantics as photos_upsert: creates the projects row if missing,
+-- locks it (FOR UPDATE), matches by videoId, shallow-merges so a later partial
+-- update (e.g. the poll step adding playbackUrl once ready) doesn't clobber
+-- fields written by the initial "processing" upsert.
+create or replace function public.videos_upsert(p_project_id text, p_video jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_videos   jsonb;
+  v_existing jsonb;
+  v_idx      int;
+  v_merged   jsonb;
+begin
+  if p_video->>'videoId' is null then
+    raise exception 'videos_upsert: p_video.videoId is required';
+  end if;
+
+  insert into public.projects (id, data)
+    values (p_project_id, jsonb_build_object('videos', '[]'::jsonb))
+    on conflict (id) do nothing;
+
+  perform 1 from public.projects where id = p_project_id for update;
+
+  select coalesce(data->'videos', '[]'::jsonb) into v_videos
+    from public.projects where id = p_project_id;
+
+  select elem, (ord - 1)
+    into v_existing, v_idx
+    from jsonb_array_elements(v_videos) with ordinality as t(elem, ord)
+   where elem->>'videoId' = p_video->>'videoId'
+   limit 1;
+
+  if v_existing is null then
+    update public.projects
+       set data = jsonb_set(
+             coalesce(data, '{}'::jsonb),
+             '{videos}',
+             v_videos || p_video
+           ),
+           updated_at = now()
+     where id = p_project_id;
+  else
+    v_merged := v_existing || p_video;
+    update public.projects
+       set data = jsonb_set(data, array['videos', v_idx::text], v_merged),
+           updated_at = now()
+     where id = p_project_id;
+  end if;
+
+  return jsonb_build_object('videoId', p_video->>'videoId', 'created', (v_existing is null));
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 6. videos_mark_pending -- Dropbox-side delete: flag, do not remove
+-- ---------------------------------------------------------------------------
+create or replace function public.videos_mark_pending(p_project_id text, p_video_id text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_idx int;
+begin
+  perform 1 from public.projects where id = p_project_id for update;
+
+  select (ord - 1) into v_idx
+    from public.projects p,
+         jsonb_array_elements(coalesce(p.data->'videos', '[]'::jsonb)) with ordinality as t(elem, ord)
+   where p.id = p_project_id
+     and elem->>'videoId' = p_video_id
+   limit 1;
+
+  if v_idx is null then
+    return jsonb_build_object('videoId', p_video_id, 'found', false);
+  end if;
+
+  update public.projects
+     set data = jsonb_set(data, array['videos', v_idx::text, 'status'], '"pending_review"'::jsonb),
+         updated_at = now()
+   where id = p_project_id;
+
+  return jsonb_build_object('videoId', p_video_id, 'found', true);
+end;
+$$;
+
+revoke all on function public.videos_upsert(text, jsonb)      from public, anon, authenticated;
+revoke all on function public.videos_mark_pending(text, text) from public, anon, authenticated;
+grant execute on function public.videos_upsert(text, jsonb)      to service_role;
+grant execute on function public.videos_mark_pending(text, text) to service_role;
