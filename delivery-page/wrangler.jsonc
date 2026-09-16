@@ -31,13 +31,15 @@
     // Dropbox sub-folders (case-insensitive) treated as the video teaser.
     "VIDEO_FOLDERS": "Video,VLOG",
 
-    // Manual-override folders (2026-09-15) -- a human drops ONE photo in,
-    // no data entry needed. Falls back to the automatic first/last-of-
-    // GALLERY_FOLDERS pick (cover/closing) or hides the section entirely
-    // (Drone Callout) when empty. Job Generator doesn't create these by
-    // default yet -- see delivery-page/CLAUDE.md.
-    "COVER_PHOTO_FOLDER": "Cover Photo",
-    "CLOSING_PHOTO_FOLDER": "Closing Photo",
-    "DRONE_CALLOUT_FOLDER": "Drone Callout"
+    // Manual-override folders (2026-09-15, renamed to these shorter names
+    // 2026-09-16) -- a human drops photo(s) in, no data entry needed. Falls
+    // back to the automatic 3rd/5th-of-GALLERY_FOLDERS pick (Cover/Closing)
+    // or hides the section entirely (Callout) when empty. "Callout" is
+    // expected to usually be nested under HDR Photos (photo-sync-worker
+    // finds it at any depth); "Cover"/"Closing" are top-level. Job
+    // Generator doesn't create these by default yet -- see delivery-page/CLAUDE.md.
+    "COVER_PHOTO_FOLDER": "Cover",
+    "CLOSING_PHOTO_FOLDER": "Closing",
+    "DRONE_CALLOUT_FOLDER": "Callout"
   }
 }
