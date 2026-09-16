@@ -517,3 +517,40 @@ test('runBackfill(jobId): locates the folder via propertiesSearch', async () => 
   assert.equal(res.scope, 'FV-1');
   assert.equal(enqueued[0].jobId, 'FV-1');
 });
+
+test('runBackfill(jobId): re-resolves a stale propertiesSearch path via get_metadata(id) before listing', async () => {
+  // Real incident (2026-09-16): properties/search kept returning a path
+  // that no longer existed even though the folder never moved -- listFolder
+  // on the stale path 404s. get_metadata by the search result's stable id
+  // returns the real current path_display, which is what must get listed.
+  const dbx = makeDbx({
+    async propertiesSearch() { return { id: 'id:folder', path: '/Stale Parent/JobA' }; },
+    async getMetadata(path) {
+      if (path === 'id:folder') return { '.tag': 'folder', path_display: '/JobA' };
+      throw new Error('unexpected getMetadata path: ' + path);
+    },
+    async listFolder(path) {
+      assert.equal(path, '/JobA'); // NOT the stale '/Stale Parent/JobA'
+      return { entries: [{ '.tag': 'file', path_display: '/JobA/MLS/a.jpg', path_lower: '/joba/mls/a.jpg', id: 'id:1' }], has_more: false };
+    },
+  });
+  const sb = makeSb();
+  const enqueued = [];
+  const res = await runBackfill(ENV, { dbx, sb, enqueue: (m) => enqueued.push(m) }, { jobId: 'FV-1' });
+  assert.equal(res.scope, 'FV-1');
+  assert.equal(enqueued[0].jobId, 'FV-1');
+});
+
+test('runBackfill(jobId): a failed id-resolution falls back to the (possibly stale) search path rather than blocking', async () => {
+  const dbx = makeDbx({
+    async propertiesSearch() { return { id: 'id:folder', path: '/JobA' }; },
+    async getMetadata() { throw new Error('network blip'); },
+    async listFolder(path) {
+      assert.equal(path, '/JobA');
+      return { entries: [], has_more: false };
+    },
+  });
+  const sb = makeSb();
+  const res = await runBackfill(ENV, { dbx, sb, enqueue: () => {} }, { jobId: 'FV-1' });
+  assert.equal(res.scope, 'FV-1');
+});

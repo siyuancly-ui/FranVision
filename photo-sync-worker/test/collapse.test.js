@@ -47,6 +47,22 @@ test('classifyForSync filters folders, non-images, excluded dirs', () => {
   assert.deepEqual(out[0].dims, { width: 6000, height: 4000 });
 });
 
+test('classifyForSync: a recognized folder nested inside another one is classified by its own (innermost) name', () => {
+  // "Drone Callout" confirmed 2026-09-16 to sometimes live nested under
+  // "HDR Photos" rather than directly under the job folder -- must still
+  // be classified as "Drone Callout", not swallowed into "HDR Photos".
+  const cfg = { root: '', syncFolders: ['HDR Photos', 'Drone Callout'] };
+  const entries = [
+    { '.tag': 'file', path_display: '/JobA/HDR Photos/a.jpg', path_lower: '/joba/hdr photos/a.jpg' },
+    { '.tag': 'file', path_display: '/JobA/HDR Photos/Drone Callout/b.jpg', path_lower: '/joba/hdr photos/drone callout/b.jpg' },
+  ];
+  const out = classifyForSync(entries, cfg);
+  assert.deepEqual(out.map((o) => [o.subFolder, o.filename]), [
+    ['HDR Photos', 'a.jpg'],
+    ['Drone Callout', 'b.jpg'],
+  ]);
+});
+
 test('groupByJob buckets by top-level folder', () => {
   const classified = classifyForSync(
     [

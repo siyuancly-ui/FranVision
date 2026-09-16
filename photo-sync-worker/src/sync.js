@@ -2,7 +2,7 @@
 // for unit tests; the runners (runDelta / runBackfill / processPhotoBatch)
 // take an injectable `deps` bag so tests can hand in fake Dropbox/Supabase.
 
-import { parseJobPath, isSyncCandidate, folderMatches, parseFolderList, downloadCopyPath, parseAddressFromJobFolder } from './paths.js';
+import { parseJobPath, isSyncCandidate, folderMatches, matchAncestorFolder, parseFolderList, downloadCopyPath, parseAddressFromJobFolder } from './paths.js';
 import { photoId } from './photo-id.js';
 import { classifyForVideoSync, readVideoConfig } from './video-sync.js';
 
@@ -42,7 +42,11 @@ export function classifyForSync(entries, { root, syncFolders }) {
         path: pathDisplay,
         jobFolder: parsed.jobFolder,
         jobFolderPath: parsed.jobFolderPath,
-        subFolder: parsed.subFolder,
+        // The matched folder name, not always parsed.subFolder -- lets a
+        // recognized folder (e.g. "Drone Callout") be nested inside another
+        // one (e.g. "HDR Photos/Drone Callout/x.jpg") and still be
+        // classified by its own, more specific name. See matchAncestorFolder.
+        subFolder: matchAncestorFolder(parsed.ancestors, syncFolders),
         relPathFromJob: parsed.relPathFromJob,
         filename: parsed.filename,
         id: e.id || null,
@@ -58,7 +62,7 @@ export function classifyForSync(entries, { root, syncFolders }) {
         path: pathDisplay,
         jobFolder: parsed.jobFolder,
         jobFolderPath: parsed.jobFolderPath,
-        subFolder: parsed.subFolder,
+        subFolder: matchAncestorFolder(parsed.ancestors, syncFolders),
         relPathFromJob: parsed.relPathFromJob,
         filename: parsed.filename,
       });
@@ -455,8 +459,24 @@ export async function runBackfill(env, deps, { jobId: onlyJobId } = {}) {
       log({ evt: 'backfill_job_not_found', jobId: onlyJobId });
       return { error: 'job folder not found for jobId', jobId: onlyJobId };
     }
+    // properties/search's own `path` field can be stale (observed
+    // 2026-09-16: it kept returning a nonexistent path after some
+    // combination of property add/search/remove churn on the account,
+    // breaking backfill with a path/not_found even though the folder
+    // hadn't moved). `match.id` is a stable Dropbox file id -- resolving
+    // through get_metadata by id always returns the CURRENT real path,
+    // so re-resolve rather than trusting the search result's path as-is.
     rootPath = match.path;
+    if (match.id) {
+      try {
+        const md = await dbx.getMetadata(match.id, {});
+        if (md && md.path_display) rootPath = md.path_display;
+      } catch (err) {
+        log({ evt: 'backfill_path_resolve_failed', jobId: onlyJobId, error: String(err && err.message || err) });
+      }
+    }
     knownJobId = onlyJobId;
+    log({ evt: 'backfill_root_resolved', jobId: onlyJobId, path: rootPath, searchPath: match.path });
   }
 
   // Walk the target subtree.

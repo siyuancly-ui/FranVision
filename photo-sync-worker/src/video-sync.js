@@ -3,7 +3,7 @@
 // path is never touched by this file. Runners take an injectable `deps` bag
 // ({ dbx, sb, stream, now }) so tests hand in fakes; no network in tests.
 
-import { parseJobPath, isVideoSyncCandidate, parseFolderList } from './paths.js';
+import { parseJobPath, isVideoSyncCandidate, matchAncestorFolder, parseFolderList } from './paths.js';
 import { photoId as contentId } from './photo-id.js';
 
 const log = (obj) => console.log(JSON.stringify({ ts: new Date().toISOString(), ...obj }));
@@ -32,7 +32,7 @@ export function classifyForVideoSync(entries, { root, videoSyncFolders }) {
         path: pathDisplay,
         jobFolder: parsed.jobFolder,
         jobFolderPath: parsed.jobFolderPath,
-        subFolder: parsed.subFolder,
+        subFolder: matchAncestorFolder(parsed.ancestors, videoSyncFolders),
         relPathFromJob: parsed.relPathFromJob,
         filename: parsed.filename,
         id: e.id || null,
@@ -46,7 +46,7 @@ export function classifyForVideoSync(entries, { root, videoSyncFolders }) {
         path: pathDisplay,
         jobFolder: parsed.jobFolder,
         jobFolderPath: parsed.jobFolderPath,
-        subFolder: parsed.subFolder,
+        subFolder: matchAncestorFolder(parsed.ancestors, videoSyncFolders),
         relPathFromJob: parsed.relPathFromJob,
         filename: parsed.filename,
       });
