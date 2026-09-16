@@ -71,7 +71,7 @@ export function buildDeliveryModel(project, {
   // that's fine, everything below falls back cleanly.
   const coverOverride = coverPhotoFolder ? pickPhotos(photos, [coverPhotoFolder])[0] : null;
   const closingOverride = closingPhotoFolder ? pickPhotos(photos, [closingPhotoFolder])[0] : null;
-  const aerialPhoto = droneCalloutFolder ? pickPhotos(photos, [droneCalloutFolder])[0] : null;
+  const aerialPhotos = droneCalloutFolder ? pickPhotos(photos, [droneCalloutFolder]) : [];
 
   // No override -> falls back to the 3rd / 5th gallery photo by filename
   // (confirmed 2026-09-15) -- the very first/last shot in a folder is often
@@ -108,7 +108,10 @@ export function buildDeliveryModel(project, {
     video: video ? { playbackUrl: `https://iframe.videodelivery.net/${video.streamUid}`, thumbnailUrl: video.thumbnailUrl || null } : null,
     tour: tourUrl ? { url: tourUrl, type: tourType } : null,
     gallery: galleryPhotos.map(toImg),
-    aerial: aerialPhoto ? toImgLarge(aerialPhoto) : null,
+    // Array, not a single photo -- Drone Callout can hold more than one
+    // (design-spec allows it), rendered as a static image when there's
+    // just one, or a gallery-style auto-advancing track when there's more.
+    aerial: aerialPhotos.map(toImgLarge),
     localReport: localReportPhoto ? toImgLarge(localReportPhoto) : null,
     closing: closingPhoto,
   };
@@ -133,7 +136,7 @@ ${heroHtml(model)}
 ${section('<section>', model.video && videoHtml(model.video))}
 ${section('<section class="section-alt">', model.tour && tourHtml(model.tour))}
 ${section('<section>', model.gallery.length > 0 && galleryHtml(model.gallery))}
-${section('<section class="section-alt">', model.aerial && aerialHtml(model.aerial))}
+${section('<section class="section-alt">', model.aerial.length > 0 && aerialHtml(model.aerial))}
 ${section('<section>', model.localReport && localReportHtml(model.localReport))}
 ${closingHtml(model)}`;
   return page(model.address ? `${model.address} — FranVision Media` : 'FranVision Delivery Page', body);
@@ -149,9 +152,11 @@ function heroHtml(model) {
 }
 
 function videoHtml(video) {
+  // autoplay requires muted (browser autoplay policy); loop suits a teaser.
+  const src = `${video.playbackUrl}?autoplay=true&muted=true&loop=true`;
   return `  <div class="media-frame">
     <div class="media-box" style="cursor:default;">
-      <iframe src="${escapeHtml(video.playbackUrl)}" style="position:absolute;inset:0;width:100%;height:100%;border:0;" allow="autoplay; fullscreen" allowfullscreen loading="lazy"></iframe>
+      <iframe src="${escapeHtml(src)}" style="position:absolute;inset:0;width:100%;height:100%;border:0;" allow="autoplay; fullscreen" allowfullscreen loading="lazy"></iframe>
     </div>
   </div>`;
 }
@@ -164,24 +169,38 @@ function tourHtml(tour) {
   </div>`;
 }
 
-function galleryHtml(gallery) {
-  const slides = gallery.map((p) => `<div class="gallery-slide" style="background-image:url('${escapeHtml(p.url)}');background-size:cover;background-position:center;"></div>`).join('\n    ');
+// Shared by the main gallery and a multi-photo Drone Callout (see
+// aerialHtml) -- same auto-advancing track, same visual treatment,
+// distinguished only by element ids so the page script can run each
+// independently (see SCRIPT's setupTrack, which also staggers their
+// auto-advance timing so two tracks never scroll in lockstep).
+function trackHtml(images, ids) {
+  const slides = images.map((p) => `<div class="gallery-slide" style="background-image:url('${escapeHtml(p.url)}');background-size:cover;background-position:center;"></div>`).join('\n    ');
   return `  <div class="gallery-wrap">
-    <button class="gallery-arrow prev" id="galPrev" aria-label="Previous photo"><svg viewBox="0 0 24 24" fill="none" stroke="#23211C" stroke-width="2"><path d="M15 5l-7 7 7 7"/></svg></button>
-    <div class="gallery-track" id="galTrack">
+    <button class="gallery-arrow prev" id="${ids.prev}" aria-label="Previous photo"><svg viewBox="0 0 24 24" fill="none" stroke="#23211C" stroke-width="2"><path d="M15 5l-7 7 7 7"/></svg></button>
+    <div class="gallery-track" id="${ids.track}">
     ${slides}
     </div>
-    <button class="gallery-arrow next" id="galNext" aria-label="Next photo"><svg viewBox="0 0 24 24" fill="none" stroke="#23211C" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg></button>
+    <button class="gallery-arrow next" id="${ids.next}" aria-label="Next photo"><svg viewBox="0 0 24 24" fill="none" stroke="#23211C" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg></button>
   </div>`;
 }
 
-// Drone Callout: a manually pre-annotated aerial photo (design-spec item 6)
-// -- a static image, same "drop one file in, no data entry" shape as
-// Local Report. No annotation/label-placement logic here, same reasoning.
-function aerialHtml(aerial) {
-  return `  <div class="media-frame">
-    <img src="${escapeHtml(aerial.url)}" alt="Aerial overview" style="width:100%;border-radius:6px;display:block;">
+function galleryHtml(gallery) {
+  return trackHtml(gallery, { track: 'galTrack', prev: 'galPrev', next: 'galNext' });
+}
+
+// Drone Callout: manually pre-annotated aerial photo(s) (design-spec item 6)
+// -- "drop file(s) in, no data entry" shape, same as Local Report. A single
+// photo is a static image; more than one reuses the gallery's auto-
+// advancing track (confirmed 2026-09-15), staggered against the main
+// gallery's timing so they don't scroll at the same moment.
+function aerialHtml(photos) {
+  if (photos.length === 1) {
+    return `  <div class="media-frame">
+    <img src="${escapeHtml(photos[0].url)}" alt="Aerial overview" style="width:100%;border-radius:6px;display:block;">
   </div>`;
+  }
+  return trackHtml(photos, { track: 'aerialTrack', prev: 'aerialPrev', next: 'aerialNext' });
 }
 
 // v1: the neighborhood report is a manually cropped HoodQ screenshot (see
@@ -301,21 +320,30 @@ const CSS = `
 
 const SCRIPT = `<script>
 (function(){
-  var track = document.getElementById('galTrack');
-  if(!track) return;
-  var slideWidth = function(){ return track.firstElementChild ? track.firstElementChild.getBoundingClientRect().width + 16 : 0; };
-  var atEnd = function(){ return track.scrollLeft + track.clientWidth >= track.scrollWidth - 4; };
-  function goNext(){ atEnd() ? track.scrollTo({left:0, behavior:'smooth'}) : track.scrollBy({left:slideWidth(), behavior:'smooth'}); }
-  function goPrev(){ track.scrollBy({left:-slideWidth(), behavior:'smooth'}); }
-
-  var prev = document.getElementById('galPrev'), next = document.getElementById('galNext');
   var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var timer = null;
-  function startAuto(){ if(!reduceMotion) timer = setInterval(goNext, 2000); }
-  function resetAuto(){ if(timer) clearInterval(timer); startAuto(); }
 
-  if(prev) prev.addEventListener('click', function(){ goPrev(); resetAuto(); });
-  if(next) next.addEventListener('click', function(){ goNext(); resetAuto(); });
-  startAuto();
+  // phaseOffsetMs staggers this track's auto-advance start against any
+  // other track on the page (e.g. the aerial track starts 1s after the
+  // main gallery) so two tracks never scroll at the same moment.
+  function setupTrack(trackId, prevId, nextId, phaseOffsetMs){
+    var track = document.getElementById(trackId);
+    if(!track) return;
+    var slideWidth = function(){ return track.firstElementChild ? track.firstElementChild.getBoundingClientRect().width + 16 : 0; };
+    var atEnd = function(){ return track.scrollLeft + track.clientWidth >= track.scrollWidth - 4; };
+    function goNext(){ atEnd() ? track.scrollTo({left:0, behavior:'smooth'}) : track.scrollBy({left:slideWidth(), behavior:'smooth'}); }
+    function goPrev(){ track.scrollBy({left:-slideWidth(), behavior:'smooth'}); }
+
+    var prev = document.getElementById(prevId), next = document.getElementById(nextId);
+    var timer = null;
+    function startAuto(){ if(!reduceMotion) timer = setInterval(goNext, 2000); }
+    function resetAuto(){ if(timer) clearInterval(timer); startAuto(); }
+
+    if(prev) prev.addEventListener('click', function(){ goPrev(); resetAuto(); });
+    if(next) next.addEventListener('click', function(){ goNext(); resetAuto(); });
+    if(phaseOffsetMs) setTimeout(startAuto, phaseOffsetMs); else startAuto();
+  }
+
+  setupTrack('galTrack', 'galPrev', 'galNext', 0);
+  setupTrack('aerialTrack', 'aerialPrev', 'aerialNext', 1000);
 })();
 </script>`;

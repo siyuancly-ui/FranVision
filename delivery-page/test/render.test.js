@@ -25,7 +25,7 @@ test('buildDeliveryModel: empty project has no sections', () => {
   assert.equal(model.tour, null);
   assert.deepEqual(model.gallery, []);
   assert.equal(model.localReport, null);
-  assert.equal(model.aerial, null);
+  assert.deepEqual(model.aerial, []);
   assert.equal(model.address, null);
 });
 
@@ -109,7 +109,7 @@ test('buildDeliveryModel: hasLarge:true uses the _large.jpg render for full-blee
   const model = buildDeliveryModel(project, OPTS);
   assert.ok(model.hero.url.endsWith('cover_large.jpg'));
   assert.ok(model.localReport.url.endsWith('report_large.jpg'));
-  assert.ok(model.aerial.url.endsWith('drone_large.jpg'));
+  assert.ok(model.aerial[0].url.endsWith('drone_large.jpg'));
   // gallery photos never get the large variant, even if hasLarge were set
   assert.ok(model.gallery[0].url.endsWith('p1_thumb.jpg'));
 });
@@ -128,15 +128,53 @@ test('buildDeliveryModel: no hasLarge (or the plain gallery fallback) falls back
   assert.ok(galleryFallback.hero.url.endsWith('p1_thumb.jpg'));
 });
 
-test('buildDeliveryModel: Drone Callout photo populates aerial, absent means null', () => {
-  const withPhoto = buildDeliveryModel(
+test('buildDeliveryModel: Drone Callout photos populate aerial as an array, empty when absent', () => {
+  const withOne = buildDeliveryModel(
     { data: { photos: [photo({ photoId: 'drone', folder: 'Drone Callout' })] } },
     OPTS,
   );
-  assert.equal(withPhoto.aerial.photoId, 'drone');
+  assert.equal(withOne.aerial.length, 1);
+  assert.equal(withOne.aerial[0].photoId, 'drone');
+
+  const withMultiple = buildDeliveryModel(
+    { data: { photos: [
+      photo({ photoId: 'drone1', folder: 'Drone Callout', filename: 'a.png' }),
+      photo({ photoId: 'drone2', folder: 'Drone Callout', filename: 'b.png' }),
+    ] } },
+    OPTS,
+  );
+  assert.equal(withMultiple.aerial.length, 2);
+  assert.deepEqual(withMultiple.aerial.map((p) => p.photoId), ['drone1', 'drone2']);
 
   const without = buildDeliveryModel({ data: { photos: [photo()] } }, OPTS);
-  assert.equal(without.aerial, null);
+  assert.deepEqual(without.aerial, []);
+});
+
+test('renderDeliveryPage: a single Drone Callout photo renders as a static image, not a track', () => {
+  const project = { data: { photos: [photo({ photoId: 'drone', folder: 'Drone Callout' })] } };
+  const model = buildDeliveryModel(project, OPTS);
+  const out = renderDeliveryPage(model);
+  assert.ok(out.includes('drone_thumb.jpg'));
+  assert.ok(!out.includes('id="aerialTrack"'));
+});
+
+test('renderDeliveryPage: more than one Drone Callout photo renders the auto-advancing track', () => {
+  const project = { data: { photos: [
+    photo({ photoId: 'drone1', folder: 'Drone Callout', filename: 'a.png' }),
+    photo({ photoId: 'drone2', folder: 'Drone Callout', filename: 'b.png' }),
+  ] } };
+  const model = buildDeliveryModel(project, OPTS);
+  const out = renderDeliveryPage(model);
+  assert.ok(out.includes('id="aerialTrack"'));
+  assert.ok(out.includes('drone1_thumb.jpg'));
+  assert.ok(out.includes('drone2_thumb.jpg'));
+});
+
+test('renderDeliveryPage: video autoplays muted and loops', () => {
+  const project = { data: { videos: [{ videoId: 'v1', folder: 'Video', status: 'ok', streamUid: 'abc' }] } };
+  const model = buildDeliveryModel(project, OPTS);
+  const out = renderDeliveryPage(model);
+  assert.ok(out.includes('iframe.videodelivery.net/abc?autoplay=true&amp;muted=true&amp;loop=true'));
 });
 
 test('buildDeliveryModel: non-ok or thumbless photos are excluded', () => {
