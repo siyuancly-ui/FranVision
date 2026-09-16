@@ -29,18 +29,34 @@ test('buildDeliveryModel: empty project has no sections', () => {
   assert.equal(model.address, null);
 });
 
-test('buildDeliveryModel: gallery folder photos become hero + gallery + closing', () => {
+test('buildDeliveryModel: hero/closing default to the 3rd/5th gallery photo by filename', () => {
+  const project = { id: OPTS.jobId, data: { photos: [
+    photo({ photoId: 'p1', filename: 'a.jpg' }),
+    photo({ photoId: 'p2', filename: 'b.jpg' }),
+    photo({ photoId: 'p3', filename: 'c.jpg' }),
+    photo({ photoId: 'p4', filename: 'd.jpg' }),
+    photo({ photoId: 'p5', filename: 'e.jpg' }),
+    photo({ photoId: 'p6', filename: 'f.jpg' }),
+  ] } };
+  const model = buildDeliveryModel(project, OPTS);
+  // sorted a..f -> hero is the 3rd (p3/c.jpg), closing is the 5th (p5/e.jpg)
+  assert.equal(model.gallery.length, 6);
+  assert.equal(model.hero.photoId, 'p3');
+  assert.equal(model.closing.photoId, 'p5');
+  assert.ok(model.hero.url.includes('/storage/v1/object/public/photos/FVS-20260915-001/p3_thumb.jpg'));
+});
+
+test('buildDeliveryModel: fewer than 5 photos clamps the 3rd/5th pick and keeps hero/closing distinct', () => {
   const project = { id: OPTS.jobId, data: { photos: [
     photo({ photoId: 'p1', filename: 'b.jpg' }),
     photo({ photoId: 'p2', filename: 'a.jpg' }),
     photo({ photoId: 'p3', filename: 'c.jpg' }),
   ] } };
   const model = buildDeliveryModel(project, OPTS);
-  // sorted by filename: a, b, c -> hero is 'a' (p2), closing is 'c' (p3)
-  assert.equal(model.gallery.length, 3);
-  assert.equal(model.hero.photoId, 'p2');
-  assert.equal(model.closing.photoId, 'p3');
-  assert.ok(model.hero.url.includes('/storage/v1/object/public/photos/FVS-20260915-001/p2_thumb.jpg'));
+  // sorted a, b, c -> "3rd" clamps to the last (c/p3); "5th" would collide
+  // with that, so closing falls back to the first instead (a/p2).
+  assert.equal(model.hero.photoId, 'p3');
+  assert.equal(model.closing.photoId, 'p2');
 });
 
 test('buildDeliveryModel: single gallery photo is both hero and closing', () => {

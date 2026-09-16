@@ -33,6 +33,13 @@ function pickPhotos(photos, folders) {
     .sort((a, b) => String(a.filename || '').localeCompare(String(b.filename || '')));
 }
 
+// The photo at `index` in a filename-sorted list, clamped to the last
+// available one if the gallery is smaller than that. Null for an empty list.
+function fallbackPhoto(list, index) {
+  if (!list.length) return null;
+  return list[index] || list[list.length - 1];
+}
+
 function pickVideo(videos, folders) {
   const wanted = new Set(folders.map((f) => f.trim().toLowerCase()));
   return (videos || []).find((v) => v && v.status === 'ok' && wanted.has(String(v.folder || '').toLowerCase())) || null;
@@ -66,13 +73,25 @@ export function buildDeliveryModel(project, {
   const closingOverride = closingPhotoFolder ? pickPhotos(photos, [closingPhotoFolder])[0] : null;
   const aerialPhoto = droneCalloutFolder ? pickPhotos(photos, [droneCalloutFolder])[0] : null;
 
-  const heroPhoto = coverOverride ? toImgLarge(coverOverride) : (galleryPhotos[0] ? toImgLarge(galleryPhotos[0]) : null);
-  // No override -> falls back to the last gallery photo sorted by filename
-  // (distinct from hero when there's more than one). See CLAUDE.md "Known
-  // limitations".
+  // No override -> falls back to the 3rd / 5th gallery photo by filename
+  // (confirmed 2026-09-15) -- the very first/last shot in a folder is often
+  // an awkward establishing angle, not the best hero/closing candidate.
+  // Clamped to whatever's actually available in a small gallery, and kept
+  // distinct from each other whenever more than one photo exists.
+  const heroFallback = fallbackPhoto(galleryPhotos, 2);
+  let closingFallback = fallbackPhoto(galleryPhotos, 4);
+  // Only avoid a duplicate pick when BOTH slots are actually relying on
+  // this fallback -- a Cover Photo override wins its own slot regardless
+  // of what the closing fallback would otherwise have picked.
+  if (!coverOverride && closingFallback && heroFallback && closingFallback.photoId === heroFallback.photoId && galleryPhotos.length > 1) {
+    const last = galleryPhotos[galleryPhotos.length - 1];
+    closingFallback = last.photoId !== heroFallback.photoId ? last : galleryPhotos[0];
+  }
+
+  const heroPhoto = coverOverride ? toImgLarge(coverOverride) : (heroFallback ? toImgLarge(heroFallback) : null);
   const closingPhoto = closingOverride
     ? toImgLarge(closingOverride)
-    : (galleryPhotos.length > 1 ? toImgLarge(galleryPhotos[galleryPhotos.length - 1]) : heroPhoto);
+    : (closingFallback ? toImgLarge(closingFallback) : heroPhoto);
 
   const localReportPhoto = pickPhotos(photos, [localReportFolder])[0];
   const video = pickVideo(videos, videoFolders);

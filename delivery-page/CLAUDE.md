@@ -22,7 +22,7 @@ npx wrangler dev                # GET /, GET /delivery/<jobId>, POST /admin/jobs
 
 ```bash
 cd delivery-page
-npm test    # node --test, 18 cases, NO network
+npm test    # node --test, 19 cases, NO network
 ```
 
 `src/render.js` is pure (`buildDeliveryModel` shapes a Supabase `projects` row into a template model; `renderDeliveryPage`/`renderNotFoundPage` are string-building functions) — fully unit-tested without touching Supabase. `src/index.js` (the Worker's `fetch` handler) and `src/supabase.js` (raw-fetch client) are thin and untested directly, same division of labor as photo-sync-worker.
@@ -78,5 +78,5 @@ POST /admin/jobs/<jobId>   (bearer ADMIN_TOKEN)
 ## Known limitations
 
 - **`project_set_delivery_info` is the only way to set `address`/`tourUrl`/`tourType` today** — via `POST /admin/jobs/<jobId>`, by hand (curl, or a future admin UI). No staff-facing form exists yet. (Hero/closing/aerial photo selection, by contrast, is now handled via Dropbox folders — see above, not this endpoint.)
-- **Hero/closing photo curation beyond the folder override is still just a fallback** ("first/last gallery photo by filename") when no `Cover Photo`/`Closing Photo` folder is used. **The bigger aspiration (design-spec's "Future automation goal") is an agent that learns Franky's/the photographers' own selection judgment** and populates these folders automatically — unscoped, the folder mechanism is a real interim answer either way (manual today, could be filled by an agent later without changing this Worker at all).
+- **Hero/closing photo curation beyond the folder override is still just a fallback** — the **3rd and 5th gallery photo by filename** (confirmed 2026-09-15, changed from the original 1st/last — the very first or last shot in a folder is often an awkward establishing angle) when no `Cover Photo`/`Closing Photo` folder is used. Clamped to whatever's available in a small gallery and kept distinct from each other when possible (`fallbackPhoto`/the collision-avoidance check in `buildDeliveryModel`) — but that distinctness check only applies when BOTH slots are actually using the fallback; a `Cover Photo` override never gets bumped by it. **The bigger aspiration (design-spec's "Future automation goal") is an agent that learns Franky's/the photographers' own selection judgment** and populates these folders automatically — unscoped, the folder mechanism is a real interim answer either way (manual today, could be filled by an agent later without changing this Worker at all).
 - **Not deployed to production yet** — see "Deploy" above.
