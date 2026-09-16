@@ -237,6 +237,12 @@ test('text-util: splitAddress always yields two lines, city on line 2', () => {
     ['10 King St W, Toronto, ON', ['10 King St W', 'Toronto, ON']],
     ['1 Dundas St E, Suite 2500 Toronto, ON M5G 1Z3', ['1 Dundas St E, Suite 2500', 'Toronto, ON M5G 1Z3']],
     ['123 Main St\nToronto, ON M5V 2T6', ['123 Main St', 'Toronto, ON M5V 2T6']],
+    // full province name (not just the 2-letter code) must still split
+    // before the city -- previously the postal code was left stranded
+    // alone on line 2, throwing off its auto-fit font size.
+    ['302-7030 Woodbine Ave, Markham, Ontario L3R 6G2', ['302-7030 Woodbine Ave', 'Markham, Ontario L3R 6G2']],
+    ['302-7030 Woodbine Ave, Markham, Ontario, L3R 6G2', ['302-7030 Woodbine Ave', 'Markham, Ontario, L3R 6G2']],
+    ['500 Yonge Street, Toronto, Ontario', ['500 Yonge Street', 'Toronto, Ontario']],
   ];
   cases.forEach(([input, want]) => {
     assert.deepEqual(TXT.splitAddress(input), want, input);
