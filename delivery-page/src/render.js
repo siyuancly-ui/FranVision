@@ -129,24 +129,14 @@ export function renderNotFoundPage(jobId) {
 
 export function renderDeliveryPage(model) {
   const body = `
-${headerHtml()}
 ${heroHtml(model)}
-${section('<section>\n  <div class="section-head"><p class="eyebrow">Aerial Teaser</p><h2 class="section-title">See it from above</h2></div>', model.video && videoHtml(model.video))}
-${section('<section class="section-alt">\n  <div class="section-head"><p class="eyebrow">Virtual Walkthrough</p><h2 class="section-title">Walk the space</h2></div>', model.tour && tourHtml(model.tour))}
-${section('<section>\n  <div class="section-head"><p class="eyebrow">Full Gallery</p><h2 class="section-title">Every room, every angle</h2></div>', model.gallery.length > 0 && galleryHtml(model.gallery))}
-${section('<section class="section-alt">\n  <div class="section-head"><p class="eyebrow">Aerial Overview</p><h2 class="section-title">The neighborhood at a glance</h2></div>', model.aerial && aerialHtml(model.aerial))}
-${section('<section>\n  <div class="section-head"><p class="eyebrow">The Neighborhood</p><h2 class="section-title">What\'s nearby</h2></div>', model.localReport && localReportHtml(model.localReport))}
-${closingHtml(model)}
-<footer class="site">FranVision Media — Photography for real estate professionals</footer>`;
+${section('<section>', model.video && videoHtml(model.video))}
+${section('<section class="section-alt">', model.tour && tourHtml(model.tour))}
+${section('<section>', model.gallery.length > 0 && galleryHtml(model.gallery))}
+${section('<section class="section-alt">', model.aerial && aerialHtml(model.aerial))}
+${section('<section>', model.localReport && localReportHtml(model.localReport))}
+${closingHtml(model)}`;
   return page(model.address ? `${model.address} — FranVision Media` : 'FranVision Delivery Page', body);
-}
-
-function headerHtml() {
-  return `<header class="site">
-  <div class="logo-mark" aria-hidden="true">
-    <svg viewBox="0 0 24 24" fill="none" stroke="#23211C" stroke-width="1.5"><circle cx="12" cy="13" r="6.2"/><path d="M8.6 7.4l1-1.9h4.8l1 1.9" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="13" r="2.3"/></svg>
-  </div>
-</header>`;
 }
 
 function heroHtml(model) {
@@ -217,7 +207,7 @@ function closingHtml(model) {
   const card = model.address
     ? `<div class="closing-card">
     <iframe class="map-embed" src="${escapeHtml(googleMapsEmbedUrl(model.address))}" loading="lazy" title="Map"></iframe>
-    <div class="closing-card-address"><p class="eyebrow">Location</p><p>${escapeHtml(model.address)}</p></div>
+    <div class="closing-card-address"><p>${escapeHtml(model.address)}</p></div>
   </div>`
     : '';
 
@@ -268,17 +258,12 @@ const CSS = `
   body{margin:0;background:var(--bg-content);color:var(--ink);font-family:-apple-system,"system-ui","Segoe UI",Roboto,Helvetica,Arial,sans-serif;line-height:1.5;-webkit-font-smoothing:antialiased;}
   img{max-width:100%;display:block;}
   .wrap{max-width:var(--maxw);margin:0 auto;padding-inline:24px;}
-  header.site{background:var(--bg-header);border-bottom:1px solid var(--line);padding-block:18px;display:flex;justify-content:center;}
-  .logo-mark{width:44px;height:44px;border-radius:50%;border:1.5px solid var(--ink);display:flex;align-items:center;justify-content:center;}
-  .logo-mark svg{width:22px;height:22px;display:block;}
   .hero{position:relative;height:min(78vh,680px);min-height:420px;overflow:hidden;background-color:#3a3450;}
   .hero::after{content:"";position:absolute;inset:0;background:linear-gradient(0deg, rgba(10,8,14,0.55) 0%, rgba(10,8,14,0) 42%);}
   .hero-address{position:absolute;right:28px;bottom:26px;z-index:2;font-family:"Arima Madurai","Segoe Script",cursive;font-weight:400;font-size:24px;color:#fff;text-align:right;text-shadow:0 1px 10px rgba(0,0,0,0.35);margin:0;}
   section{padding-block:64px;}
   .section-alt{background:var(--bg-content-alt);}
-  .section-head{max-width:640px;margin:0 auto 28px;text-align:center;}
   .eyebrow{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);font-weight:600;margin:0 0 8px;}
-  .section-title{font-size:26px;font-weight:600;margin:0;letter-spacing:-0.01em;}
   .media-frame{max-width:var(--maxw);margin:0 auto;padding-inline:24px;}
   .media-box{position:relative;aspect-ratio:16/9;border-radius:var(--radius-m);overflow:hidden;background:#222;width:100%;}
   .tour-box{aspect-ratio:16/9;border-radius:var(--radius-m);overflow:hidden;background:#1c1f28;}
@@ -297,8 +282,7 @@ const CSS = `
   }
   .closing-card .map-embed{flex:1 1 50%;height:320px;border:0;display:block;}
   .closing-card-address{flex:1 1 50%;background:var(--bg-content-alt);display:flex;flex-direction:column;justify-content:center;padding:32px 40px;}
-  .closing-card-address .eyebrow{text-align:left;margin-bottom:10px;}
-  .closing-card-address p:last-child{font-size:16px;margin:0;}
+  .closing-card-address p{font-size:16px;margin:0;}
   .closing-standalone{padding-block:48px;display:flex;justify-content:center;}
   .closing-standalone .closing-card{position:static;transform:none;width:min(1100px,100%);box-shadow:none;border:1px solid var(--line);}
   @media (max-width:700px){
@@ -306,11 +290,9 @@ const CSS = `
     .closing-card .map-embed{height:220px;}
     .closing{height:70vh;}
   }
-  footer.site{padding:32px 24px 44px;text-align:center;color:var(--ink-soft);font-size:12.5px;letter-spacing:.02em;}
   .notfound{max-width:520px;margin:20vh auto;text-align:center;padding-inline:24px;}
   .notfound h1{font-size:22px;}
   @media (max-width:520px){
-    .section-title{font-size:22px;}
     .gallery-slide{flex-basis:88%;}
     .gallery-track{padding:0 6vw;}
     .hero-address{font-size:20px;}
@@ -322,8 +304,18 @@ const SCRIPT = `<script>
   var track = document.getElementById('galTrack');
   if(!track) return;
   var slideWidth = function(){ return track.firstElementChild ? track.firstElementChild.getBoundingClientRect().width + 16 : 0; };
+  var atEnd = function(){ return track.scrollLeft + track.clientWidth >= track.scrollWidth - 4; };
+  function goNext(){ atEnd() ? track.scrollTo({left:0, behavior:'smooth'}) : track.scrollBy({left:slideWidth(), behavior:'smooth'}); }
+  function goPrev(){ track.scrollBy({left:-slideWidth(), behavior:'smooth'}); }
+
   var prev = document.getElementById('galPrev'), next = document.getElementById('galNext');
-  if(prev) prev.addEventListener('click', function(){ track.scrollBy({left:-slideWidth(), behavior:'smooth'}); });
-  if(next) next.addEventListener('click', function(){ track.scrollBy({left:slideWidth(), behavior:'smooth'}); });
+  var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var timer = null;
+  function startAuto(){ if(!reduceMotion) timer = setInterval(goNext, 2000); }
+  function resetAuto(){ if(timer) clearInterval(timer); startAuto(); }
+
+  if(prev) prev.addEventListener('click', function(){ goPrev(); resetAuto(); });
+  if(next) next.addEventListener('click', function(){ goNext(); resetAuto(); });
+  startAuto();
 })();
 </script>`;
