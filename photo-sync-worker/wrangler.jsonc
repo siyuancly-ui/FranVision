@@ -57,13 +57,17 @@
     // both names stay listed so pre-rename jobs (still named "MLS" on
     // Dropbox) keep syncing alongside new "HDR Photos" jobs.
     //
-    // "Cover Photo" / "Closing Photo" / "Drone Callout" (2026-09-15) are
-    // delivery-page's manual-override folders (see delivery-page/CLAUDE.md
-    // and franvision-delivery-page-design-spec.md) -- Job Generator doesn't
-    // create these by default yet (deferred), but syncing them here means a
-    // manually-created Dropbox folder with the same name works immediately,
-    // no photo-sync-worker deploy needed once job-generator catches up.
-    "SYNC_FOLDERS": "MLS,HDR Photos,Virtual Staging,Floorplan,Local Report,Cover Photo,Closing Photo,Drone Callout",
+    // "Cover" / "Closing" / "Callout" (2026-09-15, renamed from "Cover
+    // Photo"/"Closing Photo"/"Drone Callout" on 2026-09-16 for a shorter
+    // name) are delivery-page's manual-override folders (see
+    // delivery-page/CLAUDE.md and franvision-delivery-page-design-spec.md)
+    // -- Job Generator doesn't create these by default yet (deferred), but
+    // syncing them here means a manually-created Dropbox folder with the
+    // same name works immediately, no photo-sync-worker deploy needed once
+    // job-generator catches up. "Callout" is expected to usually be nested
+    // under "HDR Photos" (matchAncestorFolder finds it at any depth) --
+    // "Cover"/"Closing" are top-level, siblings of the other folders.
+    "SYNC_FOLDERS": "MLS,HDR Photos,Virtual Staging,Floorplan,Local Report,Cover,Closing,Callout",
 
     // Sub-folders whose videos get copied into Cloudflare Stream. Same
     // comma-separated/case-insensitive parsing as SYNC_FOLDERS.
@@ -97,7 +101,7 @@
     // page's full-bleed sections (hero/closing/aerial/neighborhood-report).
     // Deliberately NOT the main gallery (MLS/HDR Photos) -- those stay
     // small-only; see photo-sync-worker/CLAUDE.md for why.
-    "LARGE_THUMB_FOLDERS": "Cover Photo,Closing Photo,Drone Callout,Local Report",
+    "LARGE_THUMB_FOLDERS": "Cover,Closing,Callout,Local Report",
 
     // Safety cap: max delta entries pulled per queue message before the
     // cursor is saved and processing continues in a fresh message.
