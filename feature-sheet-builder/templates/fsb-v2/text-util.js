@@ -22,7 +22,14 @@
   // after the unit token, so the unit stays on line 1. An explicit
   // newline in the field always wins.
   var UNIT_RE = /^(.*\b(?:unit|suite|ste|apt|apartment|#|rm|room|fl|floor|ph|penthouse|bsmt|lower|upper|main|bldg|building)\.?\s*[\w\-\/]+)\s+([A-Za-z].*)$/i;
-  var PROV_RE = /^[A-Za-z]{2}\b\.?(\s+[A-Za-z]\d[A-Za-z]\s*\d[A-Za-z]\d)?$/;
+  // Accepts either a 2-letter code ("ON") or the full province/territory name
+  // ("Ontario") -- clients sometimes type the full name, and the segment
+  // must still be recognised so the postal code stays attached to it
+  // instead of ending up alone on its own line.
+  var PROV_NAMES = 'alberta|british columbia|manitoba|new brunswick|newfoundland and labrador|' +
+    'newfoundland|nova scotia|ontario|prince edward island|quebec|saskatchewan|' +
+    'northwest territories|nunavut|yukon|[a-z]{2}';
+  var PROV_RE = new RegExp('^(?:' + PROV_NAMES + ')\\b\\.?(\\s+[A-Za-z]\\d[A-Za-z]\\s*\\d[A-Za-z]\\d)?$', 'i');
 
   function splitAddress(s) {
     s = String(s || '').trim();
