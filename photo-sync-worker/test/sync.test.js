@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { runDelta, processPhotoBatch, runBackfill } from '../src/sync.js';
+import { runDelta, processPhotoBatch, runBackfill, processRenderRetryPoll, MAX_RENDER_RETRY_ATTEMPTS } from '../src/sync.js';
 
 const ENV = {
   DROPBOX_JOBS_ROOT: '',
@@ -9,6 +9,7 @@ const ENV = {
   DOWNLOAD_SUBFOLDER: 'MLS for download',
   THUMB_SIZE: 'w1024h768',
   DOWNLOAD_THUMB_SIZE: 'w2048h1536',
+  LARGE_THUMB_FOLDERS: 'Cover Photo,Closing Photo,Drone Callout,Local Report',
   DROPBOX_TEMPLATE_ID: 'ptid:TEST',
   MAX_DELTA_ENTRIES_PER_RUN: '2000',
 };
@@ -60,11 +61,14 @@ function makeDbx(over = {}) {
 }
 
 function makeSb(over = {}) {
-  const calls = { thumbs: [], rpc: [], patch: [], lease: 0, release: 0 };
+  const calls = { thumbs: [], larges: [], rpc: [], patch: [], lease: 0, release: 0, pendingInserts: [] };
   return {
     calls,
     async uploadThumb(jobId, photoId, bytes) {
       calls.thumbs.push({ jobId, photoId, len: bytes.length });
+    },
+    async uploadLarge(jobId, photoId, bytes) {
+      calls.larges.push({ jobId, photoId, len: bytes.length });
     },
     async rpc(fn, args) {
       calls.rpc.push({ fn, args });
@@ -83,6 +87,14 @@ function makeSb(over = {}) {
     async releaseLease() {
       calls.release++;
     },
+    async insertPendingRender(args) {
+      calls.pendingInserts.push(args);
+    },
+    async listPendingRenders() {
+      return [];
+    },
+    async updatePendingRender() {},
+    async deletePendingRender() {},
     ...over,
   };
 }
@@ -135,6 +147,86 @@ test('processPhotoBatch: MLS photo -> thumb + download copy + rpc', async () => 
   assert.equal(recB.downloadDropboxPath, undefined);
 });
 
+test('processPhotoBatch: date-prefixed jobFolderPath syncs address via project_set_delivery_info', async () => {
+  const dbx = makeDbx();
+  const sb = makeSb();
+  await processPhotoBatch(ENV, { dbx, sb, now: () => 'T' }, {
+    jobId: 'FV-1',
+    jobFolderPath: '/2026.9.15 123 Delete Me Ave_Swan Si',
+    items: [upsertItem()],
+  });
+
+  const addrCall = sb.calls.rpc.find((c) => c.fn === 'project_set_delivery_info');
+  assert.ok(addrCall, 'expected a project_set_delivery_info call');
+  assert.equal(addrCall.args.p_project_id, 'FV-1');
+  assert.equal(addrCall.args.p_fields.address, '123 Delete Me Ave');
+});
+
+test('processPhotoBatch: non-date-prefixed jobFolderPath skips address sync entirely', async () => {
+  const dbx = makeDbx();
+  const sb = makeSb();
+  await processPhotoBatch(ENV, { dbx, sb }, {
+    jobId: 'FV-1',
+    jobFolderPath: '/Some Legacy Folder Name',
+    items: [upsertItem()],
+  });
+
+  assert.equal(sb.calls.rpc.find((c) => c.fn === 'project_set_delivery_info'), undefined);
+});
+
+test('processPhotoBatch: a failing address sync does not block the actual photo sync', async () => {
+  const dbx = makeDbx();
+  const sb = makeSb({
+    async rpc(fn, args) {
+      if (fn === 'project_set_delivery_info') throw new Error('rpc down');
+      return { created: true, healed: false };
+    },
+  });
+  const res = await processPhotoBatch(ENV, { dbx, sb, now: () => 'T' }, {
+    jobId: 'FV-1',
+    jobFolderPath: '/2026.9.15 123 Delete Me Ave_Swan Si',
+    items: [upsertItem()],
+  });
+
+  assert.equal(res.ok, 1); // the photo itself still synced fine
+});
+
+test('processPhotoBatch: a LARGE_THUMB_FOLDERS photo also gets a large render uploaded, with hasLarge:true', async () => {
+  const dbx = makeDbx();
+  const sb = makeSb();
+  const item = upsertItem({ path: '/JobA/Local Report/report.jpg', subFolder: 'Local Report', relPathFromJob: 'Local Report/report.jpg', filename: 'report.jpg' });
+  await processPhotoBatch(ENV, { dbx, sb, now: () => 'T' }, { jobId: 'FV-1', jobFolderPath: '/JobA', items: [item] });
+
+  assert.equal(sb.calls.larges.length, 1);
+  assert.equal(sb.calls.larges[0].jobId, 'FV-1');
+  assert.ok(dbx.calls.thumbBatch.some((b) => b.size === 'w2048h1536'));
+
+  const largeUpsert = sb.calls.rpc.find((c) => c.fn === 'photos_upsert' && c.args.p_photo.hasLarge === true);
+  assert.ok(largeUpsert, 'expected a follow-up photos_upsert marking hasLarge:true');
+});
+
+test('processPhotoBatch: a photo NOT in LARGE_THUMB_FOLDERS never gets a large render', async () => {
+  const dbx = makeDbx();
+  const sb = makeSb();
+  // default upsertItem() folder is "MLS", not in LARGE_THUMB_FOLDERS
+  await processPhotoBatch(ENV, { dbx, sb, now: () => 'T' }, { jobId: 'FV-1', jobFolderPath: '/JobA', items: [upsertItem()] });
+  assert.equal(sb.calls.larges.length, 0);
+});
+
+test('processPhotoBatch: a failing large render does not block the small thumb or the rest of the batch', async () => {
+  const dbx = makeDbx();
+  const sb = makeSb({
+    async uploadLarge() { throw new Error('storage down'); },
+  });
+  const item = upsertItem({ path: '/JobA/Local Report/report.jpg', subFolder: 'Local Report', relPathFromJob: 'Local Report/report.jpg', filename: 'report.jpg' });
+  const res = await processPhotoBatch(ENV, { dbx, sb, now: () => 'T' }, { jobId: 'FV-1', jobFolderPath: '/JobA', items: [item] });
+  assert.equal(res.ok, 1);
+  assert.equal(sb.calls.thumbs.length, 1); // the small thumb still uploaded fine
+  assert.equal(sb.calls.pendingInserts.length, 1); // queued for retry, not silently dropped
+  assert.equal(sb.calls.pendingInserts[0].kind, 'large');
+  assert.equal(sb.calls.pendingInserts[0].sourcePath, '/JobA/Local Report/report.jpg');
+});
+
 test('processPhotoBatch: delivery copy falls back to get_thumbnail_v2 when the batch entry fails', async () => {
   const dbx = makeDbx({
     async getThumbnailBatch(paths, size) {
@@ -171,6 +263,9 @@ test('processPhotoBatch: delivery-copy failure does not fail the photo', async (
   });
   assert.equal(res.ok, 1); // Gallery record still saved
   assert.equal(dbx.calls.uploads.length, 0); // no delivery copy written
+  assert.equal(sb.calls.pendingInserts.length, 1); // queued for retry, not silently dropped
+  assert.equal(sb.calls.pendingInserts[0].kind, 'download_copy');
+  assert.equal(sb.calls.pendingInserts[0].destPath, '/JobA/MLS for download/a.jpg');
 });
 
 test('processPhotoBatch: only successful photos get a delivery copy', async () => {
@@ -226,6 +321,43 @@ test('processPhotoBatch: delete -> mark pending + drop download copy', async () 
   assert.equal(sb.calls.rpc[0].fn, 'photos_mark_pending');
   assert.equal(sb.calls.rpc[0].args.p_project_id, 'FV-1');
   assert.deepEqual(dbx.calls.deletes, ['/JobA/MLS for download/a.jpg']);
+});
+
+test('processPhotoBatch: a same-batch replacement (delete old extension + upload new extension) does not delete the new download copy', async () => {
+  // Found in real use 2026-09-16 (48 Red Ash Dr): a photo was replaced by
+  // deleting the old file and dragging in a new one under a DIFFERENT
+  // extension (a.jpg -> a.jpeg). downloadCopyPath() normalizes both to the
+  // same "MLS for download/a.jpg" destination, and upserts are processed
+  // before deletes -- so without the deliveredDestPaths guard, this delete
+  // would wipe out the replacement's brand new copy right after it was written.
+  const dbx = makeDbx();
+  const sb = makeSb();
+  const res = await processPhotoBatch(ENV, { dbx, sb }, {
+    jobId: 'FV-1',
+    jobFolderPath: '/JobA',
+    items: [
+      upsertItem({ path: '/JobA/MLS/a.jpeg', filename: 'a.jpeg', relPathFromJob: 'MLS/a.jpeg' }),
+      { type: 'delete', path: '/JobA/MLS/a.jpg', subFolder: 'MLS', relPathFromJob: 'MLS/a.jpg', filename: 'a.jpg' },
+    ],
+  });
+  assert.equal(res.ok, 1);
+  assert.equal(res.deletes, 1);
+  // the replacement's copy was written...
+  assert.deepEqual(dbx.calls.uploads.map((u) => u.path), ['/JobA/MLS for download/a.jpg']);
+  // ...and NOT then deleted by the old file's cleanup
+  assert.deepEqual(dbx.calls.deletes, []);
+});
+
+test('processPhotoBatch: a genuine standalone delete (no same-batch replacement) still drops its download copy', async () => {
+  const dbx = makeDbx();
+  const sb = makeSb();
+  const res = await processPhotoBatch(ENV, { dbx, sb }, {
+    jobId: 'FV-1',
+    jobFolderPath: '/JobA',
+    items: [{ type: 'delete', path: '/JobA/MLS/z.jpg', subFolder: 'MLS', relPathFromJob: 'MLS/z.jpg', filename: 'z.jpg' }],
+  });
+  assert.equal(res.deletes, 1);
+  assert.deepEqual(dbx.calls.deletes, ['/JobA/MLS for download/z.jpg']);
 });
 
 test('processPhotoBatch: non-MLS delete does not touch Dropbox', async () => {
@@ -435,4 +567,138 @@ test('runBackfill(jobId): locates the folder via propertiesSearch', async () => 
   const res = await runBackfill(ENV, { dbx, sb, enqueue: (m) => enqueued.push(m) }, { jobId: 'FV-1' });
   assert.equal(res.scope, 'FV-1');
   assert.equal(enqueued[0].jobId, 'FV-1');
+});
+
+test('runBackfill(jobId): re-resolves a stale propertiesSearch path via get_metadata(id) before listing', async () => {
+  // Real incident (2026-09-16): properties/search kept returning a path
+  // that no longer existed even though the folder never moved -- listFolder
+  // on the stale path 404s. get_metadata by the search result's stable id
+  // returns the real current path_display, which is what must get listed.
+  const dbx = makeDbx({
+    async propertiesSearch() { return { id: 'id:folder', path: '/Stale Parent/JobA' }; },
+    async getMetadata(path) {
+      if (path === 'id:folder') return { '.tag': 'folder', path_display: '/JobA' };
+      throw new Error('unexpected getMetadata path: ' + path);
+    },
+    async listFolder(path) {
+      assert.equal(path, '/JobA'); // NOT the stale '/Stale Parent/JobA'
+      return { entries: [{ '.tag': 'file', path_display: '/JobA/MLS/a.jpg', path_lower: '/joba/mls/a.jpg', id: 'id:1' }], has_more: false };
+    },
+  });
+  const sb = makeSb();
+  const enqueued = [];
+  const res = await runBackfill(ENV, { dbx, sb, enqueue: (m) => enqueued.push(m) }, { jobId: 'FV-1' });
+  assert.equal(res.scope, 'FV-1');
+  assert.equal(enqueued[0].jobId, 'FV-1');
+});
+
+test('runBackfill(jobId): a failed id-resolution falls back to the (possibly stale) search path rather than blocking', async () => {
+  const dbx = makeDbx({
+    async propertiesSearch() { return { id: 'id:folder', path: '/JobA' }; },
+    async getMetadata() { throw new Error('network blip'); },
+    async listFolder(path) {
+      assert.equal(path, '/JobA');
+      return { entries: [], has_more: false };
+    },
+  });
+  const sb = makeSb();
+  const res = await runBackfill(ENV, { dbx, sb, enqueue: () => {} }, { jobId: 'FV-1' });
+  assert.equal(res.scope, 'FV-1');
+});
+
+// ---------------------------------------------------------------------------
+// processRenderRetryPoll
+// ---------------------------------------------------------------------------
+
+function pendingRow(over = {}) {
+  return {
+    id: 1, project_id: 'FV-1', kind: 'download_copy',
+    source_path: '/JobA/MLS/a.jpg', dest_path: '/JobA/MLS for download/a.jpg',
+    photo_id: null, filename: 'a.jpg', attempts: 0, last_error: null,
+    ...over,
+  };
+}
+
+test('processRenderRetryPoll: a successful download_copy retry uploads + deletes the pending row', async () => {
+  const dbx = makeDbx();
+  const deleted = [];
+  const sb = makeSb({
+    async listPendingRenders() { return [pendingRow()]; },
+    async deletePendingRender(id) { deleted.push(id); },
+  });
+  const res = await processRenderRetryPoll(ENV, { dbx, sb });
+  assert.equal(res.succeeded, 1);
+  assert.equal(dbx.calls.uploads[0].path, '/JobA/MLS for download/a.jpg');
+  assert.deepEqual(deleted, [1]);
+});
+
+test('processRenderRetryPoll: a successful large retry uploads + upserts hasLarge + deletes the pending row', async () => {
+  const dbx = makeDbx();
+  const deleted = [];
+  const sb = makeSb({
+    async listPendingRenders() {
+      return [pendingRow({ kind: 'large', dest_path: null, photo_id: 'pid-1' })];
+    },
+    async deletePendingRender(id) { deleted.push(id); },
+  });
+  const res = await processRenderRetryPoll(ENV, { dbx, sb });
+  assert.equal(res.succeeded, 1);
+  assert.equal(sb.calls.larges[0].photoId, 'pid-1');
+  assert.ok(sb.calls.rpc.some((c) => c.fn === 'photos_upsert' && c.args.p_photo.hasLarge === true));
+  assert.deepEqual(deleted, [1]);
+});
+
+test('processRenderRetryPoll: a failed retry increments attempts and records the error, without deleting the row', async () => {
+  const dbx = makeDbx({ async getThumbnailV2() { throw new Error('still down'); } });
+  const updates = [];
+  const deleted = [];
+  const sb = makeSb({
+    async listPendingRenders() { return [pendingRow({ attempts: 2 })]; },
+    async updatePendingRender(id, fields) { updates.push({ id, fields }); },
+    async deletePendingRender(id) { deleted.push(id); },
+  });
+  const res = await processRenderRetryPoll(ENV, { dbx, sb });
+  assert.equal(res.failed, 1);
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].fields.attempts, 3);
+  assert.equal(updates[0].fields.last_error, 'still down');
+  assert.deepEqual(deleted, []);
+});
+
+test('processRenderRetryPoll: a row past MAX_RENDER_RETRY_ATTEMPTS is abandoned (deleted, not retried forever)', async () => {
+  const dbx = makeDbx({ async getThumbnailV2() { throw new Error('gone'); } });
+  const deleted = [];
+  const updates = [];
+  const sb = makeSb({
+    async listPendingRenders() { return [pendingRow({ attempts: MAX_RENDER_RETRY_ATTEMPTS - 1 })]; },
+    async updatePendingRender(id, fields) { updates.push({ id, fields }); },
+    async deletePendingRender(id) { deleted.push(id); },
+  });
+  const res = await processRenderRetryPoll(ENV, { dbx, sb });
+  assert.equal(res.abandoned, 1);
+  assert.deepEqual(deleted, [1]);
+  assert.deepEqual(updates, []); // abandoned, not left pending for another attempt
+});
+
+test('processRenderRetryPoll: one bad row does not block the rest', async () => {
+  const dbx = makeDbx({
+    async getThumbnailV2(path, size) {
+      if (path === '/JobA/MLS/bad.jpg') throw new Error('bad file');
+      return base64ToBytesLocal(fakeThumb(path, size));
+    },
+  });
+  const deleted = [];
+  const sb = makeSb({
+    async listPendingRenders() {
+      return [
+        pendingRow({ id: 1, source_path: '/JobA/MLS/bad.jpg', dest_path: '/JobA/MLS for download/bad.jpg' }),
+        pendingRow({ id: 2, source_path: '/JobA/MLS/a.jpg', dest_path: '/JobA/MLS for download/a.jpg' }),
+      ];
+    },
+    async deletePendingRender(id) { deleted.push(id); },
+  });
+  const res = await processRenderRetryPoll(ENV, { dbx, sb });
+  assert.equal(res.succeeded, 1);
+  assert.equal(res.failed, 1);
+  assert.deepEqual(deleted, [2]); // only the good one got cleaned up
 });

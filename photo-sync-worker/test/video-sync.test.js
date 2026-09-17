@@ -86,6 +86,14 @@ test('classifyForVideoSync: keeps video files under VIDEO_SYNC_FOLDERS, ignores 
   assert.equal(out[1].filename, 'day1.mov');
 });
 
+test('classifyForVideoSync: a video-sync folder nested inside another recognized folder is classified by its own name', () => {
+  const nestedCfg = { root: '', videoSyncFolders: ['Video', 'HDR Photos'] };
+  const entries = [{ '.tag': 'file', path_display: '/JobA/HDR Photos/Video/clip.mp4' }];
+  const out = classifyForVideoSync(entries, nestedCfg);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].subFolder, 'Video');
+});
+
 test('processVideoBatch: upsert gets a temp link, kicks off a Stream copy, writes processing + pending row', async () => {
   const dbx = makeDbx();
   const stream = makeStream();

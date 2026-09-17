@@ -29,6 +29,19 @@ export function createSupabase(env) {
       return readJson(res);
     },
 
+    // photos/<jobId>/<photoId>_large.jpg -- the w2048h1536 render for
+    // delivery-page's full-bleed slots (Cover Photo/Closing Photo/Drone
+    // Callout/Local Report). Same upsert semantics as uploadThumb.
+    async uploadLarge(jobId, photoId, bytes) {
+      const path = `photos/${encodeURIComponent(jobId)}/${photoId}_large.jpg`;
+      const res = await fetch(`${BASE}/storage/v1/object/${path}`, {
+        method: 'POST',
+        headers: { ...authHeaders, 'Content-Type': 'image/jpeg', 'x-upsert': 'true', 'cache-control': '3600' },
+        body: bytes,
+      });
+      return readJson(res);
+    },
+
     async rpc(fn, args) {
       const res = await fetch(`${BASE}/rest/v1/rpc/${fn}`, {
         method: 'POST',
@@ -114,6 +127,53 @@ export function createSupabase(env) {
       const row = Array.isArray(rows) ? rows[0] : rows;
       const videos = (row && row.data && row.data.videos) || [];
       return videos.find((v) => v.videoId === videoId) || null;
+    },
+
+    // One row per delivery-copy/large-render that failed and needs periodic
+    // retry (see photo_render_pending in schema.sql). merge-duplicates on the
+    // (project_id, kind, source_path) unique key -- a photo that fails twice
+    // before the next poll just keeps one row rather than piling up.
+    async insertPendingRender({ projectId, kind, sourcePath, destPath, photoId: pid, filename, error }) {
+      const res = await fetch(`${BASE}/rest/v1/photo_render_pending`, {
+        method: 'POST',
+        headers: {
+          ...authHeaders,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal,resolution=merge-duplicates',
+        },
+        body: JSON.stringify({
+          project_id: projectId,
+          kind,
+          source_path: sourcePath,
+          dest_path: destPath || null,
+          photo_id: pid || null,
+          filename: filename || null,
+          last_error: error || null,
+        }),
+      });
+      return readJson(res);
+    },
+
+    async listPendingRenders() {
+      const res = await fetch(`${BASE}/rest/v1/photo_render_pending?select=*`, { headers: authHeaders });
+      return (await readJson(res)) || [];
+    },
+
+    async updatePendingRender(id, fields) {
+      const res = await fetch(`${BASE}/rest/v1/photo_render_pending?id=eq.${id}`, {
+        method: 'PATCH',
+        headers: { ...authHeaders, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ ...fields, updated_at: new Date().toISOString() }),
+      });
+      return readJson(res);
+    },
+
+    async deletePendingRender(id) {
+      const res = await fetch(`${BASE}/rest/v1/photo_render_pending?id=eq.${id}`, {
+        method: 'DELETE',
+        headers: { ...authHeaders, Prefer: 'return=minimal' },
+      });
+      return readJson(res);
     },
   };
 }

@@ -75,34 +75,73 @@ export function parseJobPath(pathDisplay, root) {
     jobFolder,
     jobFolderPath: (r === '' ? '' : r) + '/' + jobFolder, // absolute Dropbox path of the job folder
     subFolder,
+    // Every directory name between the job folder and the file, outermost
+    // first (e.g. ["HDR Photos", "Drone Callout"] for .../HDR Photos/Drone
+    // Callout/x.jpg) -- lets a recognized folder name match at ANY depth,
+    // not just directly under the job folder. See matchAncestorFolder().
+    ancestors: segs.slice(1, -1),
     relPathFromJob: segs.slice(1).join('/'), // "" when the path IS the job folder
     filename,
     depth: segs.length,
   };
 }
 
-// Does this file path belong to a folder we mirror, and is it a web image?
-// `syncFolders` is the already-parsed list (parseFolderList).
-export function isSyncCandidate(pathDisplay, { root, syncFolders }) {
-  const parsed = parseJobPath(pathDisplay, root);
-  if (!parsed || !parsed.subFolder || parsed.depth < 3) return false;
-  if (!folderMatches(parsed.subFolder, syncFolders)) return false;
-  return isWebImage(parsed.filename);
-}
-
-// Does this file path belong to a video-sync folder, and is it a video file?
-// Mirrors isSyncCandidate but for VIDEO_SYNC_FOLDERS / VIDEO_EXTS.
-export function isVideoSyncCandidate(pathDisplay, { root, videoSyncFolders }) {
-  const parsed = parseJobPath(pathDisplay, root);
-  if (!parsed || !parsed.subFolder || parsed.depth < 3) return false;
-  if (!folderMatches(parsed.subFolder, videoSyncFolders)) return false;
-  return isVideoFile(parsed.filename);
-}
-
 // Case-insensitive membership.
 export function folderMatches(subFolder, list) {
   const s = String(subFolder || '').toLowerCase();
   return list.some((f) => f.toLowerCase() === s);
+}
+
+// Which of a path's ancestor directory names (if any) matches `list`,
+// searching INNERMOST-first (closest to the file). This is what lets a
+// folder like "Drone Callout" be recognized whether it sits directly under
+// the job folder OR nested inside another recognized folder (e.g. "HDR
+// Photos/Drone Callout/x.jpg", confirmed 2026-09-16) -- the more specific,
+// innermost match wins over an outer one (e.g. "HDR Photos") that would
+// otherwise also match. A plain, non-nested file (ancestors.length === 1)
+// behaves exactly as before: that one ancestor either matches or it doesn't.
+export function matchAncestorFolder(ancestors, list) {
+  for (let i = ancestors.length - 1; i >= 0; i--) {
+    if (folderMatches(ancestors[i], list)) return ancestors[i];
+  }
+  return null;
+}
+
+// Does this file path belong to a folder we mirror (at any depth), and is
+// it a web image? `syncFolders` is the already-parsed list (parseFolderList).
+export function isSyncCandidate(pathDisplay, { root, syncFolders }) {
+  const parsed = parseJobPath(pathDisplay, root);
+  if (!parsed || parsed.depth < 3) return false;
+  if (!matchAncestorFolder(parsed.ancestors, syncFolders)) return false;
+  return isWebImage(parsed.filename);
+}
+
+// Does this file path belong to a video-sync folder (at any depth), and is
+// it a video file? Mirrors isSyncCandidate but for VIDEO_SYNC_FOLDERS / VIDEO_EXTS.
+export function isVideoSyncCandidate(pathDisplay, { root, videoSyncFolders }) {
+  const parsed = parseJobPath(pathDisplay, root);
+  if (!parsed || parsed.depth < 3) return false;
+  if (!matchAncestorFolder(parsed.ancestors, videoSyncFolders)) return false;
+  return isVideoFile(parsed.filename);
+}
+
+// Best-effort reverse of job-generator's sanitize.js#buildJobFolderName():
+// "YYYY.M.D Address_Client" -> "Address". Interim measure so delivery-page
+// has an address to show without job-generator pushing job.json data to
+// Supabase (job.json is local-only) -- see franvision-delivery-page-design
+// -spec.md's "Future automation goal". Returns null if the folder name
+// doesn't look like the expected shape (e.g. a legacy/hand-renamed folder),
+// never throws.
+const JOB_FOLDER_DATE_PREFIX = /^\d{4}\.\d{1,2}\.\d{1,2}\s+(.+)$/;
+
+export function parseAddressFromJobFolder(jobFolder) {
+  const m = JOB_FOLDER_DATE_PREFIX.exec(String(jobFolder || '').trim());
+  if (!m) return null;
+  const rest = m[1];
+  const idx = rest.lastIndexOf('_');
+  if (idx === -1) return null;
+  const address = rest.slice(0, idx).trim();
+  return address || null;
 }
 
 // Absolute Dropbox path of the compressed download copy for an MLS photo:

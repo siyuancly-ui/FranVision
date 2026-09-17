@@ -10,7 +10,9 @@ import {
   isSyncCandidate,
   isVideoSyncCandidate,
   folderMatches,
+  matchAncestorFolder,
   downloadCopyPath,
+  parseAddressFromJobFolder,
 } from '../src/paths.js';
 
 test('normalizeRoot', () => {
@@ -111,4 +113,55 @@ test('downloadCopyPath forces .jpg', () => {
     downloadCopyPath('/FranVision Jobs/JobA', 'MLS for download', 'DSC_0001.jpg'),
     '/FranVision Jobs/JobA/MLS for download/DSC_0001.jpg',
   );
+});
+
+test('parseAddressFromJobFolder extracts the address between the date and the trailing _Client', () => {
+  assert.equal(
+    parseAddressFromJobFolder('2026.9.15 123 Delete Me Ave_Swan Si'),
+    '123 Delete Me Ave',
+  );
+  assert.equal(
+    parseAddressFromJobFolder('2025.9.26 23 Bonheur Rd_John Smith'),
+    '23 Bonheur Rd',
+  );
+  assert.equal(parseAddressFromJobFolder('2026.1.2 1 A St_B'), '1 A St');
+});
+
+test('parseAddressFromJobFolder returns null for unrecognized shapes', () => {
+  assert.equal(parseAddressFromJobFolder(''), null);
+  assert.equal(parseAddressFromJobFolder(null), null);
+  assert.equal(parseAddressFromJobFolder('Some Random Folder'), null); // no date prefix
+  assert.equal(parseAddressFromJobFolder('2026.9.15 No Underscore Here'), null); // no _Client
+  assert.equal(parseAddressFromJobFolder('2026.9.15 '), null); // empty after date, trimmed
+});
+
+test('parseJobPath: ancestors lists every directory between the job folder and the file', () => {
+  assert.deepEqual(parseJobPath('/JobA/MLS/a.jpg', '').ancestors, ['MLS']);
+  assert.deepEqual(parseJobPath('/JobA/HDR Photos/Drone Callout/a.jpg', '').ancestors, ['HDR Photos', 'Drone Callout']);
+  assert.deepEqual(parseJobPath('/JobA/a.jpg', '').ancestors, []); // file directly in the job folder
+});
+
+test('matchAncestorFolder: matches the innermost (closest-to-file) ancestor first', () => {
+  // "Drone Callout" nested inside "HDR Photos" -- confirmed 2026-09-16, both
+  // names happen to be in the same list here; the more specific inner one
+  // must win, not the outer "HDR Photos".
+  const list = ['HDR Photos', 'Drone Callout', 'Local Report'];
+  assert.equal(matchAncestorFolder(['HDR Photos', 'Drone Callout'], list), 'Drone Callout');
+  assert.equal(matchAncestorFolder(['HDR Photos'], list), 'HDR Photos');
+  // An unrecognized inner folder falls through to an outer recognized one --
+  // matches today's existing behavior for e.g. a photographer's own
+  // "HDR Photos/Retouched/x.jpg" organizing subfolder.
+  assert.equal(matchAncestorFolder(['HDR Photos', 'Retouched'], list), 'HDR Photos');
+  assert.equal(matchAncestorFolder(['Nothing Recognized'], list), null);
+  assert.equal(matchAncestorFolder([], list), null);
+});
+
+test('isSyncCandidate / isVideoSyncCandidate recognize a folder nested at any depth', () => {
+  const syncFolders = ['HDR Photos', 'Drone Callout'];
+  assert.ok(isSyncCandidate('/JobA/HDR Photos/Drone Callout/a.jpg', { root: '', syncFolders }));
+  assert.ok(isSyncCandidate('/JobA/Drone Callout/a.jpg', { root: '', syncFolders })); // also still works un-nested
+  assert.ok(!isSyncCandidate('/JobA/Floorplan/a.jpg', { root: '', syncFolders }));
+
+  const videoSyncFolders = ['Video'];
+  assert.ok(isVideoSyncCandidate('/JobA/HDR Photos/Video/clip.mp4', { root: '', videoSyncFolders }));
 });

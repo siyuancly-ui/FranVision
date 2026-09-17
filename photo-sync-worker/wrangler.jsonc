@@ -53,13 +53,21 @@
 
     // Sub-folders (directly under a job folder) whose images get mirrored.
     // Comma-separated, case-insensitive, surrounding spaces trimmed.
-    // "MLS" was job-generator's folder name for this content until
-    // 2026-09-12, when it was renamed to "HDR Photos" (pure naming
-    // change there -- see job-generator/CLAUDE.md's "MLS renamed to HDR
-    // Photos" decision). Both names are listed here so jobs created
-    // before and after that rename keep syncing -- do not drop "MLS"
-    // until no job with the old folder name is still in active use.
-    "SYNC_FOLDERS": "MLS,HDR Photos,Virtual Staging,Floorplan,Local Report",
+    // "MLS" was renamed to "HDR Photos" by Job Generator on 2026-09-12 --
+    // both names stay listed so pre-rename jobs (still named "MLS" on
+    // Dropbox) keep syncing alongside new "HDR Photos" jobs.
+    //
+    // "Cover" / "Closing" / "Callout" (2026-09-15, renamed from "Cover
+    // Photo"/"Closing Photo"/"Drone Callout" on 2026-09-16 for a shorter
+    // name) are delivery-page's manual-override folders (see
+    // delivery-page/CLAUDE.md and franvision-delivery-page-design-spec.md)
+    // -- Job Generator doesn't create these by default yet (deferred), but
+    // syncing them here means a manually-created Dropbox folder with the
+    // same name works immediately, no photo-sync-worker deploy needed once
+    // job-generator catches up. "Callout" is expected to usually be nested
+    // under "HDR Photos" (matchAncestorFolder finds it at any depth) --
+    // "Cover"/"Closing" are top-level, siblings of the other folders.
+    "SYNC_FOLDERS": "MLS,HDR Photos,Virtual Staging,Floorplan,Local Report,Cover,Closing,Callout",
 
     // Sub-folders whose videos get copied into Cloudflare Stream. Same
     // comma-separated/case-insensitive parsing as SYNC_FOLDERS.
@@ -90,6 +98,13 @@
     // it is NOT part of the job-generator rename and stays as-is.
     "DOWNLOAD_SET_FOLDERS": "MLS,HDR Photos",
     "DOWNLOAD_SUBFOLDER": "MLS for download",
+
+    // Sub-folders that ALSO get a large (DOWNLOAD_THUMB_SIZE) render
+    // uploaded to Supabase Storage as <photoId>_large.jpg, for delivery-
+    // page's full-bleed sections (hero/closing/aerial/neighborhood-report).
+    // Deliberately NOT the main gallery (MLS/HDR Photos) -- those stay
+    // small-only; see photo-sync-worker/CLAUDE.md for why.
+    "LARGE_THUMB_FOLDERS": "Cover,Closing,Callout,Local Report",
 
     // Safety cap: max delta entries pulled per queue message before the
     // cursor is saved and processing continues in a fresh message.
