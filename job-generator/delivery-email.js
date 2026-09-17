@@ -59,11 +59,16 @@ const PLACEHOLDERS = {
   zh: {
     ALL_IN_ONE_LINK: '[请手动填入 All-in-One 链接]',
     WAVE_LINK: '[请手动填入 Wave 付款链接]',
+    // 3D Tour/Floor Tour has no system generating it yet, same treatment
+    // as All-in-One/Wave above -- always a manual fill-in placeholder,
+    // never resolved via Dropbox (2026-09-16, user request).
+    THREE_D_LINK: '[请手动填入 3D Tour/Floor Tour 链接]',
     linkUnavailable: '[链接暂未生成 -- 请手动填入或稍后重试]',
   },
   en: {
     ALL_IN_ONE_LINK: '[fill in the All-in-One link manually]',
     WAVE_LINK: '[fill in the Wave payment link manually]',
+    THREE_D_LINK: '[fill in the 3D Tour/Floor Tour link manually]',
     linkUnavailable: '[link not available yet -- fill in manually or retry later]',
   },
 };
@@ -99,6 +104,14 @@ function getDeliverableLines(order, componentFolders) {
     { key: 'MLS', include: true, dropboxFolder: dropboxSync.MLS_FOR_DOWNLOAD_SUBFOLDER },
     video,
     { key: 'FLOORPLAN', include: wantsFloorplan, dropboxFolder: 'Floorplan' },
+    // 3D Virtual Tour (pricing-config.js's `three_d_tour` addon) has no
+    // dedicated Dropbox folder (folder-builder.js, removed 2026-09-06 --
+    // see its header comment) and no system generating this link yet, so
+    // unlike every other line here it's never auto-resolved -- `dropboxFolder:
+    // null` means generateDeliveryEmails() skips it entirely in the
+    // Dropbox-link-resolution loop, and buildTokens() always supplies the
+    // manual-fill-in placeholder for THREE_D_LINK directly (2026-09-16).
+    { key: 'THREE_D', include: !!addons.three_d_tour, dropboxFolder: null },
     // Local Report is an always-present folder (folder-builder.js) -- always included.
     { key: 'LOCAL_REPORT', include: true, dropboxFolder: 'Local Report' },
     { key: 'HOME_REPORT', include: folders.has('Home Report'), dropboxFolder: 'Home Report' },
@@ -160,6 +173,7 @@ function buildTokens({ lang, clientName, address, totalCents, preTaxCents, linkB
     TOTAL_AMOUNT: centsToDisplay(totalCents || 0),
     ALL_IN_ONE_LINK: ph.ALL_IN_ONE_LINK,
     WAVE_LINK: ph.WAVE_LINK,
+    THREE_D_LINK: ph.THREE_D_LINK,
   };
   for (const [key, url] of Object.entries(linkByKey || {})) {
     tokens[key + '_LINK'] = url || ph.linkUnavailable;
@@ -186,7 +200,10 @@ async function generateDeliveryEmails({ jobFolderPath, folderName, clientName, a
     const linkByKey = {};
     const linkErrors = [];
     for (const line of lines) {
-      if (!line.include) continue;
+      // THREE_D has no dropboxFolder -- it's always a manual fill-in
+      // token (buildTokens() supplies THREE_D_LINK directly), never
+      // resolved here.
+      if (!line.include || !line.dropboxFolder) continue;
       const dropboxPath = '/' + folderName + '/' + line.dropboxFolder;
       const result = await dropboxSync.createSharedLink({ dropboxPath, client });
       linkByKey[line.key] = result.success ? result.url : null;

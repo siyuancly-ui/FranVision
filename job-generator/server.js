@@ -604,6 +604,7 @@ async function handleApi(req, res, urlPath) {
           jobId, clientName: body.clientName, address: body.address,
           shootDate: body.shootDate, shootTime: body.shootTime,
           notes: body.notes, images: effectiveImages,
+          order: body.order, photographerName: body.photographerName,
         });
       }
 

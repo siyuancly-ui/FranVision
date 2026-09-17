@@ -18,6 +18,8 @@ Or pay by credit card:
 
 After payment, please let us know or send a screenshot so we can send you the download links right away.
 
+-----
+
 {{PROPERTY_ADDRESS}}:
 
 For the best experience, please open the links in a browser on PC or Mac. Thank you so much for your support!!!
@@ -34,6 +36,9 @@ For the best experience, please open the links in a browser on PC or Mac. Thank 
 {{LINE:FLOORPLAN}}Floor Plan / Site Plan:
 {{LINE:FLOORPLAN}}{{FLOORPLAN_LINK}}
 {{LINE:FLOORPLAN}}
+{{LINE:THREE_D}}3D Tour/Floor Tour:
+{{LINE:THREE_D}}{{THREE_D_LINK}}
+{{LINE:THREE_D}}
 {{LINE:LOCAL_REPORT}}Local Report:
 {{LINE:LOCAL_REPORT}}{{LOCAL_REPORT_LINK}}
 {{LINE:LOCAL_REPORT}}

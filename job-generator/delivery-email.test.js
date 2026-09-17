@@ -86,6 +86,13 @@ test('getDeliverableLines: HOME_REPORT keys off componentFolders (folder-builder
   assert.strictEqual(getDeliverableLines({ addons: {} }, []).find((l) => l.key === 'HOME_REPORT').include, false);
 });
 
+test('getDeliverableLines: three_d_tour addon includes the THREE_D line, with no Dropbox folder to auto-resolve (2026-09-16, always a manual link)', () => {
+  const withIt = getDeliverableLines({ addons: { three_d_tour: true } }, []).find((l) => l.key === 'THREE_D');
+  assert.strictEqual(withIt.include, true);
+  assert.strictEqual(withIt.dropboxFolder, null);
+  assert.strictEqual(getDeliverableLines({ addons: {} }, []).find((l) => l.key === 'THREE_D').include, false);
+});
+
 test('getDeliverableLines: MLS line points at the Dropbox-only MLS-for-download subfolder', () => {
   const dropboxSync = require('./dropbox-sync.js');
   const mls = getDeliverableLines({ addons: {} }, []).find((l) => l.key === 'MLS');
@@ -226,6 +233,81 @@ await testAsync('generateDeliveryEmails: writes both language files with links f
       // line) must be gone, not just blanked.
       assert.ok(!zh.includes('Video 视频'));
       assert.ok(!en.includes('Video:'));
+      // 2026-09-16: a "-----" divider separates what's visible before
+      // payment from the (gated) download content, and no 3D Tour line
+      // appears since three_d_tour wasn't ordered on this job.
+      assert.ok(zh.includes('-----'));
+      assert.ok(en.includes('-----'));
+      assert.ok(!zh.includes('3D Tour'));
+      assert.ok(!en.includes('3D Tour'));
+    });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await testAsync('generateDeliveryEmails: the "-----" divider falls between the payment paragraph and the download section', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fv-delivery-email-test-'));
+  const fakeDbx = {
+    sharingCreateSharedLinkWithSettings: async ({ path: p }) => ({ result: { url: 'https://dropbox.com/link' + p } }),
+  };
+  try {
+    await withFakeCredentials(async () => {
+      const result = await generateDeliveryEmails({
+        jobFolderPath: dir,
+        folderName: 'Job',
+        clientName: 'Cindy Lu',
+        address: '6-260 Eagle St, Newmarket',
+        order: { addons: {} },
+        componentFolders: ['0 RAW/1 Raws', 'Revisions', 'Local Report', 'HDR Photos'],
+        totalCents: 17854,
+        preTaxCents: 15800,
+        client: fakeDbx,
+      });
+      assert.strictEqual(result.success, true);
+      const zh = fs.readFileSync(path.join(dir, OUTPUT_FILENAME_ZH), 'utf8');
+      const lines = zh.split('\n');
+      const dividerIndex = lines.indexOf('-----');
+      const paymentIndex = lines.findIndex((l) => l.includes('支付完成后请告知'));
+      const downloadHeadingIndex = lines.findIndex((l) => l.includes('6-260 Eagle St, Newmarket：'));
+      assert.notStrictEqual(dividerIndex, -1);
+      assert.ok(paymentIndex < dividerIndex && dividerIndex < downloadHeadingIndex, 'divider must sit between the payment paragraph and the download section');
+    });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await testAsync('generateDeliveryEmails: THREE_D is always the manual placeholder, never auto-resolved via Dropbox even when ordered', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fv-delivery-email-test-'));
+  const requestedPaths = [];
+  const fakeDbx = {
+    sharingCreateSharedLinkWithSettings: async ({ path: p }) => { requestedPaths.push(p); return { result: { url: 'https://dropbox.com/link' + p } }; },
+  };
+  try {
+    await withFakeCredentials(async () => {
+      const result = await generateDeliveryEmails({
+        jobFolderPath: dir,
+        folderName: 'Job',
+        clientName: 'Cindy Lu',
+        address: '6-260 Eagle St, Newmarket',
+        order: { addons: { three_d_tour: true } },
+        componentFolders: ['0 RAW/1 Raws', 'Revisions', 'Local Report', 'HDR Photos'],
+        totalCents: 17854,
+        preTaxCents: 15800,
+        client: fakeDbx,
+      });
+      assert.strictEqual(result.success, true);
+      const zh = fs.readFileSync(path.join(dir, OUTPUT_FILENAME_ZH), 'utf8');
+      const en = fs.readFileSync(path.join(dir, OUTPUT_FILENAME_EN), 'utf8');
+      assert.ok(zh.includes('3D Tour/Floor Tour：'));
+      assert.ok(zh.includes('[请手动填入 3D Tour/Floor Tour 链接]'));
+      assert.ok(en.includes('3D Tour/Floor Tour:'));
+      assert.ok(en.includes('[fill in the 3D Tour/Floor Tour link manually]'));
+      // Never asked Dropbox for a link under a folder named "null" or
+      // anything else -- THREE_D is skipped by the resolution loop entirely.
+      assert.ok(!requestedPaths.some((p) => p.includes('null')));
+      assert.strictEqual(requestedPaths.length, 3); // HDR, MLS, Local Report -- always-included lines on this bare-ish order
     });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
