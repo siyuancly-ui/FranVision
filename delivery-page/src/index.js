@@ -1,5 +1,6 @@
 import { createSupabase } from './supabase.js';
 import { buildDeliveryModel, renderDeliveryPage, renderNotFoundPage } from './render.js';
+import { buildAdminModel, renderAdminPage } from './admin.js';
 
 function html(body, status = 200) {
   return new Response(body, { status, headers: { 'content-type': 'text/html; charset=utf-8' } });
@@ -29,6 +30,19 @@ async function handleDelivery(jobId, env) {
     droneCalloutFolder: env.DRONE_CALLOUT_FOLDER || 'Callout',
   });
   return html(renderDeliveryPage(model));
+}
+
+// GET /admin?admin=<ADMIN_TOKEN> -- read-only directory of every Job's
+// delivery page. Same query-param-token shape as Feature Sheet Builder's
+// own admin page (a bookmarkable-but-secret link, not a curl-only header).
+async function handleAdmin(url, env) {
+  const token = url.searchParams.get('admin') || '';
+  if (!env.ADMIN_TOKEN || token !== env.ADMIN_TOKEN) return html('unauthorized', 401);
+
+  const sb = createSupabase(env);
+  const rows = await sb.listProjects();
+  const model = buildAdminModel(rows);
+  return html(renderAdminPage(model));
 }
 
 async function handleAdminSetJob(jobId, request, env) {
@@ -69,6 +83,15 @@ export default {
       } catch (err) {
         console.log('delivery_render_error', { jobId: parts[1], error: String(err) });
         return html(renderNotFoundPage(parts[1]), 500);
+      }
+    }
+
+    if (request.method === 'GET' && parts[0] === 'admin' && parts.length === 1) {
+      try {
+        return await handleAdmin(url, env);
+      } catch (err) {
+        console.log('admin_list_error', { error: String(err) });
+        return html('error loading admin directory', 500);
       }
     }
 

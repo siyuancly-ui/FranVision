@@ -22,7 +22,7 @@ npx wrangler dev                # GET /, GET /delivery/<jobId>, POST /admin/jobs
 
 ```bash
 cd delivery-page
-npm test    # node --test, 22 cases, NO network
+npm test    # node --test, 28 cases, NO network
 ```
 
 `src/render.js` is pure (`buildDeliveryModel` shapes a Supabase `projects` row into a template model; `renderDeliveryPage`/`renderNotFoundPage` are string-building functions) — fully unit-tested without touching Supabase. `src/index.js` (the Worker's `fetch` handler) and `src/supabase.js` (raw-fetch client) are thin and untested directly, same division of labor as photo-sync-worker.
@@ -69,19 +69,26 @@ POST /admin/jobs/<jobId>   (bearer ADMIN_TOKEN)
   body: { address?, tourUrl?, tourType? }
   -> supabase.setDeliveryInfo(jobId, fields) -> project_set_delivery_info() RPC
      (merges into projects.data, creates the row if it doesn't exist yet)
+
+GET /admin?admin=<ADMIN_TOKEN>
+  -> supabase.listProjects()          (every projects row, newest-updated first)
+  -> admin.buildAdminModel(rows)      (pure: address/photoCount/hasVideo/hasTour per Job)
+  -> admin.renderAdminPage(model)     (pure: HTML directory table, client-side filter)
 ```
 
 ### Module map
 
 | File | Role |
 |---|---|
-| `src/index.js` | Worker `fetch` handler: routes `GET /`, `GET /delivery/<jobId>`, `POST /admin/jobs/<jobId>` |
-| `src/supabase.js` | Raw-fetch client: `getProject(jobId)` (read-only), `setDeliveryInfo(jobId, fields)` (the one write this Worker does), generic `rpc()` |
+| `src/index.js` | Worker `fetch` handler: routes `GET /`, `GET /delivery/<jobId>`, `GET /admin`, `POST /admin/jobs/<jobId>` |
+| `src/supabase.js` | Raw-fetch client: `getProject(jobId)` (read-only), `listProjects()` (read-only, admin directory), `setDeliveryInfo(jobId, fields)` (the one write this Worker does), generic `rpc()` |
 | `src/render.js` | All pure logic: photo/video/tour selection (`buildDeliveryModel`), HTML template (`renderDeliveryPage`, `renderNotFoundPage`), `escapeHtml` |
+| `src/admin.js` | Pure logic for the admin directory: `buildAdminModel(rows)`, `renderAdminPage(model)` (imports `escapeHtml` from `render.js`) |
 | `supabase/schema.sql` | Run once — adds `project_set_delivery_info()` |
 
 ## Confirmed design decisions
 
+- **Admin directory at `GET /admin?admin=<ADMIN_TOKEN>` (2026-09-17), same query-param-token shape as Feature Sheet Builder's own admin page** — a bookmarkable-but-secret link Franky keeps, not a curl-only bearer endpoint like `POST /admin/jobs/<jobId>` above. Lists every `projects` row (shared with FSB — a Job's presence here doesn't imply it has photos/a tour link/anything specific, same as FSB's own admin list isn't filtered either) with address, photo count, video/tour presence, and a link to its delivery page; a plain client-side filter box, no build step. **Deliberately read-only, no create/duplicate/delete/recycle-bin unlike FSB's admin** — a delivery page exists because a Job exists, it isn't a separate thing to manage the lifecycle of from here.
 - **Section visibility is data-presence-driven for v1, not purchased-services-driven.** A section renders iff its underlying data exists (a hero photo, a video, a `tourUrl`, gallery photos, a Local Report photo, an address) — see `franvision-delivery-page-design-spec.md`'s "Section visibility is service-driven, not fixed" note for the eventual target (which services/packages a Job's client purchased) and why v1 doesn't attempt that yet (job-generator/pricing data isn't in Supabase at all today).
 - **Floor Tour and 3D Tour share one field pair** (`tourUrl` + `tourType`), not two separate fields — confirmed mutually exclusive, same visual slot, no per-provider frontend difference (design-spec item 4).
 - **The neighborhood report (item 7) renders as a plain image for v1**, not the structured color-coded Schools/Parks/Transit/Safety layout from the visual mockup (see the separate Artifact draft) — the real content is a manually cropped HoodQ screenshot living in each Job's `Local Report` Dropbox folder, already synced by photo-sync-worker as an ordinary photo (folder `Local Report` was already in `SYNC_FOLDERS`). Rebuilding the structured layout needs real per-category data, not an image — only worth doing if/when a HoodQ API (or similar) is found (design-spec "Future automation goal").
