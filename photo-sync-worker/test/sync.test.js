@@ -323,6 +323,43 @@ test('processPhotoBatch: delete -> mark pending + drop download copy', async () 
   assert.deepEqual(dbx.calls.deletes, ['/JobA/MLS for download/a.jpg']);
 });
 
+test('processPhotoBatch: a same-batch replacement (delete old extension + upload new extension) does not delete the new download copy', async () => {
+  // Found in real use 2026-09-16 (48 Red Ash Dr): a photo was replaced by
+  // deleting the old file and dragging in a new one under a DIFFERENT
+  // extension (a.jpg -> a.jpeg). downloadCopyPath() normalizes both to the
+  // same "MLS for download/a.jpg" destination, and upserts are processed
+  // before deletes -- so without the deliveredDestPaths guard, this delete
+  // would wipe out the replacement's brand new copy right after it was written.
+  const dbx = makeDbx();
+  const sb = makeSb();
+  const res = await processPhotoBatch(ENV, { dbx, sb }, {
+    jobId: 'FV-1',
+    jobFolderPath: '/JobA',
+    items: [
+      upsertItem({ path: '/JobA/MLS/a.jpeg', filename: 'a.jpeg', relPathFromJob: 'MLS/a.jpeg' }),
+      { type: 'delete', path: '/JobA/MLS/a.jpg', subFolder: 'MLS', relPathFromJob: 'MLS/a.jpg', filename: 'a.jpg' },
+    ],
+  });
+  assert.equal(res.ok, 1);
+  assert.equal(res.deletes, 1);
+  // the replacement's copy was written...
+  assert.deepEqual(dbx.calls.uploads.map((u) => u.path), ['/JobA/MLS for download/a.jpg']);
+  // ...and NOT then deleted by the old file's cleanup
+  assert.deepEqual(dbx.calls.deletes, []);
+});
+
+test('processPhotoBatch: a genuine standalone delete (no same-batch replacement) still drops its download copy', async () => {
+  const dbx = makeDbx();
+  const sb = makeSb();
+  const res = await processPhotoBatch(ENV, { dbx, sb }, {
+    jobId: 'FV-1',
+    jobFolderPath: '/JobA',
+    items: [{ type: 'delete', path: '/JobA/MLS/z.jpg', subFolder: 'MLS', relPathFromJob: 'MLS/z.jpg', filename: 'z.jpg' }],
+  });
+  assert.equal(res.deletes, 1);
+  assert.deepEqual(dbx.calls.deletes, ['/JobA/MLS for download/z.jpg']);
+});
+
 test('processPhotoBatch: non-MLS delete does not touch Dropbox', async () => {
   const dbx = makeDbx();
   const sb = makeSb();

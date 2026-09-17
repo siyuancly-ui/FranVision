@@ -361,6 +361,17 @@ export async function processPhotoBatch(env, deps, msg) {
   // thumbnail request -- the Gallery/Supabase side stays on the small
   // thumbSize. Entirely best-effort: the Gallery records are already
   // saved above; a failure here is logged and picked up next sync/backfill.
+  // downloadCopyPath() normalizes every filename to the SAME .jpg destination
+  // regardless of the source's own extension. So a photo replaced by deleting
+  // the old file and dragging in a new one under a different extension (e.g.
+  // FVM076.jpg -> FVM076.jpeg -- found in real use 2026-09-16) produces an
+  // upsert AND a delete in the same batch that both resolve to the identical
+  // download-copy path. Upserts are processed before deletes below, so
+  // without this tracking the delete pass would wipe out the replacement's
+  // brand new copy right after this loop just wrote it. Track what THIS
+  // batch actually wrote so the deletes pass can tell "a real deletion" from
+  // "the old half of a same-batch replacement" and skip the latter.
+  const deliveredDestPaths = new Set();
   const deliveryItems = succeeded.filter((i) => folderMatches(i.subFolder, cfg.downloadSetFolders));
   for (const part of chunk(deliveryItems, 25)) {
     let dbatch = null;
@@ -383,6 +394,7 @@ export async function processPhotoBatch(env, deps, msg) {
           bytes = await dbx.getThumbnailV2(item.path, cfg.downloadThumbSize);
         }
         await dbx.filesUpload(dest, bytes);
+        deliveredDestPaths.add(dest);
       } catch (err) {
         const message = String(err && err.message || err);
         log({ evt: 'download_copy_failed', jobId, path: dest, error: message });
@@ -447,7 +459,17 @@ export async function processPhotoBatch(env, deps, msg) {
       const pid = await photoId(jobId, item.relPathFromJob);
       await sb.rpc('photos_mark_pending', { p_project_id: jobId, p_photo_id: pid });
       if (folderMatches(item.subFolder, cfg.downloadSetFolders)) {
-        await dbx.filesDelete(downloadCopyPath(jobFolderPath, cfg.downloadSubfolder, item.filename));
+        const dest = downloadCopyPath(jobFolderPath, cfg.downloadSubfolder, item.filename);
+        if (deliveredDestPaths.has(dest)) {
+          // This delete is the OLD half of a same-batch replacement (e.g. a
+          // filename/extension change) -- the upsert pass above already
+          // wrote the replacement's copy at this exact normalized path.
+          // Deleting it now would destroy the brand new file, not clean up
+          // a stale one. See deliveredDestPaths' comment above.
+          log({ evt: 'download_copy_delete_skipped_same_batch_replacement', jobId, path: dest });
+        } else {
+          await dbx.filesDelete(dest);
+        }
       }
       log({ evt: 'photo_pending_review', jobId, photoId: pid, path: item.path });
     } catch (err) {
