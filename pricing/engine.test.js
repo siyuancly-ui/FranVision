@@ -477,5 +477,13 @@ test('Synthetic: perUnit pricing works for any new requiresQuantity service, not
   assert.ok(/×4/.test(li.label));
 });
 
+test('Synthetic: an "invalid" result exposes which service ids it is blocked on, not just the joined sentence', () => {
+  const syntheticConfig = JSON.parse(JSON.stringify(config));
+  syntheticConfig.packages = syntheticConfig.packages.filter((p) => !p.includes.includes('walkthrough_video'));
+  const r = calculatePrice(order({ photography: 'standard', addons: { walkthrough_video: true } }), syntheticConfig);
+  assert.strictEqual(r.status, 'invalid');
+  assert.deepStrictEqual(r.blockedIds, ['walkthrough_video']);
+});
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed > 0 ? 1 : 0);

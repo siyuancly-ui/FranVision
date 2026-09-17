@@ -1,0 +1,1129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>FranVision Pricing Advisor</title>
+<style>
+  :root {
+    --bg: #f7f5f0;
+    --panel: #ffffff;
+    --ink: #1a1a1a;
+    --muted: #6b6b6b;
+    --border: #e2ddd2;
+    --accent: #b6892f;
+    --accent-dark: #1a1a1a;
+    --ok-bg: #eef7ee;
+    --ok-border: #b9dcb9;
+    --warn-bg: #fff8e6;
+    --warn-border: #e8cf8a;
+    --error-bg: #fdecec;
+    --error-border: #f0b7b7;
+    --hidden-bg: #f1e9f9;
+    --hidden-border: #d8c3ee;
+    --suggest-bg: #eef4fb;
+    --suggest-border: #bcd6f0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+  }
+  header {
+    padding: 20px 28px;
+    border-bottom: 1px solid var(--border);
+    background: var(--accent-dark);
+    color: #fff;
+  }
+  header h1 { margin: 0; font-size: 18px; letter-spacing: 0.02em; }
+  header p { margin: 4px 0 0; font-size: 12.5px; color: #cfcfcf; }
+  .layout { max-width: 1000px; margin: 0 auto; padding: 24px; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin-bottom: 18px;
+  }
+  h2 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin: 0 0 12px;
+  }
+  h3 { font-size: 13.5px; margin: 18px 0 8px; }
+  h3:first-child { margin-top: 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin-bottom: 6px; }
+  /* Three separate <table> elements (one per section) would otherwise each size
+     their own columns from their own content, so the same column drifts out of
+     alignment between sections. Fixed, shared widths keep them lined up. */
+  table.price-table { table-layout: fixed; }
+  table.price-table th:nth-child(1), table.price-table td:nth-child(1) { width: 34%; }
+  table.price-table th:nth-child(2), table.price-table td:nth-child(2) { width: 44%; }
+  table.price-table th:nth-child(3), table.price-table td:nth-child(3) { width: 22%; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); padding: 4px 6px; border-bottom: 1px solid var(--border); }
+  th.amt, td.amt { text-align: right; }
+  td { padding: 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  td.amt { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.dash { color: var(--muted); }
+  .badge {
+    display: inline-block;
+    font-size: 10.5px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    margin-left: 6px;
+    background: var(--hidden-bg);
+    border: 1px solid var(--hidden-border);
+    color: #6a3f96;
+  }
+  label { font-size: 13.5px; }
+  .field { margin-bottom: 12px; }
+  .field-label { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 4px; }
+  .field-hint { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+  input[type="text"], input[type="number"], select {
+    width: 100%;
+    padding: 7px 9px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13.5px;
+    font-family: inherit;
+  }
+  .radio-row, .check-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: 13.5px; }
+  .check-group { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+  input[type="radio"], input[type="checkbox"] { accent-color: var(--accent); }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  button {
+    font-family: inherit;
+    font-size: 13.5px;
+    padding: 8px 16px;
+    border-radius: 7px;
+    border: 1px solid var(--accent-dark);
+    background: var(--accent-dark);
+    color: #fff;
+    cursor: pointer;
+  }
+  button.secondary { background: #fff; color: var(--accent-dark); }
+  button.small { padding: 5px 10px; font-size: 12.5px; }
+  button.link { background: none; border: none; color: var(--accent); padding: 2px 6px; font-size: 12.5px; text-decoration: underline; cursor: pointer; }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  .queue-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    margin-bottom: 6px;
+    font-size: 13.5px;
+  }
+  .queue-item .tag { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-right: 6px; }
+  .empty-hint { color: var(--muted); font-size: 13px; }
+  .result-box { border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-top: 10px; }
+  .result-box.ok { background: var(--ok-bg); border: 1px solid var(--ok-border); }
+  .result-box ul { margin: 6px 0 0; padding-left: 18px; }
+  .result-box.error { background: var(--error-bg); border: 1px solid var(--error-border); }
+  .result-box.warn { background: var(--warn-bg); border: 1px solid var(--warn-border); }
+  .result-box.suggest { background: var(--suggest-bg); border: 1px solid var(--suggest-border); }
+  .result-box + .result-box { margin-top: 8px; }
+  .result-box li + li { margin-top: 10px; }
+  .finding-message { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .finding-example { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .ignored-list { margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .ignored-list button.link { font-size: 12px; }
+  .combos-note { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  textarea {
+    width: 100%;
+    min-height: 140px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .form-actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+  .type-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .type-tabs button { background: #fff; color: var(--ink); border: 1px solid var(--border); }
+  .type-tabs button.active { background: var(--accent-dark); color: #fff; border-color: var(--accent-dark); }
+  .new-item-box {
+    border: 1px dashed var(--border);
+    border-radius: 7px;
+    padding: 10px 12px;
+    margin-top: 8px;
+    font-size: 13px;
+  }
+  .inline-row { display: flex; gap: 8px; align-items: center; }
+  .inline-row input[type="text"] { flex: 1; }
+  .new-item-pending {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--suggest-bg);
+    border: 1px solid var(--suggest-border);
+    border-radius: 999px;
+    padding: 3px 10px 3px 12px;
+    font-size: 12.5px;
+    margin: 4px 6px 0 0;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>FranVision Pricing Advisor</h1>
+  <p>把新价格/新业务假设性地加进价目表，落地前先测一遍逻辑，不碰真正的 pricing-config.js。</p>
+</header>
+
+<div class="layout">
+
+  <div class="panel">
+    <h2>现有价目表</h2>
+    <h3>Luxury Photography</h3>
+    <table class="price-table">
+      <thead><tr><th>名称</th><th>包含</th><th class="amt">价格</th></tr></thead>
+      <tbody id="table-luxury"></tbody>
+    </table>
+    <h3>Standard Photography</h3>
+    <table class="price-table">
+      <thead><tr><th>名称</th><th>包含</th><th class="amt">价格</th></tr></thead>
+      <tbody id="table-standard"></tbody>
+    </table>
+    <h3>Add-on Options</h3>
+    <table class="price-table">
+      <thead><tr><th>名称</th><th>包含</th><th class="amt">价格</th></tr></thead>
+      <tbody id="table-addons"></tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h2>待处理改动</h2>
+    <div id="queue-list"><p class="empty-hint">还没有待处理的改动。</p></div>
+    <div class="form-actions">
+      <button id="btn-show-add-flow" type="button">+ 新增业务</button>
+      <button id="btn-show-edit-flow" type="button" class="secondary">修改现有价格</button>
+    </div>
+  </div>
+
+  <div class="panel" id="add-flow-panel" style="display:none;">
+    <h2>新增业务</h2>
+
+    <h3>第一步：新业务名称</h3>
+    <p class="field-hint">如果要用到的东西还没出现在下面第二步的清单里，先在这里起个名字。只是起名字，不用测试。</p>
+    <div class="inline-row">
+      <input type="text" id="s1-name" placeholder="比如 Home Tour" autocomplete="off" />
+      <button type="button" class="small" id="s1-add">添加</button>
+    </div>
+    <div id="s1-staged-list" style="margin-top:8px;"></div>
+
+    <h3>第二步：定价</h3>
+    <p class="field-hint">只有走完这一步、有了价格，才算一条完整的改动，会加入下面的待处理清单。</p>
+    <div class="type-tabs">
+      <button type="button" data-pricetype="single">单独定价</button>
+      <button type="button" data-pricetype="combo">组合定价</button>
+    </div>
+
+    <div id="form-single" style="display:none;">
+      <div class="field">
+        <label class="field-label">给哪个新名字定价</label>
+        <select id="s2-target"></select>
+      </div>
+      <div class="field" id="s2-pricing-field">
+        <label class="field-label">定价方式</label>
+        <select id="s2-pricing-type">
+          <option value="flat">一口价</option>
+          <option value="byPropertyType">按 condo / house 分开</option>
+          <option value="perUnit">按数量计价</option>
+        </select>
+        <div id="s2-pricing-flat" class="two-col" style="margin-top:8px;">
+          <div><label class="field-label">价格 ($)</label><input type="number" step="0.01" id="s2-flat-amount"></div>
+        </div>
+        <div id="s2-pricing-byproperty" class="two-col" style="margin-top:8px; display:none;">
+          <div><label class="field-label">Condo 价格 ($)</label><input type="number" step="0.01" id="s2-condo-amount"></div>
+          <div><label class="field-label">House 价格 ($)</label><input type="number" step="0.01" id="s2-house-amount"></div>
+        </div>
+        <div id="s2-pricing-perunit" class="two-col" style="margin-top:8px; display:none;">
+          <div><label class="field-label">单价 ($ / 件)</label><input type="number" step="0.01" id="s2-unit-amount"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="form-combo" style="display:none;">
+      <div class="field">
+        <label class="field-label">包含哪些东西（可以包含一个拍照档位；第一步新增的名字也会出现在这里）</label>
+        <div class="check-group" id="cb-items-list"></div>
+      </div>
+      <div class="field">
+        <label class="field-label">名称（根据勾选自动生成，可以自己改）</label>
+        <input type="text" id="cb-name" placeholder="先勾选上面的东西" />
+      </div>
+      <div class="field">
+        <label class="field-label">价格 ($)</label>
+        <input type="number" step="0.01" id="cb-price">
+      </div>
+      <div class="field">
+        <label class="field-label">适用房型</label>
+        <div class="radio-row"><input type="radio" name="cb-pt" id="cb-pt-both" value="both" checked><label for="cb-pt-both">不限</label></div>
+        <div class="radio-row"><input type="radio" name="cb-pt" id="cb-pt-condo" value="condo"><label for="cb-pt-condo">仅 condo</label></div>
+        <div class="radio-row"><input type="radio" name="cb-pt" id="cb-pt-house" value="house"><label for="cb-pt-house">仅 house</label></div>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="button" id="btn-test-item">测试这一条</button>
+      <button type="button" id="btn-add-item" disabled>加入待处理清单</button>
+      <button type="button" class="secondary" id="btn-cancel-add-flow">取消</button>
+    </div>
+    <div id="item-test-result"></div>
+  </div>
+
+  <div class="panel" id="edit-flow-panel" style="display:none;">
+    <h2>修改现有价格</h2>
+    <div class="field">
+      <label class="field-label">选择要改价的东西</label>
+      <select id="ep-target"></select>
+    </div>
+    <div id="ep-fields"></div>
+    <div class="form-actions">
+      <button type="button" id="btn-test-edit">测试这一条</button>
+      <button type="button" id="btn-add-edit" disabled>加入待处理清单</button>
+      <button type="button" class="secondary" id="btn-cancel-edit-flow">取消</button>
+    </div>
+    <div id="edit-test-result"></div>
+  </div>
+
+  <div class="panel">
+    <h2>最终检查</h2>
+    <button type="button" id="btn-full-check">重新跑一次综合测试</button>
+    <div id="full-check-result"></div>
+  </div>
+
+  <div class="panel" id="apply-panel" style="display:none;">
+    <h2>落地</h2>
+    <p class="field-hint">下载的文件保留所有数据，但不保留原文件里 <code>// $66</code> 这类行内金额注释，需要的话手动补回去。</p>
+    <button type="button" id="btn-download">生成新版 pricing-config.js 并下载</button>
+    <div class="field" style="margin-top:14px;">
+      <label class="field-label">Commit message（自动生成，可以改）</label>
+      <textarea id="commit-message"></textarea>
+    </div>
+    <p class="field-hint">
+      下载后：把文件替换到 <code>pricing/pricing-config.js</code>，然后跑 <code>node pricing/engine.test.js</code>，
+      把因为价格变了而失败的旧用例贴给我更新。
+    </p>
+  </div>
+
+</div>
+
+<script src="../pricing-config.js"></script>
+<script src="../engine.js"></script>
+<script src="validator.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  const el = (id) => document.getElementById(id);
+  // Not on the original "Service and Pricing.png" price sheet -- confirmed by re-reading
+  // the image and cross-checking against the config. Kept because they're actually charged.
+  const HIDDEN_SERVICES = new Set(['floor_plan', 'drone_photos', 'vlog_video']);
+  const HIDDEN_PACKAGES = new Set(['standard_walkthrough']);
+
+  // The "includes / details" wording straight from the original price sheet
+  // image, keyed by service/package id (luxury_photo needs a condo and a
+  // house variant since the two rows describe different photo counts).
+  // Anything not in here (hidden items, anything added later) has no original
+  // wording to copy, so the display falls back to an auto-derived description.
+  const ORIGINAL_SHEET_TEXT = {
+    luxury_photo_condo: 'Up to 40 Luxury Photos',
+    luxury_photo_house: 'Up to 80 Luxury Photos',
+    luxury_floorplan: 'Up to 80 Luxury Photos + Floor Plan',
+    luxury_walkthrough: 'Up to 80 Luxury Photos + 1 Min Video + Drone Clips',
+    luxury_vlog: 'Up to 80 Luxury Photos + 1 Min Agent Vlog + Drone Clips',
+    standard_photo: 'Up to 40 Photos',
+    standard_floorplan: 'Up to 40 Photos + Floor Plan',
+    three_d_tour: '3D Matterport / 3D Tour',
+    virtual_staging: 'AI Virtual Staging 每张',
+    feature_sheets: 'Custom feature sheet design + Printed delivery (30份)',
+    floorplan_siteplan: 'Includes Floor Plan + Site Plan',
+  };
+
+  let pending = [];         // complete, valid changes -- feeds the tests and the final download
+  let stagedNames = [];     // {id, displayName} named in step 1, not priced yet, NOT in `pending`
+  let priceType = 'single'; // which step-2 sub-form is showing: 'single' or 'combo'
+  let editingIndex = null;  // index into `pending`, set while editing an existing single/combo entry
+  let editingEditIndex = null; // index into `pending`, set while editing an existing price-edit entry
+  let lastCandidate = null;     // array of 1+ changes, staged by "测试这一条" in the add flow
+  let lastEditCandidate = null; // single change, staged by "测试这一条" in the edit-price flow
+
+  function money(cents) { return PricingAdvisor.money(cents); }
+
+  function draftSoFar() {
+    return PricingAdvisor.applyChanges(PRICING_CONFIG, pending);
+  }
+
+  // ---- render existing price list, grouped like the original price sheet ----
+
+  // Splits a priced thing into one row per property type ONLY when its price
+  // actually differs -- e.g. Luxury Photography becomes two plain rows ("Luxury
+  // Photography（Condo）" / "（House）"), each with one plain price. Something
+  // priced the same everywhere (or restricted to a single property type) is
+  // just one row, with no "condo"/"house" wording unless it's actually needed --
+  // same convention the original price sheet image itself uses.
+  function priceRows(name, includes, pricingLike, hiddenLabel) {
+    let condoCents = null;
+    let houseCents = null;
+    let flatLabel = null;
+
+    if (!pricingLike) {
+      flatLabel = '—';
+    } else if (pricingLike.kind === 'flat') {
+      flatLabel = money(pricingLike.amountCents);
+    } else if (pricingLike.kind === 'perUnit') {
+      flatLabel = money(pricingLike.unitAmountCents) + ' / 件';
+    } else if (pricingLike.kind === 'byPropertyType') {
+      if (pricingLike.condo === pricingLike.house) {
+        flatLabel = money(pricingLike.condo);
+      } else {
+        condoCents = pricingLike.condo;
+        houseCents = pricingLike.house;
+      }
+    } else if (pricingLike.kind === 'restrictedFlat') {
+      if (pricingLike.propertyTypes.includes('condo')) condoCents = pricingLike.amountCents;
+      if (pricingLike.propertyTypes.includes('house')) houseCents = pricingLike.amountCents;
+    }
+
+    if (flatLabel !== null) {
+      return [{ name, includes, price: flatLabel, hiddenLabel }];
+    }
+    const rows = [];
+    if (condoCents != null) rows.push({ name: name + '（Condo）', includes, price: money(condoCents), hiddenLabel });
+    if (houseCents != null) rows.push({ name: name + '（House）', includes, price: money(houseCents), hiddenLabel });
+    return rows;
+  }
+
+  function servicePricingLike(pricing) {
+    if (!pricing) return null;
+    if (pricing.type === 'flat') return { kind: 'flat', amountCents: pricing.amountCents };
+    if (pricing.type === 'byPropertyType') return { kind: 'byPropertyType', condo: pricing.condo, house: pricing.house };
+    if (pricing.type === 'perUnit') return { kind: 'perUnit', unitAmountCents: pricing.unitAmountCents };
+    return null;
+  }
+
+  function packagePricingLike(pkg) {
+    const pt = pkg.eligiblePropertyTypes;
+    if (!pt || pt.length === 0) return { kind: 'flat', amountCents: pkg.priceCents };
+    return { kind: 'restrictedFlat', propertyTypes: pt, amountCents: pkg.priceCents };
+  }
+
+  // Auto-derived fallback for anything with no original price-sheet wording to copy.
+  function includesLabel(pkg, config) {
+    return pkg.includes.map((id) => (config.services[id] || { displayName: id }).displayName).join(', ');
+  }
+
+  function packageIncludesText(pkg, config) {
+    return ORIGINAL_SHEET_TEXT[pkg.id] !== undefined ? ORIGINAL_SHEET_TEXT[pkg.id] : includesLabel(pkg, config);
+  }
+
+  function serviceIncludesText(id) {
+    return ORIGINAL_SHEET_TEXT[id] !== undefined ? ORIGINAL_SHEET_TEXT[id] : '—';
+  }
+
+  function renderPriceTable(tbodyId, rows) {
+    // Hidden items sort to the bottom, otherwise original order is preserved (stable partition).
+    const ordered = rows.filter((r) => !r.hiddenLabel).concat(rows.filter((r) => r.hiddenLabel));
+    const tbody = el(tbodyId);
+    tbody.innerHTML = '';
+    ordered.forEach((r) => {
+      const badge = r.hiddenLabel ? '<span class="badge">' + r.hiddenLabel + '</span>' : '';
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td>' + r.name + badge + '</td><td>' + r.includes + '</td><td class="amt">' + r.price + '</td>';
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderPriceList() {
+    const config = PRICING_CONFIG;
+    const luxuryRows = [];
+    const standardRows = [];
+    const addonRows = [];
+
+    // Luxury Photography needs different "includes" wording for its Condo and
+    // House rows (different photo counts), so it's built directly rather than
+    // through priceRows (which assumes one includes-text for every row it emits).
+    const luxPricing = config.services.luxury_photo.pricing;
+    if (luxPricing.condo === luxPricing.house) {
+      luxuryRows.push(...priceRows('Luxury Photography', serviceIncludesText('luxury_photo'), servicePricingLike(luxPricing)));
+    } else {
+      luxuryRows.push(
+        { name: 'Luxury Photography（Condo）', includes: ORIGINAL_SHEET_TEXT.luxury_photo_condo, price: money(luxPricing.condo) },
+        { name: 'Luxury Photography（House）', includes: ORIGINAL_SHEET_TEXT.luxury_photo_house, price: money(luxPricing.house) }
+      );
+    }
+    standardRows.push(...priceRows('Standard Photography', serviceIncludesText('standard_photo'), servicePricingLike(config.services.standard_photo.pricing)));
+
+    // Packages, grouped by whether they include a photography id
+    config.packages.forEach((pkg) => {
+      const rows = priceRows(pkg.displayName, packageIncludesText(pkg, config), packagePricingLike(pkg), HIDDEN_PACKAGES.has(pkg.id) ? '隐藏套餐' : null);
+      const target = pkg.includes.includes('luxury_photo') ? luxuryRows : pkg.includes.includes('standard_photo') ? standardRows : addonRows;
+      target.push(...rows);
+    });
+
+    // Standalone-sellable add-ons (never appear as a lone row otherwise -- bundle-only
+    // services like Site Plan / Walkthrough Video only show up inside package rows above).
+    Object.keys(config.services).forEach((id) => {
+      const svc = config.services[id];
+      if (id === 'standard_photo' || id === 'luxury_photo') return;
+      if (!svc.standaloneAllowed) return;
+      addonRows.push(...priceRows(svc.displayName, serviceIncludesText(id), servicePricingLike(svc.pricing), HIDDEN_SERVICES.has(id) ? '隐藏服务' : null));
+    });
+
+    renderPriceTable('table-luxury', luxuryRows);
+    renderPriceTable('table-standard', standardRows);
+    renderPriceTable('table-addons', addonRows);
+  }
+
+  // ---- pending queue --------------------------------------------------------
+
+  function describeChange(ch) {
+    if (ch.type === 'newService') return { tag: '新增服务', text: ch.service.displayName + (ch.service.standaloneAllowed ? '（可单卖）' : '（仅组合内）') };
+    if (ch.type === 'newPackage') return { tag: '新增组合', text: ch.package.displayName + ' ' + money(ch.package.priceCents) };
+    if (ch.type === 'editServicePrice') return { tag: '改价', text: ch.id + ' -> ' + describePricing(ch.pricing) };
+    if (ch.type === 'editPackagePrice') return { tag: '改价', text: ch.id + ' -> ' + money(ch.priceCents) };
+    if (ch.type === 'setRequires') return { tag: '自动搭配', text: ch.id + ' 自动带上 ' + ch.requires.join(', ') };
+    return { tag: '', text: '' };
+  }
+
+  function describePricing(pricing) {
+    if (pricing.type === 'flat') return money(pricing.amountCents);
+    if (pricing.type === 'byPropertyType') return 'Condo ' + money(pricing.condo) + ' / House ' + money(pricing.house);
+    if (pricing.type === 'perUnit') return money(pricing.unitAmountCents) + ' / 件';
+    return '';
+  }
+
+  function renderQueue() {
+    const container = el('queue-list');
+    if (pending.length === 0) {
+      container.innerHTML = '<p class="empty-hint">还没有待处理的改动。</p>';
+      el('apply-panel').style.display = 'none';
+      return;
+    }
+    container.innerHTML = '';
+    pending.forEach((ch, idx) => {
+      const d = describeChange(ch);
+      const editable = ch.type === 'newService' || ch.type === 'newPackage' || ch.type === 'editServicePrice' || ch.type === 'editPackagePrice';
+      const row = document.createElement('div');
+      row.className = 'queue-item';
+      row.innerHTML =
+        '<span><span class="tag">' + d.tag + '</span>' + d.text + '</span>' +
+        '<span>' + (editable ? '<button type="button" class="link" data-edit="' + idx + '">编辑</button>' : '') +
+        '<button type="button" class="link" data-remove="' + idx + '">删除</button></span>';
+      container.appendChild(row);
+    });
+    container.querySelectorAll('[data-remove]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        pending.splice(Number(btn.dataset.remove), 1);
+        renderQueue();
+        renderFullCheck(null);
+      });
+    });
+    container.querySelectorAll('[data-edit]').forEach((btn) => {
+      btn.addEventListener('click', () => startEdit(Number(btn.dataset.edit)));
+    });
+  }
+
+  // ---- add flow: show/hide, step 1 (naming), step 2 (pricing) ------------------
+
+  el('btn-show-add-flow').addEventListener('click', () => {
+    editingIndex = null;
+    el('edit-flow-panel').style.display = 'none';
+    resetAddFlowForm();
+    el('add-flow-panel').style.display = 'block';
+    showPriceType('single');
+  });
+  el('btn-cancel-add-flow').addEventListener('click', () => {
+    el('add-flow-panel').style.display = 'none';
+    editingIndex = null;
+  });
+
+  function resetAddFlowForm() {
+    el('s2-pricing-type').value = 'flat';
+    el('s2-flat-amount').value = '';
+    el('s2-condo-amount').value = '';
+    el('s2-house-amount').value = '';
+    el('s2-unit-amount').value = '';
+    syncS2PricingSubfields();
+
+    el('cb-name').value = '';
+    el('cb-price').value = '';
+    el('cb-pt-both').checked = true;
+    comboNameManuallyEdited = false;
+  }
+
+  // A single id, unique against real config + already-pending items + still-staged names.
+  function nextUniqueId(name) {
+    const draft = draftSoFar();
+    const base = PricingAdvisor.slugify(name);
+    const taken = (candidate) => !!draft.services[candidate] || draft.packages.some((p) => p.id === candidate) || stagedNames.some((s) => s.id === candidate);
+    let id = base;
+    let n = 2;
+    while (taken(id)) { id = base + '_' + n; n++; }
+    return id;
+  }
+
+  // ---- step 1: name a new minimum-unit thing (no price, no test -- nothing to test yet) ----
+
+  function renderStagedList() {
+    const box = el('s1-staged-list');
+    if (stagedNames.length === 0) {
+      box.innerHTML = '<p class="empty-hint">还没有新名字。</p>';
+      return;
+    }
+    box.innerHTML = '';
+    stagedNames.forEach((s, i) => {
+      const chip = document.createElement('span');
+      chip.className = 'new-item-pending';
+      chip.innerHTML = s.displayName + ' <button type="button" class="link" data-remove-staged="' + i + '">删除</button>';
+      box.appendChild(chip);
+    });
+    box.querySelectorAll('[data-remove-staged]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        stagedNames.splice(Number(btn.dataset.removeStaged), 1);
+        renderStagedList();
+        renderStep2TargetOptions();
+        renderComboItemsList();
+      });
+    });
+  }
+
+  el('s1-add').addEventListener('click', () => {
+    const name = el('s1-name').value.trim();
+    if (!name) return;
+    const draft = draftSoFar();
+    const lower = name.toLowerCase();
+    const alreadyExists = Object.keys(draft.services).some((id) => draft.services[id].displayName.trim().toLowerCase() === lower) ||
+      stagedNames.some((s) => s.displayName.trim().toLowerCase() === lower);
+    if (alreadyExists) { el('s1-name').value = ''; return; }
+    stagedNames.push({ id: nextUniqueId(name), displayName: name });
+    el('s1-name').value = '';
+    renderStagedList();
+    renderStep2TargetOptions();
+    renderComboItemsList();
+  });
+
+  el('s1-name').addEventListener('keydown', (e) => {
+    // e.isComposing / keyCode 229 -- this Enter is the IME confirming a pinyin
+    // candidate (or switching to raw Latin letters), not the user submitting.
+    // Without this check, that Enter gets hijacked mid-composition: whatever
+    // was already committed to the field gets added as one item, and the rest
+    // of what the IME was about to insert lands in the (now-cleared) box a
+    // moment later, looking like a leftover word.
+    if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) {
+      e.preventDefault();
+      el('s1-add').click();
+    }
+  });
+
+  // ---- step 2, mode switch: 单独定价 / 组合定价 ----------------------------------
+
+  function showPriceType(type) {
+    priceType = type;
+    ['single', 'combo'].forEach((t) => { el('form-' + t).style.display = t === type ? 'block' : 'none'; });
+    document.querySelectorAll('.type-tabs button[data-pricetype]').forEach((b) => b.classList.toggle('active', b.dataset.pricetype === type));
+    el('item-test-result').innerHTML = '';
+    el('btn-add-item').disabled = true;
+    lastCandidate = null;
+    if (type === 'single') renderStep2TargetOptions();
+    if (type === 'combo') renderComboItemsList();
+  }
+  document.querySelectorAll('.type-tabs button[data-pricetype]').forEach((b) => {
+    b.addEventListener('click', () => showPriceType(b.dataset.pricetype));
+  });
+
+  // ---- step 2, mode A: 单独定价 --------------------------------------------------
+
+  function renderStep2TargetOptions() {
+    const sel = el('s2-target');
+    sel.innerHTML = '';
+    if (editingIndex !== null && pending[editingIndex] && pending[editingIndex].type === 'newService') {
+      const svc = pending[editingIndex].service;
+      sel.innerHTML = '<option value="' + svc.id + '">' + svc.displayName + '</option>';
+      return;
+    }
+    if (stagedNames.length === 0) {
+      sel.innerHTML = '<option value="">-- 先在第一步起个名字 --</option>';
+      return;
+    }
+    stagedNames.forEach((s) => {
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = s.displayName;
+      sel.appendChild(opt);
+    });
+  }
+
+  el('s2-pricing-type').addEventListener('change', syncS2PricingSubfields);
+  function syncS2PricingSubfields() {
+    const type = el('s2-pricing-type').value;
+    el('s2-pricing-flat').style.display = type === 'flat' ? 'grid' : 'none';
+    el('s2-pricing-byproperty').style.display = type === 'byPropertyType' ? 'grid' : 'none';
+    el('s2-pricing-perunit').style.display = type === 'perUnit' ? 'grid' : 'none';
+  }
+
+  function readSingleForm() {
+    const id = el('s2-target').value;
+    const staged = stagedNames.find((s) => s.id === id);
+    const existing = editingIndex !== null ? pending[editingIndex].service : null;
+    const displayName = staged ? staged.displayName : (existing ? existing.displayName : id);
+    const type = el('s2-pricing-type').value;
+    const svc = { id, displayName, category: 'addon', standaloneAllowed: true };
+    if (type === 'flat') {
+      svc.pricing = { type: 'flat', amountCents: Math.round(parseFloat(el('s2-flat-amount').value) * 100) };
+    } else if (type === 'byPropertyType') {
+      svc.pricing = { type: 'byPropertyType', condo: Math.round(parseFloat(el('s2-condo-amount').value) * 100), house: Math.round(parseFloat(el('s2-house-amount').value) * 100) };
+    } else if (type === 'perUnit') {
+      svc.requiresQuantity = true;
+      svc.pricing = { type: 'perUnit', unitAmountCents: Math.round(parseFloat(el('s2-unit-amount').value) * 100) };
+    }
+    return { type: 'newService', service: svc };
+  }
+
+  // ---- step 2, mode B: 组合定价 --------------------------------------------------
+
+  // Everything sellable so far: real config + already-pending + still-staged (unpriced) names.
+  function comboPickableServices() {
+    const draft = draftSoFar();
+    const merged = Object.assign({}, draft.services);
+    stagedNames.forEach((s) => { merged[s.id] = { id: s.id, displayName: s.displayName, standaloneAllowed: false }; });
+    return merged;
+  }
+
+  function renderComboItemsList() {
+    const services = comboPickableServices();
+    const box = el('cb-items-list');
+    box.innerHTML = '';
+    ['standard_photo', 'luxury_photo'].forEach((id) => {
+      const svc = services[id];
+      const row = document.createElement('div');
+      row.className = 'check-row';
+      row.innerHTML = '<input type="checkbox" id="item-' + id + '" value="' + id + '"><label for="item-' + id + '">' + svc.displayName + '</label>';
+      box.appendChild(row);
+    });
+    Object.keys(services).forEach((id) => {
+      if (id === 'standard_photo' || id === 'luxury_photo') return;
+      const svc = services[id];
+      const row = document.createElement('div');
+      row.className = 'check-row';
+      row.innerHTML = '<input type="checkbox" id="item-' + id + '" value="' + id + '"><label for="item-' + id + '">' + svc.displayName + (svc.standaloneAllowed ? '' : '（未定价）') + '</label>';
+      box.appendChild(row);
+    });
+    box.querySelectorAll('input[type="checkbox"]').forEach((cb) => cb.addEventListener('change', suggestComboName));
+  }
+
+  // Auto-fills the combo name from whatever's checked ("Luxury Photography + Home
+  // Tour + Floor Plan"), but only until the user types their own -- then it stops
+  // overwriting what they typed.
+  let comboNameManuallyEdited = false;
+  el('cb-name').addEventListener('input', () => { comboNameManuallyEdited = true; });
+  function suggestComboName() {
+    if (comboNameManuallyEdited) return;
+    const services = comboPickableServices();
+    const checked = Array.from(el('cb-items-list').querySelectorAll('input:checked')).map((c) => services[c.value].displayName);
+    el('cb-name').value = checked.join(' + ');
+  }
+
+  function readComboForm() {
+    const name = el('cb-name').value.trim();
+    const id = editingIndex !== null && pending[editingIndex] && pending[editingIndex].type === 'newPackage'
+      ? pending[editingIndex].package.id
+      : nextUniqueId(name);
+    const includes = Array.from(el('cb-items-list').querySelectorAll('input:checked')).map((c) => c.value);
+    const pkg = { id, displayName: name, includes, priceCents: Math.round(parseFloat(el('cb-price').value) * 100) };
+    const pt = document.querySelector('input[name="cb-pt"]:checked').value;
+    if (pt !== 'both') pkg.eligiblePropertyTypes = [pt];
+    return { type: 'newPackage', package: pkg };
+  }
+
+  // A combo referencing a still-staged (unpriced) name graduates it: a bare
+  // newService (standaloneAllowed:false) is created alongside the package.
+  function readComboFormWithGraduation() {
+    const pkgChange = readComboForm();
+    const graduations = [];
+    pkgChange.package.includes.forEach((id) => {
+      const staged = stagedNames.find((s) => s.id === id);
+      if (staged) graduations.push({ type: 'newService', service: { id: staged.id, displayName: staged.displayName, category: 'addon', standaloneAllowed: false } });
+    });
+    return graduations.concat([pkgChange]);
+  }
+
+  // ---- add flow: test / add ------------------------------------------------------
+
+  function readAddFlowForm() {
+    return priceType === 'single' ? [readSingleForm()] : readComboFormWithGraduation();
+  }
+
+  el('btn-test-item').addEventListener('click', () => {
+    const candidates = readAddFlowForm();
+    let queueSoFar = editingIndex === null ? pending : pending.filter((_, i) => i !== editingIndex);
+    let errors = [];
+    candidates.forEach((c) => {
+      errors = errors.concat(PricingAdvisor.checkStatic(PRICING_CONFIG, queueSoFar, c));
+      queueSoFar = queueSoFar.concat([c]);
+    });
+    const box = el('item-test-result');
+    if (errors.length === 0) {
+      box.innerHTML = '<div class="result-box ok">✅ 静态检查通过。（穷举/加价单调性这类需要看全局的检测，会在最后"综合测试"里跑）</div>';
+      lastCandidate = candidates;
+      el('btn-add-item').disabled = false;
+    } else {
+      box.innerHTML = '<div class="result-box error">🔴 硬错误<ul>' + errors.map((e) => '<li>' + e.message + '</li>').join('') + '</ul></div>';
+      lastCandidate = null;
+      el('btn-add-item').disabled = true;
+    }
+  });
+
+  el('btn-add-item').addEventListener('click', () => {
+    if (!lastCandidate) return;
+    if (editingIndex !== null) {
+      pending.splice(editingIndex, 1, ...lastCandidate);
+      editingIndex = null;
+    } else {
+      pending.push(...lastCandidate);
+    }
+    lastCandidate.forEach((c) => {
+      if (c.type !== 'newService') return;
+      const idx = stagedNames.findIndex((s) => s.id === c.service.id);
+      if (idx !== -1) stagedNames.splice(idx, 1);
+    });
+    el('add-flow-panel').style.display = 'none';
+    renderQueue();
+    renderStagedList();
+  });
+
+  function startEdit(idx) {
+    const ch = pending[idx];
+    if (ch.type === 'newService' || ch.type === 'newPackage') {
+      editingIndex = idx;
+      el('edit-flow-panel').style.display = 'none';
+      resetAddFlowForm();
+      el('add-flow-panel').style.display = 'block';
+      if (ch.type === 'newService') {
+        showPriceType('single');
+        renderStep2TargetOptions();
+        if (ch.service.pricing) {
+          el('s2-pricing-type').value = ch.service.pricing.type;
+          syncS2PricingSubfields();
+          if (ch.service.pricing.type === 'flat') el('s2-flat-amount').value = (ch.service.pricing.amountCents / 100).toFixed(2);
+          if (ch.service.pricing.type === 'byPropertyType') {
+            el('s2-condo-amount').value = (ch.service.pricing.condo / 100).toFixed(2);
+            el('s2-house-amount').value = (ch.service.pricing.house / 100).toFixed(2);
+          }
+          if (ch.service.pricing.type === 'perUnit') el('s2-unit-amount').value = (ch.service.pricing.unitAmountCents / 100).toFixed(2);
+        }
+      } else {
+        showPriceType('combo');
+        el('cb-name').value = ch.package.displayName;
+        comboNameManuallyEdited = true; // keep the existing name -- don't let re-checking items overwrite it
+        el('cb-price').value = (ch.package.priceCents / 100).toFixed(2);
+        const pt = (ch.package.eligiblePropertyTypes && ch.package.eligiblePropertyTypes[0]) || 'both';
+        el('cb-pt-' + pt).checked = true;
+        renderComboItemsList();
+        ch.package.includes.forEach((id) => { const cb = el('item-' + id); if (cb) cb.checked = true; });
+      }
+    } else if (ch.type === 'editServicePrice' || ch.type === 'editPackagePrice') {
+      editingEditIndex = idx;
+      el('add-flow-panel').style.display = 'none';
+      el('edit-flow-panel').style.display = 'block';
+      renderEditTargetOptions();
+      const targetVal = ch.type === 'editServicePrice' ? 'service:' + ch.id : 'package:' + ch.id;
+      el('ep-target').value = targetVal;
+      renderEditFields();
+      if (ch.type === 'editServicePrice') {
+        const type = ch.pricing.type;
+        if (type === 'flat' && el('ep-flat')) el('ep-flat').value = (ch.pricing.amountCents / 100).toFixed(2);
+        if (type === 'byPropertyType' && el('ep-condo')) { el('ep-condo').value = (ch.pricing.condo / 100).toFixed(2); el('ep-house').value = (ch.pricing.house / 100).toFixed(2); }
+        if (type === 'perUnit' && el('ep-unit')) el('ep-unit').value = (ch.pricing.unitAmountCents / 100).toFixed(2);
+      } else if (el('ep-pkg-price')) {
+        el('ep-pkg-price').value = (ch.priceCents / 100).toFixed(2);
+      }
+      el('edit-test-result').innerHTML = '';
+      el('btn-add-edit').disabled = true;
+    }
+  }
+
+  // ---- edit-price flow: separate from the add flow -------------------------------
+
+  el('btn-show-edit-flow').addEventListener('click', () => {
+    editingEditIndex = null;
+    el('add-flow-panel').style.display = 'none';
+    el('edit-flow-panel').style.display = 'block';
+    renderEditTargetOptions();
+    el('edit-test-result').innerHTML = '';
+    el('btn-add-edit').disabled = true;
+  });
+  el('btn-cancel-edit-flow').addEventListener('click', () => {
+    el('edit-flow-panel').style.display = 'none';
+    editingEditIndex = null;
+  });
+
+  function renderEditTargetOptions() {
+    const draft = draftSoFar();
+    const sel = el('ep-target');
+    sel.innerHTML = '<option value="">-- 选择 --</option>';
+    const svcGroup = document.createElement('optgroup');
+    svcGroup.label = '单个';
+    Object.keys(draft.services).forEach((id) => {
+      if (!draft.services[id].standaloneAllowed) return;
+      const opt = document.createElement('option');
+      opt.value = 'service:' + id;
+      opt.textContent = draft.services[id].displayName;
+      svcGroup.appendChild(opt);
+    });
+    const pkgGroup = document.createElement('optgroup');
+    pkgGroup.label = '组合';
+    draft.packages.forEach((pkg) => {
+      const opt = document.createElement('option');
+      opt.value = 'package:' + pkg.id;
+      opt.textContent = pkg.displayName;
+      pkgGroup.appendChild(opt);
+    });
+    sel.appendChild(svcGroup);
+    sel.appendChild(pkgGroup);
+    sel.onchange = renderEditFields;
+    el('ep-fields').innerHTML = '';
+  }
+
+  function renderEditFields() {
+    const draft = draftSoFar();
+    const val = el('ep-target').value;
+    const box = el('ep-fields');
+    box.innerHTML = '';
+    if (!val) return;
+    const [kind, id] = val.split(':');
+    if (kind === 'service') {
+      const svc = draft.services[id];
+      const p = svc.pricing || {};
+      let html = '';
+      if (p.type === 'byPropertyType') {
+        html += '<div class="two-col"><div><label class="field-label">新 Condo 价格 ($)</label><input type="number" step="0.01" id="ep-condo" value="' + (p.condo / 100).toFixed(2) + '"></div>' +
+          '<div><label class="field-label">新 House 价格 ($)</label><input type="number" step="0.01" id="ep-house" value="' + (p.house / 100).toFixed(2) + '"></div></div>';
+      } else if (p.type === 'perUnit') {
+        html += '<label class="field-label">新单价 ($ / 件)</label><input type="number" step="0.01" id="ep-unit" value="' + (p.unitAmountCents / 100).toFixed(2) + '">';
+      } else {
+        html += '<label class="field-label">新价格 ($)</label><input type="number" step="0.01" id="ep-flat" value="' + (p.amountCents ? (p.amountCents / 100).toFixed(2) : '') + '">';
+      }
+      box.innerHTML = html;
+      box.dataset.pricingType = p.type || 'flat';
+    } else {
+      const pkg = draft.packages.find((p) => p.id === id);
+      box.innerHTML = '<label class="field-label">新价格 ($)</label><input type="number" step="0.01" id="ep-pkg-price" value="' + (pkg.priceCents / 100).toFixed(2) + '">';
+    }
+  }
+
+  function readEditPriceForm() {
+    const val = el('ep-target').value;
+    const [kind, id] = val.split(':');
+    if (kind === 'service') {
+      const type = el('ep-fields').dataset.pricingType;
+      let pricing;
+      if (type === 'byPropertyType') {
+        pricing = { type: 'byPropertyType', condo: Math.round(parseFloat(el('ep-condo').value) * 100), house: Math.round(parseFloat(el('ep-house').value) * 100) };
+      } else if (type === 'perUnit') {
+        pricing = { type: 'perUnit', unitAmountCents: Math.round(parseFloat(el('ep-unit').value) * 100) };
+      } else {
+        pricing = { type: 'flat', amountCents: Math.round(parseFloat(el('ep-flat').value) * 100) };
+      }
+      return { type: 'editServicePrice', id, pricing };
+    }
+    return { type: 'editPackagePrice', id, priceCents: Math.round(parseFloat(el('ep-pkg-price').value) * 100) };
+  }
+
+  el('btn-test-edit').addEventListener('click', () => {
+    const candidate = readEditPriceForm();
+    const queueForCheck = editingEditIndex === null ? pending : pending.filter((_, i) => i !== editingEditIndex);
+    const errors = PricingAdvisor.checkStatic(PRICING_CONFIG, queueForCheck, candidate);
+    const box = el('edit-test-result');
+    if (errors.length === 0) {
+      box.innerHTML = '<div class="result-box ok">✅ 静态检查通过。（穷举/加价单调性这类需要看全局的检测，会在最后"综合测试"里跑）</div>';
+      lastEditCandidate = candidate;
+      el('btn-add-edit').disabled = false;
+    } else {
+      box.innerHTML = '<div class="result-box error">🔴 硬错误<ul>' + errors.map((e) => '<li>' + e.message + '</li>').join('') + '</ul></div>';
+      lastEditCandidate = null;
+      el('btn-add-edit').disabled = true;
+    }
+  });
+
+  el('btn-add-edit').addEventListener('click', () => {
+    if (!lastEditCandidate) return;
+    if (editingEditIndex !== null) {
+      pending.splice(editingEditIndex, 1, lastEditCandidate);
+      editingEditIndex = null;
+    } else {
+      pending.push(lastEditCandidate);
+    }
+    el('edit-flow-panel').style.display = 'none';
+    renderQueue();
+  });
+
+  // ---- comprehensive test -----------------------------------------------------
+
+  // Findings the user has looked at and decided are fine to ignore (e.g. "Site
+  // Plan + Home Report has no business meaning, don't keep flagging it").
+  // Session-only, matches every other piece of state in this tool.
+  let ignoredGroupKeys = new Set();
+
+  function findingLi(f) {
+    const exampleHtml = f.example ? '<div class="finding-example">' + f.example + '</div>' : '';
+    const ignoreBtn = f.groupKey
+      ? '<button type="button" class="small link" data-ignore="' + f.groupKey.replace(/"/g, '&quot;') + '">标记为可忽略</button>'
+      : '';
+    return '<li><div class="finding-message"><span>' + f.message + '</span>' + ignoreBtn + '</div>' + exampleHtml + '</li>';
+  }
+
+  function renderFullCheck(result) {
+    const box = el('full-check-result');
+    if (!result) { box.innerHTML = ''; el('apply-panel').style.display = 'none'; return; }
+
+    const visibleErrors = result.hardErrors.filter((e) => !e.groupKey || !ignoredGroupKeys.has(e.groupKey));
+    const visibleWarnings = result.warnings.filter((w) => !w.groupKey || !ignoredGroupKeys.has(w.groupKey));
+    const ignoredHere = [];
+    result.hardErrors.concat(result.warnings).forEach((f) => {
+      if (f.groupKey && ignoredGroupKeys.has(f.groupKey)) ignoredHere.push(f);
+    });
+
+    let html = '';
+    if (visibleErrors.length) {
+      html += '<div class="result-box error">🔴 硬错误（' + visibleErrors.length + '）<ul>' + visibleErrors.map(findingLi).join('') + '</ul></div>';
+    } else {
+      html += '<div class="result-box ok">✅ 没有硬错误。</div>';
+    }
+    if (visibleWarnings.length) {
+      html += '<div class="result-box warn">🟡 提示（' + visibleWarnings.length + '，能算出价但反直觉，人工判断是否是故意促销）<ul>' + visibleWarnings.map(findingLi).join('') + '</ul></div>';
+    }
+    if (result.suggestions && result.suggestions.length) {
+      html += '<div class="result-box suggest">💡 自动搭配建议（可选，不影响算价）<ul>' +
+        result.suggestions.map((s, i) => {
+          const svc = result.draftConfig.services[s.id];
+          const names = s.requires.map((id) => (result.draftConfig.services[id] || { displayName: id }).displayName).join(', ');
+          return '<li>' + (svc ? svc.displayName : s.id) + ' 每次都跟 ' + names + ' 一起出现，要不要设成自动搭配？' +
+            ' <button type="button" class="small link" data-apply-suggestion="' + i + '">应用</button></li>';
+        }).join('') + '</ul></div>';
+    }
+    if (ignoredHere.length) {
+      html += '<div class="ignored-list">已标记为可忽略（' + ignoredHere.length + '）：' +
+        ignoredHere.map((f) => '<div>' + f.message + ' <button type="button" class="link" data-restore="' + f.groupKey.replace(/"/g, '&quot;') + '">恢复</button></div>').join('') +
+        '</div>';
+    }
+    html += '<p class="combos-note">共检测 ' + result.combosChecked + ' 种订单组合。</p>';
+    box.innerHTML = html;
+
+    box.querySelectorAll('[data-apply-suggestion]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const s = result.suggestions[Number(btn.dataset.applySuggestion)];
+        pending.push({ type: 'setRequires', id: s.id, requires: s.requires });
+        renderQueue();
+        runFullCheckNow();
+      });
+    });
+    box.querySelectorAll('[data-ignore]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        ignoredGroupKeys.add(btn.dataset.ignore);
+        renderFullCheck(result);
+      });
+    });
+    box.querySelectorAll('[data-restore]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        ignoredGroupKeys.delete(btn.dataset.restore);
+        renderFullCheck(result);
+      });
+    });
+
+    el('apply-panel').style.display = visibleErrors.length === 0 && pending.length > 0 ? 'block' : 'none';
+    if (visibleErrors.length === 0 && pending.length > 0) {
+      el('commit-message').value = buildCommitMessage();
+    }
+  }
+
+  function runFullCheckNow() {
+    if (pending.length === 0) { renderFullCheck({ hardErrors: [], warnings: [], combosChecked: 0, suggestions: [], draftConfig: PRICING_CONFIG }); return; }
+    const result = PricingAdvisor.runFullCheck(PRICING_CONFIG, pending);
+    result.suggestions = PricingAdvisor.suggestRequires(result.draftConfig);
+    renderFullCheck(result);
+  }
+
+  el('btn-full-check').addEventListener('click', runFullCheckNow);
+
+  // ---- download + commit message ----------------------------------------------
+
+  function buildCommitMessage() {
+    const lines = ['Update pricing list', ''];
+    pending.forEach((ch) => {
+      const d = describeChange(ch);
+      lines.push('- ' + d.tag + ': ' + d.text);
+    });
+    return lines.join('\n');
+  }
+
+  function buildConfigFileText(draft) {
+    const header =
+      "// FranVision pricing configuration.\n" +
+      "//\n" +
+      "// This is the ONLY file you should need to edit when prices change.\n" +
+      "// Do not put prices or package rules into engine.js or tester.html.\n" +
+      "//\n" +
+      "// Generated by pricing/advisor/advisor.html -- values only, the inline\n" +
+      "// dollar-amount comments from the original file are not preserved here.\n" +
+      "//\n" +
+      "// service.pricing.type:\n" +
+      '//   "flat"           -> pricing.amountCents, same price regardless of property type\n' +
+      '//   "byPropertyType" -> pricing.condo / pricing.house\n' +
+      '//   "perUnit"        -> pricing.unitAmountCents, requires a quantity (e.g. Virtual Staging)\n' +
+      "//   (omitted)        -> service has no standalone price (standaloneAllowed must be false)\n" +
+      "//\n" +
+      "// service.standaloneAllowed: false means this service can never be sold on\n" +
+      "// its own -- it can only appear as part of a package (see restrictionMessage).\n" +
+      "//\n" +
+      "// service.requires: other service ids that must also be present in the order\n" +
+      "// whenever this service is selected. The engine auto-adds missing\n" +
+      "// requirements, chained if needed.\n" +
+      "//\n" +
+      "// package.includes: which service ids this package covers. A package is only\n" +
+      "// considered \"applicable\" if every id in includes is present in the order.\n" +
+      "// package.eligiblePropertyTypes: omit to allow both condo and house.\n\n";
+    const wrapperOpen =
+      "(function (root, factory) {\n" +
+      "  if (typeof module === 'object' && module.exports) {\n" +
+      "    module.exports = factory();\n" +
+      "  } else {\n" +
+      "    root.PRICING_CONFIG = factory();\n" +
+      "  }\n" +
+      "})(typeof self !== 'undefined' ? self : this, function () {\n" +
+      "  'use strict';\n\n" +
+      "  return ";
+    const wrapperClose = ";\n});\n";
+    const body = JSON.stringify(draft, null, 2).split('\n').join('\n  ');
+    return header + wrapperOpen + body + wrapperClose;
+  }
+
+  el('btn-download').addEventListener('click', () => {
+    const draft = draftSoFar();
+    const text = buildConfigFileText(draft);
+    const blob = new Blob([text], { type: 'text/javascript' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'pricing-config.js';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
+  // ---- init -----------------------------------------------------------------
+
+  renderPriceList();
+  renderQueue();
+  renderStagedList();
+})();
+</script>
+</body>
+</html>
