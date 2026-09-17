@@ -18,6 +18,8 @@ EMT：frankystudio@mail.com
 
 支付完成后请告知或者截图，以方便及时给您下载链接。
 
+-----
+
 {{PROPERTY_ADDRESS}}：
 
 请在pc或者mac上使用浏览器打开效果最佳，感谢您的支持与厚爱！！！
@@ -34,6 +36,9 @@ EMT：frankystudio@mail.com
 {{LINE:FLOORPLAN}}Floor Plan / Site Plan：
 {{LINE:FLOORPLAN}}{{FLOORPLAN_LINK}}
 {{LINE:FLOORPLAN}}
+{{LINE:THREE_D}}3D Tour/Floor Tour：
+{{LINE:THREE_D}}{{THREE_D_LINK}}
+{{LINE:THREE_D}}
 {{LINE:LOCAL_REPORT}}Local Report：
 {{LINE:LOCAL_REPORT}}{{LOCAL_REPORT_LINK}}
 {{LINE:LOCAL_REPORT}}
