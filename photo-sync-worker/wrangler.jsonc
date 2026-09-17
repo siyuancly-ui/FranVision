@@ -73,6 +73,13 @@
     // comma-separated/case-insensitive parsing as SYNC_FOLDERS.
     "VIDEO_SYNC_FOLDERS": "Video,VLOG",
 
+    // The one well-known text file, directly at a job folder's root (not
+    // nested in any sub-folder), whose content is the Floor Tour or 3D Tour
+    // URL for delivery-page (see tour-link-sync.js). One file, one link --
+    // both providers render identically, so there's no per-provider name/
+    // type to configure here, just this single filename.
+    "TOUR_LINK_FILENAME": "Tour Link.txt",
+
     // Cloudflare account id that owns the Stream product used for video
     // hosting. Not sensitive -- the API token (a secret) is what's guarded.
     "CF_ACCOUNT_ID": "6f3c289ac50b8015fed5082696db622b",

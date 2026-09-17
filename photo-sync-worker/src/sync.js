@@ -5,6 +5,7 @@
 import { parseJobPath, isSyncCandidate, folderMatches, matchAncestorFolder, parseFolderList, downloadCopyPath, parseAddressFromJobFolder } from './paths.js';
 import { photoId } from './photo-id.js';
 import { classifyForVideoSync, readVideoConfig } from './video-sync.js';
+import { classifyForTourLink, readTourLinkConfig } from './tour-link-sync.js';
 
 // ---------------------------------------------------------------------------
 // Pure helpers
@@ -230,12 +231,27 @@ export async function runDelta(env, deps) {
       }
     }
 
+    // Tour Link: same collapsed delta entries, filtered/grouped independently
+    // -- a third parallel pipeline (see tour-link-sync.js), additive, never
+    // touches the photo or video dispatch above.
+    const tourLinkCfg = readTourLinkConfig(env);
+    const tourLinkClassified = classifyForTourLink(collapsed, tourLinkCfg);
+    const tourLinkGroups = groupByJob(tourLinkClassified);
+    let tourLinkDispatched = 0;
+    for (const [, g] of tourLinkGroups) {
+      const jobId = await resolveJobId(dbx, g.jobFolderPath, cfg.templateId, jobCache);
+      if (!jobId) continue;
+      await enqueue({ type: 'tour-link-batch', jobId, jobFolderPath: g.jobFolderPath, items: g.items });
+      tourLinkDispatched++;
+    }
+
     await sb.patchSyncState({
       cursor,
       last_run_at: now(),
       stats: {
         pages, entries: collected.length, classified: classified.length, jobs: groups.size, skippedJobs, dispatched,
         videoClassified: videoClassified.length, videoJobs: videoGroups.size, videoDispatched,
+        tourLinkClassified: tourLinkClassified.length, tourLinkDispatched,
       },
     });
 
@@ -243,9 +259,9 @@ export async function runDelta(env, deps) {
 
     log({
       evt: 'delta_done', pages, entries: collected.length, classified: classified.length, jobs: groups.size, dispatched,
-      videoClassified: videoClassified.length, videoDispatched, hasMore,
+      videoClassified: videoClassified.length, videoDispatched, tourLinkClassified: tourLinkClassified.length, tourLinkDispatched, hasMore,
     });
-    return { pages, entries: collected.length, dispatched, videoDispatched, hasMore };
+    return { pages, entries: collected.length, dispatched, videoDispatched, tourLinkDispatched, hasMore };
   } finally {
     await sb.releaseLease().catch(() => {});
   }
@@ -554,11 +570,28 @@ export async function runBackfill(env, deps, { jobId: onlyJobId } = {}) {
     }
   }
 
+  // Tour Link: same walked entries, classified/grouped independently (mirrors runDelta).
+  const tourLinkCfg = readTourLinkConfig(env);
+  const tourLinkClassified = classifyForTourLink(entries, tourLinkCfg).filter((i) => i.type === 'upsert');
+  const tourLinkGroups = groupByJob(tourLinkClassified);
+  let tourLinkDispatched = 0;
+  for (const [, g] of tourLinkGroups) {
+    const jid = knownJobId || (await resolveJobId(dbx, g.jobFolderPath, cfg.templateId, jobCache));
+    if (!jid) continue;
+    await enqueue({ type: 'tour-link-batch', jobId: jid, jobFolderPath: g.jobFolderPath, items: g.items });
+    tourLinkDispatched++;
+  }
+
   log({
     evt: 'backfill_dispatched', scope: onlyJobId || 'all', entries: entries.length, files: classified.length, jobs: groups.size, dispatched,
     videoFiles: videoClassified.length, videoJobs: videoGroups.size, videoDispatched,
+    tourLinkFiles: tourLinkClassified.length, tourLinkJobs: tourLinkGroups.size, tourLinkDispatched,
   });
-  return { scope: onlyJobId || 'all', files: classified.length, jobs: groups.size, dispatched, videoFiles: videoClassified.length, videoDispatched };
+  return {
+    scope: onlyJobId || 'all', files: classified.length, jobs: groups.size, dispatched,
+    videoFiles: videoClassified.length, videoDispatched,
+    tourLinkFiles: tourLinkClassified.length, tourLinkDispatched,
+  };
 }
 
 // A row that has failed this many times is abandoned (deleted, logged) rather

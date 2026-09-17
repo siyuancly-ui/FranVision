@@ -97,6 +97,24 @@ export function createDropbox(env) {
       return rpc(env, API, 'files/get_temporary_link', { path });
     },
 
+    // Raw text content of a small file (the Tour Link .txt file -- see
+    // tour-link-sync.js). Dropbox's content-download endpoint: the response
+    // BODY is the file bytes, metadata is in a header (ignored here).
+    async downloadText(path) {
+      const doCall = async (token) =>
+        fetch(`${CONTENT}/files/download`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Dropbox-API-Arg': JSON.stringify({ path }) },
+        });
+      let res = await doCall(await getToken(env));
+      if (res.status === 401) res = await doCall(await getToken(env, true));
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`dropbox files/download ${res.status}: ${text}`);
+      }
+      return res.text();
+    },
+
     async getMetadata(path, { withPropertyGroups = false, includeMediaInfo = false } = {}) {
       const arg = { path };
       if (withPropertyGroups && TEMPLATE_ID) {

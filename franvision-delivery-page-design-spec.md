@@ -38,7 +38,9 @@ This spec describes the page **as it should be rebuilt in custom code** (not on 
 
 ## Future automation goal (not yet scoped)
 
-Item 4 (Floor Tour / 3D Tour) and item 7 (neighborhood report / Local Report) are all third-party-produced outputs that today require a human to paste a link or content into the Job's record. Longer-term intent: fetch these automatically and write them into the Job's data, the same shape as [[franvision-photo-sync-worker]]'s Dropbox→Supabase pull. Two possible mechanisms, not yet decided between:
+**Item 4 (Floor Tour / 3D Tour) is now solved (2026-09-16), just not via an admin API call as originally assumed above.** A human drops one `Tour Link.txt` file (plain text, just the URL) directly at the job folder's root in Dropbox — no subfolder, no per-provider distinction (both render identically, see delivery-page/CLAUDE.md). [[franvision-photo-sync-worker]]'s `tour-link-sync.js` picks it up the same way it picks up photos, writes `tourUrl` into the Job's Supabase record. Rejected adding a form field to Job Generator for this instead: by the time a delivery page is being assembled, staff aren't in Job Generator's workflow anymore, so a field there doesn't match how the link actually gets entered — same reasoning that already ruled out a picker UI for Cover/Closing/Callout.
+
+Item 7 (neighborhood report / Local Report) remains a third-party-produced output that today requires a human to save a screenshot into the Job's record — still not automated. Longer-term intent: fetch it automatically and write it into the Job's data, the same shape as [[franvision-photo-sync-worker]]'s Dropbox→Supabase pull. Two possible mechanisms, not yet decided between:
 - **A provider API**, if one exists (preferred where available — see item 7's note above on HoodQ specifically).
 - **Browser automation as a fallback for providers with no API**: visit the provider's site, enter the Job's address, capture a screenshot, save it into the Job's `Local Report` folder in Dropbox — i.e. automate the exact manual steps a staff member does today for HoodQ, rather than a human doing it by hand each time.
 

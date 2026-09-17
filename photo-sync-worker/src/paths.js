@@ -125,6 +125,17 @@ export function isVideoSyncCandidate(pathDisplay, { root, videoSyncFolders }) {
   return isVideoFile(parsed.filename);
 }
 
+// Does this file path point at the one well-known Tour Link text file,
+// directly at a job folder's root (depth 2 -- NOT nested in any sub-folder,
+// unlike SYNC_FOLDERS/VIDEO_SYNC_FOLDERS content). One file, one link, no
+// per-provider (Floor Tour vs 3D Tour) distinction -- both render identically
+// on delivery-page, so there's nothing for a filename/type field to encode.
+export function isTourLinkCandidate(pathDisplay, { root, tourLinkFilename }) {
+  const parsed = parseJobPath(pathDisplay, root);
+  if (!parsed || parsed.depth !== 2) return false;
+  return parsed.filename.toLowerCase() === String(tourLinkFilename || '').toLowerCase();
+}
+
 // Best-effort reverse of job-generator's sanitize.js#buildJobFolderName():
 // "YYYY.M.D Address_Client" -> "Address". Interim measure so delivery-page
 // has an address to show without job-generator pushing job.json data to
