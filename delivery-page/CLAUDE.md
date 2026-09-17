@@ -38,6 +38,19 @@ npx wrangler deploy
 # different Supabase project.
 ```
 
+### Custom domain: `real.gta3d.ca` (confirmed plan 2026-09-16/17, not yet executed)
+
+The live page is meant to be reachable at `real.gta3d.ca`, not the raw `*.workers.dev` URL. **`gta3d.ca` is a domain the studio already owns**, but its DNS is fully delegated to Wix (nameservers `ns2/ns3.wixdns.net` — confirmed via CIRA WHOIS and by logging into the Wix dashboard directly), and `gta3d.ca` is **not** added as a zone in this Cloudflare account. That combination means a plain CNAME from Wix's DNS to this Worker's `*.workers.dev` hostname will NOT get a valid HTTPS certificate — Cloudflare only issues a matching cert for a custom hostname when it actually controls that DNS zone.
+
+**Decided approach: delegate ONLY the `real.gta3d.ca` subdomain to Cloudflare via NS records — do not touch the rest of `gta3d.ca`.** Rejected alternatives: moving the whole `gta3d.ca` zone to Cloudflare (too much blast radius — Wix's own site, Zenfolio's `realimage(s).gta3d.ca` delivery pages, a large number of legacy per-listing subdomains, and MX/email all live on that zone today) and Cloudflare for SaaS / Custom Hostnames (unnecessary complexity/cost for one subdomain — that product targets multi-tenant SaaS, not this case).
+
+Steps to execute when ready to go live:
+1. In the Cloudflare dashboard, add `real.gta3d.ca` as its own zone (Cloudflare supports adding a subdomain as a zone, not just a root domain) — this gives it its own assigned nameservers.
+2. In Wix's DNS panel (Wix Studio account → 網域 → `gta3d.ca` → 管理 DNS 記錄 → NS section), add NS records for the `real` label pointing at those Cloudflare-assigned nameservers. This delegates only `real.gta3d.ca`; every other record on `gta3d.ca` is untouched.
+3. Once that zone is active on Cloudflare (propagation can take a few hours), add `real.gta3d.ca` as a Custom Domain on the `franvision-delivery-page` Worker in the Cloudflare dashboard (Workers & Pages → franvision-delivery-page → Domains → Add Domain) — this is the same flow Cloudflare uses for any domain it owns outright, since it now genuinely owns this one subdomain.
+
+**Feature Sheet Builder is NOT a usable template for this** — checked directly (2026-09-16): the `franvision` Worker (FSB) has no Cloudflare Custom Domain bound at all today; it's only reachable via `franvision.frankystudio-6f3.workers.dev`. Whatever fronts FSB with a friendlier URL (if anything), it isn't a Cloudflare Custom Domain/Route, so don't go looking for one to copy.
+
 **Not yet deployed to production as of 2026-09-15**, but **local end-to-end verified against real data the same day**: created a real test Job (`FVS-20260915-001`) via job-generator, uploaded real HDR/Floorplan/Local Report photos + a video, confirmed photo-sync-worker synced them into Supabase, ran `wrangler dev` here with real `.dev.vars`, set `address` via `POST /admin/jobs/<jobId>`, and viewed `/delivery/FVS-20260915-001` in an actual browser. All data-backed sections rendered correctly: hero photo + Arima Madurai address overlay, Cloudflare Stream video iframe, full gallery slider, the Local Report image (real HoodQ screenshot) in the neighborhood section, closing photo, and the Google Maps embed (correctly geocoded a real address; the fake test address predictably landed on an unrelated nearby result — expected, not a bug). Tour section correctly stayed hidden (no `tourUrl` set for this test job). Test job left in place (not cleaned up — reusable for future local testing, unlike the disposable test jobs used elsewhere in this project).
 
 ## Architecture
