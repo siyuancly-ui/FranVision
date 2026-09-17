@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { runDelta, processPhotoBatch, runBackfill } from '../src/sync.js';
+import { runDelta, processPhotoBatch, runBackfill, processRenderRetryPoll, MAX_RENDER_RETRY_ATTEMPTS } from '../src/sync.js';
 
 const ENV = {
   DROPBOX_JOBS_ROOT: '',
@@ -61,7 +61,7 @@ function makeDbx(over = {}) {
 }
 
 function makeSb(over = {}) {
-  const calls = { thumbs: [], larges: [], rpc: [], patch: [], lease: 0, release: 0 };
+  const calls = { thumbs: [], larges: [], rpc: [], patch: [], lease: 0, release: 0, pendingInserts: [] };
   return {
     calls,
     async uploadThumb(jobId, photoId, bytes) {
@@ -87,6 +87,14 @@ function makeSb(over = {}) {
     async releaseLease() {
       calls.release++;
     },
+    async insertPendingRender(args) {
+      calls.pendingInserts.push(args);
+    },
+    async listPendingRenders() {
+      return [];
+    },
+    async updatePendingRender() {},
+    async deletePendingRender() {},
     ...over,
   };
 }
@@ -214,6 +222,9 @@ test('processPhotoBatch: a failing large render does not block the small thumb o
   const res = await processPhotoBatch(ENV, { dbx, sb, now: () => 'T' }, { jobId: 'FV-1', jobFolderPath: '/JobA', items: [item] });
   assert.equal(res.ok, 1);
   assert.equal(sb.calls.thumbs.length, 1); // the small thumb still uploaded fine
+  assert.equal(sb.calls.pendingInserts.length, 1); // queued for retry, not silently dropped
+  assert.equal(sb.calls.pendingInserts[0].kind, 'large');
+  assert.equal(sb.calls.pendingInserts[0].sourcePath, '/JobA/Local Report/report.jpg');
 });
 
 test('processPhotoBatch: delivery copy falls back to get_thumbnail_v2 when the batch entry fails', async () => {
@@ -252,6 +263,9 @@ test('processPhotoBatch: delivery-copy failure does not fail the photo', async (
   });
   assert.equal(res.ok, 1); // Gallery record still saved
   assert.equal(dbx.calls.uploads.length, 0); // no delivery copy written
+  assert.equal(sb.calls.pendingInserts.length, 1); // queued for retry, not silently dropped
+  assert.equal(sb.calls.pendingInserts[0].kind, 'download_copy');
+  assert.equal(sb.calls.pendingInserts[0].destPath, '/JobA/MLS for download/a.jpg');
 });
 
 test('processPhotoBatch: only successful photos get a delivery copy', async () => {
@@ -553,4 +567,101 @@ test('runBackfill(jobId): a failed id-resolution falls back to the (possibly sta
   const sb = makeSb();
   const res = await runBackfill(ENV, { dbx, sb, enqueue: () => {} }, { jobId: 'FV-1' });
   assert.equal(res.scope, 'FV-1');
+});
+
+// ---------------------------------------------------------------------------
+// processRenderRetryPoll
+// ---------------------------------------------------------------------------
+
+function pendingRow(over = {}) {
+  return {
+    id: 1, project_id: 'FV-1', kind: 'download_copy',
+    source_path: '/JobA/MLS/a.jpg', dest_path: '/JobA/MLS for download/a.jpg',
+    photo_id: null, filename: 'a.jpg', attempts: 0, last_error: null,
+    ...over,
+  };
+}
+
+test('processRenderRetryPoll: a successful download_copy retry uploads + deletes the pending row', async () => {
+  const dbx = makeDbx();
+  const deleted = [];
+  const sb = makeSb({
+    async listPendingRenders() { return [pendingRow()]; },
+    async deletePendingRender(id) { deleted.push(id); },
+  });
+  const res = await processRenderRetryPoll(ENV, { dbx, sb });
+  assert.equal(res.succeeded, 1);
+  assert.equal(dbx.calls.uploads[0].path, '/JobA/MLS for download/a.jpg');
+  assert.deepEqual(deleted, [1]);
+});
+
+test('processRenderRetryPoll: a successful large retry uploads + upserts hasLarge + deletes the pending row', async () => {
+  const dbx = makeDbx();
+  const deleted = [];
+  const sb = makeSb({
+    async listPendingRenders() {
+      return [pendingRow({ kind: 'large', dest_path: null, photo_id: 'pid-1' })];
+    },
+    async deletePendingRender(id) { deleted.push(id); },
+  });
+  const res = await processRenderRetryPoll(ENV, { dbx, sb });
+  assert.equal(res.succeeded, 1);
+  assert.equal(sb.calls.larges[0].photoId, 'pid-1');
+  assert.ok(sb.calls.rpc.some((c) => c.fn === 'photos_upsert' && c.args.p_photo.hasLarge === true));
+  assert.deepEqual(deleted, [1]);
+});
+
+test('processRenderRetryPoll: a failed retry increments attempts and records the error, without deleting the row', async () => {
+  const dbx = makeDbx({ async getThumbnailV2() { throw new Error('still down'); } });
+  const updates = [];
+  const deleted = [];
+  const sb = makeSb({
+    async listPendingRenders() { return [pendingRow({ attempts: 2 })]; },
+    async updatePendingRender(id, fields) { updates.push({ id, fields }); },
+    async deletePendingRender(id) { deleted.push(id); },
+  });
+  const res = await processRenderRetryPoll(ENV, { dbx, sb });
+  assert.equal(res.failed, 1);
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].fields.attempts, 3);
+  assert.equal(updates[0].fields.last_error, 'still down');
+  assert.deepEqual(deleted, []);
+});
+
+test('processRenderRetryPoll: a row past MAX_RENDER_RETRY_ATTEMPTS is abandoned (deleted, not retried forever)', async () => {
+  const dbx = makeDbx({ async getThumbnailV2() { throw new Error('gone'); } });
+  const deleted = [];
+  const updates = [];
+  const sb = makeSb({
+    async listPendingRenders() { return [pendingRow({ attempts: MAX_RENDER_RETRY_ATTEMPTS - 1 })]; },
+    async updatePendingRender(id, fields) { updates.push({ id, fields }); },
+    async deletePendingRender(id) { deleted.push(id); },
+  });
+  const res = await processRenderRetryPoll(ENV, { dbx, sb });
+  assert.equal(res.abandoned, 1);
+  assert.deepEqual(deleted, [1]);
+  assert.deepEqual(updates, []); // abandoned, not left pending for another attempt
+});
+
+test('processRenderRetryPoll: one bad row does not block the rest', async () => {
+  const dbx = makeDbx({
+    async getThumbnailV2(path, size) {
+      if (path === '/JobA/MLS/bad.jpg') throw new Error('bad file');
+      return base64ToBytesLocal(fakeThumb(path, size));
+    },
+  });
+  const deleted = [];
+  const sb = makeSb({
+    async listPendingRenders() {
+      return [
+        pendingRow({ id: 1, source_path: '/JobA/MLS/bad.jpg', dest_path: '/JobA/MLS for download/bad.jpg' }),
+        pendingRow({ id: 2, source_path: '/JobA/MLS/a.jpg', dest_path: '/JobA/MLS for download/a.jpg' }),
+      ];
+    },
+    async deletePendingRender(id) { deleted.push(id); },
+  });
+  const res = await processRenderRetryPoll(ENV, { dbx, sb });
+  assert.equal(res.succeeded, 1);
+  assert.equal(res.failed, 1);
+  assert.deepEqual(deleted, [2]); // only the good one got cleaned up
 });

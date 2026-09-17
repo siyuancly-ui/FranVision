@@ -384,7 +384,15 @@ export async function processPhotoBatch(env, deps, msg) {
         }
         await dbx.filesUpload(dest, bytes);
       } catch (err) {
-        log({ evt: 'download_copy_failed', jobId, path: dest, error: String(err && err.message || err) });
+        const message = String(err && err.message || err);
+        log({ evt: 'download_copy_failed', jobId, path: dest, error: message });
+        try {
+          await sb.insertPendingRender({
+            projectId: jobId, kind: 'download_copy', sourcePath: item.path, destPath: dest, filename: item.filename, error: message,
+          });
+        } catch (pendingErr) {
+          log({ evt: 'render_pending_insert_failed', jobId, path: dest, error: String(pendingErr && pendingErr.message || pendingErr) });
+        }
       }
     }
   }
@@ -408,6 +416,7 @@ export async function processPhotoBatch(env, deps, msg) {
     for (let k = 0; k < part.length; k++) {
       const item = part[k];
       const lr = lresults[k] || {};
+      const pid = await photoId(jobId, item.relPathFromJob);
       try {
         let bytes;
         if (lr['.tag'] === 'success' && lr.thumbnail) {
@@ -416,11 +425,18 @@ export async function processPhotoBatch(env, deps, msg) {
           // batch entry failed (or whole batch errored) -> single fallback
           bytes = await dbx.getThumbnailV2(item.path, cfg.downloadThumbSize);
         }
-        const pid = await photoId(jobId, item.relPathFromJob);
         await sb.uploadLarge(jobId, pid, bytes);
         await sb.rpc('photos_upsert', { p_project_id: jobId, p_photo: { photoId: pid, hasLarge: true } });
       } catch (err) {
-        log({ evt: 'large_render_failed', jobId, path: item.path, error: String(err && err.message || err) });
+        const message = String(err && err.message || err);
+        log({ evt: 'large_render_failed', jobId, path: item.path, error: message });
+        try {
+          await sb.insertPendingRender({
+            projectId: jobId, kind: 'large', sourcePath: item.path, photoId: pid, filename: item.filename, error: message,
+          });
+        } catch (pendingErr) {
+          log({ evt: 'render_pending_insert_failed', jobId, path: item.path, error: String(pendingErr && pendingErr.message || pendingErr) });
+        }
       }
     }
   }
@@ -521,4 +537,56 @@ export async function runBackfill(env, deps, { jobId: onlyJobId } = {}) {
     videoFiles: videoClassified.length, videoJobs: videoGroups.size, videoDispatched,
   });
   return { scope: onlyJobId || 'all', files: classified.length, jobs: groups.size, dispatched, videoFiles: videoClassified.length, videoDispatched };
+}
+
+// A row that has failed this many times is abandoned (deleted, logged) rather
+// than retried forever -- a persistently-failing render (e.g. the source
+// photo was deleted from Dropbox in the meantime) shouldn't retry every 2
+// minutes indefinitely. At one retry per cron tick this is ~40 min of retries.
+export const MAX_RENDER_RETRY_ATTEMPTS = 20;
+
+// ---------------------------------------------------------------------------
+// processRenderRetryPoll -- retry every pending delivery-copy/large render
+// (see photo_render_pending in schema.sql) on the same 2-min cron as the
+// video poll. Mirrors processVideoPoll's shape: read the pending rows, retry
+// each independently, one bad row never blocks the rest.
+// ---------------------------------------------------------------------------
+export async function processRenderRetryPoll(env, deps) {
+  const cfg = readConfig(env);
+  const { dbx, sb } = deps;
+
+  const pending = await sb.listPendingRenders();
+  let succeeded = 0;
+  let failed = 0;
+  let abandoned = 0;
+
+  for (const row of pending) {
+    try {
+      const bytes = await dbx.getThumbnailV2(row.source_path, cfg.downloadThumbSize);
+      if (row.kind === 'download_copy') {
+        await dbx.filesUpload(row.dest_path, bytes);
+      } else {
+        await sb.uploadLarge(row.project_id, row.photo_id, bytes);
+        await sb.rpc('photos_upsert', { p_project_id: row.project_id, p_photo: { photoId: row.photo_id, hasLarge: true } });
+      }
+      await sb.deletePendingRender(row.id);
+      succeeded++;
+      log({ evt: 'render_retry_succeeded', jobId: row.project_id, kind: row.kind, path: row.source_path, attempts: (row.attempts || 0) + 1 });
+    } catch (err) {
+      const attempts = (row.attempts || 0) + 1;
+      const message = String(err && err.message || err);
+      if (attempts >= MAX_RENDER_RETRY_ATTEMPTS) {
+        await sb.deletePendingRender(row.id);
+        abandoned++;
+        log({ evt: 'render_retry_abandoned', jobId: row.project_id, kind: row.kind, path: row.source_path, attempts, error: message });
+      } else {
+        await sb.updatePendingRender(row.id, { attempts, last_error: message });
+        failed++;
+        log({ evt: 'render_retry_failed', jobId: row.project_id, kind: row.kind, path: row.source_path, attempts, error: message });
+      }
+    }
+  }
+
+  log({ evt: 'render_retry_poll_done', total: pending.length, succeeded, failed, abandoned });
+  return { total: pending.length, succeeded, failed, abandoned };
 }

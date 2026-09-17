@@ -128,5 +128,52 @@ export function createSupabase(env) {
       const videos = (row && row.data && row.data.videos) || [];
       return videos.find((v) => v.videoId === videoId) || null;
     },
+
+    // One row per delivery-copy/large-render that failed and needs periodic
+    // retry (see photo_render_pending in schema.sql). merge-duplicates on the
+    // (project_id, kind, source_path) unique key -- a photo that fails twice
+    // before the next poll just keeps one row rather than piling up.
+    async insertPendingRender({ projectId, kind, sourcePath, destPath, photoId: pid, filename, error }) {
+      const res = await fetch(`${BASE}/rest/v1/photo_render_pending`, {
+        method: 'POST',
+        headers: {
+          ...authHeaders,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal,resolution=merge-duplicates',
+        },
+        body: JSON.stringify({
+          project_id: projectId,
+          kind,
+          source_path: sourcePath,
+          dest_path: destPath || null,
+          photo_id: pid || null,
+          filename: filename || null,
+          last_error: error || null,
+        }),
+      });
+      return readJson(res);
+    },
+
+    async listPendingRenders() {
+      const res = await fetch(`${BASE}/rest/v1/photo_render_pending?select=*`, { headers: authHeaders });
+      return (await readJson(res)) || [];
+    },
+
+    async updatePendingRender(id, fields) {
+      const res = await fetch(`${BASE}/rest/v1/photo_render_pending?id=eq.${id}`, {
+        method: 'PATCH',
+        headers: { ...authHeaders, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ ...fields, updated_at: new Date().toISOString() }),
+      });
+      return readJson(res);
+    },
+
+    async deletePendingRender(id) {
+      const res = await fetch(`${BASE}/rest/v1/photo_render_pending?id=eq.${id}`, {
+        method: 'DELETE',
+        headers: { ...authHeaders, Prefer: 'return=minimal' },
+      });
+      return readJson(res);
+    },
   };
 }
