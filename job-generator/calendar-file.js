@@ -159,9 +159,72 @@ function formatUtcStamp(date) {
     pad2(date.getUTCHours()) + pad2(date.getUTCMinutes()) + pad2(date.getUTCSeconds()) + 'Z';
 }
 
+// ---- Calendar event title (SUMMARY), 2026-09-16 -- encodes the ordered
+// service package + client name + photographer abbreviation, e.g.
+// "HDR P+V+D_Paul_jo" for Luxury Photos + Walkthrough Video + Drone,
+// client Paul, shot by Johnson. Replaces the old "Photo Shoot -- <client>"
+// title. Code order is fixed (confirmed with the user 2026-09-16, matches
+// how services are normally listed): photography, video, drone, 3D tour,
+// floor plan, feature sheets -- a service not ordered is skipped
+// entirely rather than leaving an empty "+" gap.
+const PACKAGE_CODES = {
+  photographyStandard: 'P',
+  photographyLuxury: 'HDR P',
+  walkthroughVideo: 'V',
+  vlogVideo: 'Vlog',
+  drone: 'D',
+  threeDTour: '3D',
+  floorplan: 'fl',
+  featureSheets: 'FS',
+};
+
+// Fixed abbreviations for the studio's regular photographers (matched
+// case-insensitively against the free-typed Photographer Name field).
+// Anyone else gets their name's first two letters instead (e.g. "Mike"
+// -> "Mi") so a new/guest photographer's job still gets a sensible,
+// distinct title rather than a silently-dropped or generic one.
+const KNOWN_PHOTOGRAPHER_CODES = {
+  franky: 'F',
+  johnson: 'jo',
+  jason: 'j',
+  elsa: 'E',
+};
+// Photographer Name is optional (job-generator/CLAUDE.md) -- a blank one
+// gets this literal placeholder rather than omitting the segment, so the
+// title's shape ("package_client_photographer") stays consistent and a
+// blank credit doesn't read as a formatting glitch.
+const UNKNOWN_PHOTOGRAPHER_PLACEHOLDER = '？';
+
+function photographerCode(photographerName) {
+  const trimmed = String(photographerName || '').trim();
+  if (!trimmed) return UNKNOWN_PHOTOGRAPHER_PLACEHOLDER;
+  const known = KNOWN_PHOTOGRAPHER_CODES[trimmed.toLowerCase()];
+  if (known) return known;
+  const first2 = trimmed.slice(0, 2);
+  return first2.length < 2 ? first2.toUpperCase() : first2[0].toUpperCase() + first2[1].toLowerCase();
+}
+
+function buildPackageCode(order) {
+  const addons = (order && order.addons) || {};
+  const codes = [(order && order.photography === 'luxury') ? PACKAGE_CODES.photographyLuxury : PACKAGE_CODES.photographyStandard];
+  // Walkthrough and Vlog Video are never ordered together on one job --
+  // same assumption delivery-email.js's getDeliverableLines() makes.
+  if (addons.walkthrough_video) codes.push(PACKAGE_CODES.walkthroughVideo);
+  else if (addons.vlog_video) codes.push(PACKAGE_CODES.vlogVideo);
+  if (addons.drone_photos) codes.push(PACKAGE_CODES.drone);
+  if (addons.three_d_tour) codes.push(PACKAGE_CODES.threeDTour);
+  if (addons.floor_plan || addons.site_plan) codes.push(PACKAGE_CODES.floorplan);
+  if (addons.feature_sheets) codes.push(PACKAGE_CODES.featureSheets);
+  return codes.join('+');
+}
+
+function buildEventTitle({ order, clientName, photographerName }) {
+  return buildPackageCode(order) + '_' + (clientName || '') + '_' + photographerCode(photographerName);
+}
+
 // `images` is [{ filename, dataBase64 }] -- each becomes a base64 ATTACH
 // on the VEVENT. DESCRIPTION carries just the notes text.
-function buildIcs({ jobId, clientName, address, shootDate, shootTime, notes, images, durationMinutes }) {
+function buildIcs({ jobId, clientName, address, shootDate, shootTime, notes, images, durationMinutes, order, photographerName }) {
   const startDt = parseLocalShootDateTime(shootDate, shootTime);
   // Real elapsed-time addition (not wall-clock field arithmetic) -- exact
   // regardless of any DST transition inside the shoot window.
@@ -177,7 +240,7 @@ function buildIcs({ jobId, clientName, address, shootDate, shootTime, notes, ima
     'DTSTAMP:' + formatUtcStamp(new Date()),
     'DTSTART:' + formatUtcStamp(startDt),
     'DTEND:' + formatUtcStamp(endDt),
-    'SUMMARY:' + icsEscape('Photo Shoot -- ' + clientName),
+    'SUMMARY:' + icsEscape(buildEventTitle({ order, clientName, photographerName })),
     'LOCATION:' + icsEscape(address),
   ];
   if (notes && String(notes).trim()) {
@@ -204,7 +267,7 @@ function buildIcs({ jobId, clientName, address, shootDate, shootTime, notes, ima
 // Date (needed for DTSTART -- a caller like draft-store.js may keep Shoot
 // Date blank on purpose but can't ask for a calendar file without one),
 // or invalid image(s). Also removes any legacy "Shoot Info" subfolder.
-function writeCalendarFile(jobFolderAbsolutePath, { jobId, clientName, address, shootDate, shootTime, notes, images, durationMinutes }) {
+function writeCalendarFile(jobFolderAbsolutePath, { jobId, clientName, address, shootDate, shootTime, notes, images, durationMinutes, order, photographerName }) {
   if (!shootTime || !String(shootTime).trim()) return null;
   if (!validate.isValidShootTime(shootTime)) {
     throw new Error('Shoot Time must be in HH:MM 24-hour format.');
@@ -237,7 +300,7 @@ function writeCalendarFile(jobFolderAbsolutePath, { jobId, clientName, address, 
     return { filename: candidate, dataBase64: img.dataBase64 };
   });
 
-  const icsContent = buildIcs({ jobId, clientName, address, shootDate, shootTime, notes, images: normImages, durationMinutes });
+  const icsContent = buildIcs({ jobId, clientName, address, shootDate, shootTime, notes, images: normImages, durationMinutes, order, photographerName });
   const icsPath = path.join(jobFolderAbsolutePath, ICS_FILENAME);
   fs.writeFileSync(icsPath, icsContent, 'utf8');
 
@@ -303,4 +366,7 @@ module.exports = {
   writeCalendarFile,
   readExistingImages,
   mergeImages,
+  buildEventTitle,
+  buildPackageCode,
+  photographerCode,
 };

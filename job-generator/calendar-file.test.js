@@ -14,6 +14,7 @@ const path = require('path');
 const os = require('os');
 const {
   validateImages, writeCalendarFile, buildIcs, readExistingImages, mergeImages,
+  buildEventTitle, buildPackageCode, photographerCode,
   LEGACY_FOLDER_NAME, ICS_FILENAME, DEFAULT_DURATION_MINUTES, MAX_IMAGES, MAX_IMAGE_BYTES, MAX_TOTAL_BYTES,
 } = require('./calendar-file.js');
 
@@ -105,10 +106,70 @@ test('buildIcs: DTEND rolls over midnight correctly (in UTC too)', () => {
   assert.ok(ics.includes('DTEND:20260911T051500Z'));   // +2h -> 05:15 UTC Sep 11
 });
 
-test('buildIcs: includes client name in SUMMARY and address in LOCATION', () => {
-  const ics = buildIcs(BASE_JOB);
-  assert.ok(ics.includes('SUMMARY:Photo Shoot -- Jane Doe'));
+test('buildIcs: SUMMARY is the package/client/photographer title, LOCATION is the address', () => {
+  const ics = buildIcs(Object.assign({}, BASE_JOB, { order: { photography: 'luxury', addons: { walkthrough_video: true, drone_photos: true } }, photographerName: 'Johnson' }));
+  assert.ok(ics.includes('SUMMARY:HDR P+V+D_Jane Doe_jo'));
   assert.ok(ics.includes('LOCATION:123 Main St'));
+});
+
+test('buildIcs: with no order/photographerName given, SUMMARY falls back to plain "P" and the unknown-photographer placeholder', () => {
+  const ics = buildIcs(BASE_JOB);
+  assert.ok(ics.includes('SUMMARY:P_Jane Doe_？'));
+});
+
+// ---- buildPackageCode / photographerCode / buildEventTitle (2026-09-16
+// calendar title naming rule, e.g. "HDR P+V+D_Paul_jo") ----
+
+test('buildPackageCode: standard photography alone is just "P"', () => {
+  assert.strictEqual(buildPackageCode({ photography: 'standard', addons: {} }), 'P');
+});
+
+test('buildPackageCode: luxury photography alone is "HDR P"', () => {
+  assert.strictEqual(buildPackageCode({ photography: 'luxury', addons: {} }), 'HDR P');
+});
+
+test('buildPackageCode: the user\'s own example -- luxury + walkthrough video + drone', () => {
+  assert.strictEqual(buildPackageCode({ photography: 'luxury', addons: { walkthrough_video: true, drone_photos: true } }), 'HDR P+V+D');
+});
+
+test('buildPackageCode: vlog video uses "Vlog", never combined with walkthrough\'s "V"', () => {
+  assert.strictEqual(buildPackageCode({ photography: 'luxury', addons: { vlog_video: true } }), 'HDR P+Vlog');
+});
+
+test('buildPackageCode: fixed code order regardless of the addons object\'s key order -- video, drone, 3D, floorplan, feature sheets', () => {
+  const order = { photography: 'standard', addons: { feature_sheets: true, floor_plan: true, three_d_tour: true, drone_photos: true, walkthrough_video: true } };
+  assert.strictEqual(buildPackageCode(order), 'P+V+D+3D+fl+FS');
+});
+
+test('buildPackageCode: site_plan also triggers the "fl" code (shares Floor Plan\'s slot)', () => {
+  assert.strictEqual(buildPackageCode({ photography: 'standard', addons: { site_plan: true } }), 'P+fl');
+});
+
+test('buildPackageCode: an addon that is not in the naming rule (e.g. virtual_staging) contributes no code', () => {
+  assert.strictEqual(buildPackageCode({ photography: 'standard', addons: { virtual_staging: true } }), 'P');
+});
+
+test('photographerCode: known photographers use their fixed abbreviation, case-insensitively', () => {
+  assert.strictEqual(photographerCode('Franky'), 'F');
+  assert.strictEqual(photographerCode('johnson'), 'jo');
+  assert.strictEqual(photographerCode('JASON'), 'j');
+  assert.strictEqual(photographerCode('elsa'), 'E');
+});
+
+test('photographerCode: an unrecognized name uses its first two letters, capitalized like "Mi"', () => {
+  assert.strictEqual(photographerCode('Mike'), 'Mi');
+  assert.strictEqual(photographerCode('mike'), 'Mi');
+});
+
+test('photographerCode: a blank/missing name is the "？" placeholder, not an omitted segment', () => {
+  assert.strictEqual(photographerCode(''), '？');
+  assert.strictEqual(photographerCode('   '), '？');
+  assert.strictEqual(photographerCode(undefined), '？');
+});
+
+test('buildEventTitle: assembles "package_client_photographer" -- the user\'s own example', () => {
+  const title = buildEventTitle({ order: { photography: 'luxury', addons: { walkthrough_video: true, drone_photos: true } }, clientName: 'Paul', photographerName: 'Johnson' });
+  assert.strictEqual(title, 'HDR P+V+D_Paul_jo');
 });
 
 test('buildIcs: includes notes text in DESCRIPTION', () => {
@@ -189,7 +250,7 @@ test('writeCalendarFile: writes Shoot Schedule.ics at the job-folder root (no Sh
     assert.strictEqual(result.icsFilename, ICS_FILENAME);
     assert.ok(fs.existsSync(path.join(dir, ICS_FILENAME)));
     assert.ok(!fs.existsSync(path.join(dir, LEGACY_FOLDER_NAME)));
-    assert.ok(fs.readFileSync(path.join(dir, ICS_FILENAME), 'utf8').includes('SUMMARY:Photo Shoot -- Jane Doe'));
+    assert.ok(fs.readFileSync(path.join(dir, ICS_FILENAME), 'utf8').includes('SUMMARY:P_Jane Doe_？'));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
