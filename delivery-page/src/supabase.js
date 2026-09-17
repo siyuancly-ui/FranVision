@@ -28,13 +28,18 @@ export function createSupabase(env) {
       return Array.isArray(rows) ? rows[0] || null : rows;
     },
 
-    // Every projects row (id, data, updated_at), newest-updated first -- the
-    // admin directory's one query (see src/admin.js). Same shared table
-    // Feature Sheet Builder's own admin view lists from; a Job's presence
-    // here doesn't imply it has photos/a tour link/anything specific, same
-    // as FSB's admin doesn't filter to "real feature sheets" either.
+    // Every Job's projects row (id, data, updated_at), newest-updated first
+    // -- the admin directory's one query (see src/admin.js). `projects` is
+    // shared with Feature Sheet Builder, whose own projects today use a
+    // random hex id (its `templateSystem`/`agentInfo`/`confirmed` shape, not
+    // a Job at all) -- filtered out by `id=like.FVS-*` so they don't clutter
+    // a directory of delivery pages. Job Generator's jobIds are always
+    // "FVS-YYYYMMDD-NNN" (id-generator.js), so this is a safe, permanent
+    // filter, not a today-only workaround: once FSB's own projects move onto
+    // the same shared jobId scheme (planned, not yet done), they'll already
+    // satisfy this filter and start appearing here with no code change.
     async listProjects() {
-      const res = await fetch(`${BASE}/rest/v1/projects?select=id,data,updated_at&order=updated_at.desc`, {
+      const res = await fetch(`${BASE}/rest/v1/projects?id=like.FVS-*&select=id,data,updated_at&order=updated_at.desc`, {
         headers: authHeaders,
       });
       return (await readJson(res)) || [];
