@@ -73,6 +73,51 @@ function getNextJobId(jobRootFolder, date) {
   return buildJobId(date, sequence);
 }
 
+// Async wrapper around getNextJobId() that additionally guards against a
+// CROSS-MACHINE collision -- the local scan above only sees IDs used on
+// THIS machine's Job Root Folder, but Job Generator can run independently
+// on more than one machine at once (e.g. a local test copy on one machine
+// alongside Franky's own separate install) with no shared local
+// filesystem between them. Real incident (2026-09-15): a test job and a
+// real job, created the same day on two different machines, both
+// independently computed "FVS-20260915-001" and collided on Dropbox,
+// merging their synced photo data into one Supabase record. See root
+// CLAUDE.md / franvision-job-generator memory for the full story.
+//
+// `checkFn(candidateId)` should resolve `{checked, exists}` against the
+// one thing genuinely shared across machines -- Dropbox's jobId property
+// tags, via dropbox-sync.js#jobIdExistsOnDropbox -- and is injected so
+// this stays testable without touching Dropbox. This is a BEST-EFFORT
+// guard, not a hard guarantee: if checkFn can't check at all (Dropbox not
+// configured, unreachable, etc. -- checkFn resolves `checked:false`, or
+// throws), the loop stops and the local-only candidate is used as-is --
+// job creation must never block on Dropbox reachability. The real fix is
+// moving ID assignment to a shared backend once job-generator is online
+// (see the architecture pivot docs); this is an interim mitigation.
+async function getNextJobIdChecked(jobRootFolder, date, checkFn) {
+  date = date || new Date();
+  let candidate = getNextJobId(jobRootFolder, date);
+  if (typeof checkFn !== 'function') return candidate;
+
+  const dateStamp = formatDateStamp(date);
+  const prefix = 'FVS-' + dateStamp + '-';
+  const MAX_ATTEMPTS = 50; // sanity cap -- never loop forever on a weird checkFn
+
+  for (let i = 0; i < MAX_ATTEMPTS; i++) {
+    let result;
+    try {
+      result = await checkFn(candidate);
+    } catch (err) {
+      break; // checkFn is expected not to throw, but never block on it if it does
+    }
+    if (!result || !result.checked || !result.exists) break;
+
+    const seq = parseInt(candidate.slice(prefix.length), 10) || 0;
+    candidate = buildJobId(date, seq + 1);
+  }
+  return candidate;
+}
+
 // Looks for an already-created job at <jobRootFolder>/<folderName> (the
 // canonical name buildJobFolderName() produces from Shoot Date + Address
 // + Client Name). This is how "clicking Create Job again for the same
@@ -135,5 +180,6 @@ module.exports = {
   nextSequenceFromExistingIds,
   collectExistingJobIds,
   getNextJobId,
+  getNextJobIdChecked,
   findExistingJob,
 };

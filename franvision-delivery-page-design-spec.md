@@ -1,0 +1,49 @@
+# FranVision Delivery Page — Design Spec (reference: Zenfolio "All in One", 77 Mossgrove Tr sample)
+
+Reference sample: https://realimage.gta3d.ca/77-mossgrove-tr-north-york-1 (Zenfolio, FranVision Media)
+
+This spec describes the page **as it should be rebuilt in custom code** (not on Wix Velo), based on a working Zenfolio delivery page Franky already uses and likes. Goal: reproduce the visual result and section set, not the underlying Zenfolio implementation.
+
+## Global style
+
+- Page background: near-white, warm off-white — `rgb(251, 251, 253)` in the header/nav area, shifting to a slightly warmer cream (`~#FAFAF0`–`#FBFBF5` range) in content sections. Confirm exact section-by-section tone against screenshots.
+- Body/UI font: system sans-serif stack (`-apple-system, "system-ui", "Segoe UI", Roboto, ...`) for all body copy, labels, and section headers.
+- **Accent/display font: "Arima Madurai"** (Google Font, cursive/handwritten-style serif) — used specifically for the property address overlay on the hero image. Confirmed via computed style: 24px, white, weight 400, normal letter-spacing. Import this exact font for that one element; don't substitute a generic script font.
+- Section header color coding appears topic-based (e.g., blue for "SCHOOLS", green for "PARKS & REC", purple for "TRANSIT", orange/red for "SAFETY") — treat these as a small fixed palette per section type, not a single accent color.
+- No visible drop shadows/heavy skeuomorphism — flat, editorial, lots of whitespace between sections.
+
+## Section order (top to bottom)
+
+1. **Header/nav** — centered circular logo (FranVision Media camera-mark logo) on transparent/off-white bar.
+   - **Change from sample: remove the account and cart icons entirely** — not needed for this use case (no e-commerce/login on the delivery page).
+2. **Hero** — full-bleed, full-viewport-height property photo (dusk/twilight exterior shot performs well here). Address text ("[Street Address], [City]") overlaid bottom-right in Arima Madurai, white, 24px. Small "Using Zenfolio"-style platform credit in bottom-right corner in the original — drop this (no platform credit needed) or replace with FranVision's own mark if desired.
+3. **Video/drone teaser** — large image/video thumbnail, centered circular play button, duration badge (e.g., "1:05") bottom-right. Clicking plays an embedded video (in the sample this is an aerial drone clip).
+4. **Virtual walkthrough — Floor Tour or 3D Tour, one slot, mutually exclusive.** **Corrected 2026-09-15** (this was originally spec'd as a custom-built interactive floor-plan + photo-carousel component with real hotspot↔photo sync logic — that was based on an incomplete description of the sample; it's actually a third-party platform embed, same shape as the tour item it's merged with below):
+   - **Floor Tour** — a third-party platform Franky already uses on-site. Produces a plain shareable `http(s)://` URL, embedded via `<iframe src="...">`. No custom UI to build.
+   - **3D Tour** — Matterport or CubiCasa, same shape: a shareable tour URL dropped into an iframe (matches the `tourUrl` field already used in the abandoned Wix backend code).
+   - Both get identical visual treatment: same full-width embed frame/padding as the video teaser section, fitted responsively. No per-provider frontend difference — whichever URL the Job has (if either) is what renders in this one slot.
+   - **Floor Tour and 3D Tour are two forms of the same feature, never shown together.** A Job's client purchases one or the other (or neither), not both — this is the sharpest concrete case of the general "sections render per-Job based on purchased services/packages" principle below.
+5. **Full-bleed photo gallery** — horizontal slider, current image full width, faint peeks of previous/next images visible at the left/right edges to hint at swipe/navigation. Circular prev/next arrow buttons at left and right screen edges.
+6. **Annotated aerial photo** — a large aerial/drone still of the neighborhood with **manually placed** callout cards (white rounded-rectangle labels with connector lines, e.g., "Havergal College", "Crescent School") pointing to specific buildings, plus a red pin-drop marker on the subject property.
+   - **Important: this is a static, manually pre-built image asset (e.g., composited in Photoshop/Canva per listing), not a dynamic/interactive map component.** Build it as: one image upload field per listing, already annotated by Franky's team before upload. No need to build annotation/label-placement logic.
+7. **Neighborhood report** (Schools / Parks & Rec / Transit / Safety) — four content blocks, each with a colored section header, icon, short intro paragraph, and a structured list of nearby amenities with distances/walk times.
+   - **Confirmed 2026-09-15: this is the existing "Local Report" folder from the job-generator folder structure, format is always image (never PDF)** — provider is **HoodQ (hoodq.com)**, an address-lookup neighborhood-report tool. Its own report page already has the same four-category structure (Schools / Parks & Rec / Transit / Safety) with a close-to-matching color scheme, which is where the target color coding in this spec's Global Style section comes from. The current process is a **manually cropped screenshot** of just the middle content panel (excludes HoodQ's own sidebar, header, branding, and footer disclaimer) — deliberately, so the report doesn't reveal which third-party tool was used. Because it's already an image, it flows through [[franvision-photo-sync-worker]]'s existing Dropbox-thumbnail-API pipeline into Supabase like any other synced photo (`Local Report` is already in `SYNC_FOLDERS`) — **no PDF handling needed, drop that concern.**
+   - **Future automation note:** if HoodQ (or a similar provider) turns out to have a data/report API for real estate professionals, pulling structured data directly would let the delivery page render the report in FranVision's own styling — which would hide the source platform *better* than today's manual crop, not worse, since there'd be no vendor chrome to crop out in the first place. Worth checking if such an API exists once this section is actually built; not researched yet.
+8. **Closing photo + simple location map** — one more full-bleed property photo, followed by a plain embedded map (looks like a standard Leaflet/Mapbox/Google Maps embed, zoom controls, single pin) with the plain-text address beside it.
+
+## Section visibility is service-driven, not fixed
+
+**Confirmed 2026-09-15, extends [[franvision-delivery-page-roadmap]] decision 6:** don't build one fixed template where every section always renders. Design each section as its own independent component now — but the real page assembles a per-Job subset of these components based on which services/packages that Job's client purchased (e.g., no Floor Tour purchased and no 3D Tour purchased → item 4's slot doesn't render at all, not an empty placeholder). Item 4 (Floor Tour vs. 3D Tour) is the concrete case where the selection logic also has to pick *which one* of two providers fills a single slot, not just whether a slot appears.
+
+## Future automation goal (not yet scoped)
+
+Item 4 (Floor Tour / 3D Tour) and item 7 (neighborhood report / Local Report) are all third-party-produced outputs that today require a human to paste a link or content into the Job's record. Longer-term intent: fetch these automatically and write them into the Job's data, the same shape as [[franvision-photo-sync-worker]]'s Dropbox→Supabase pull. Two possible mechanisms, not yet decided between:
+- **A provider API**, if one exists (preferred where available — see item 7's note above on HoodQ specifically).
+- **Browser automation as a fallback for providers with no API**: visit the provider's site, enter the Job's address, capture a screenshot, save it into the Job's `Local Report` folder in Dropbox — i.e. automate the exact manual steps a staff member does today for HoodQ, rather than a human doing it by hand each time.
+
+Not scoped or prioritized yet; revisit once the shared Supabase schema and the delivery page's data model exist.
+
+## Notes / open items
+
+- Confirm exact hex values for section background tones and the small color-coded header palette (blue/green/purple/orange) by re-inspecting the live sample once more sections are visible in-viewport (some content is lazy-loaded and only renders once scrolled into view, which blocked automated style extraction for those blocks).
+- **Corrected 2026-09-15:** there is no custom interactive logic left in this page — item 4 turned out to be a third-party iframe embed too, same as originally thought only for 3D Tour. What real "logic" remains is (a) which section slots render for a given Job and, for item 4, which of two providers fills that slot — both driven by purchased services/packages — and (b) the neighborhood-data provider integration (item 7), format still unconfirmed with Franky.

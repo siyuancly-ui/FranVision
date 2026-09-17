@@ -15,6 +15,7 @@
 // stripped before the segments above are read.
 
 const WEB_IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'webp']);
+const VIDEO_EXTS = new Set(['mp4', 'mov', 'm4v']);
 
 // "/A/B/" -> "/A/B" ; "" | "/" -> "" ; "A/B" -> "/A/B"
 export function normalizeRoot(root) {
@@ -39,6 +40,10 @@ export function fileExt(name) {
 
 export function isWebImage(name) {
   return WEB_IMAGE_EXTS.has(fileExt(name));
+}
+
+export function isVideoFile(name) {
+  return VIDEO_EXTS.has(fileExt(name));
 }
 
 // Parse a Dropbox path (pass path_display so casing is preserved) against
@@ -85,6 +90,15 @@ export function isSyncCandidate(pathDisplay, { root, syncFolders }) {
   return isWebImage(parsed.filename);
 }
 
+// Does this file path belong to a video-sync folder, and is it a video file?
+// Mirrors isSyncCandidate but for VIDEO_SYNC_FOLDERS / VIDEO_EXTS.
+export function isVideoSyncCandidate(pathDisplay, { root, videoSyncFolders }) {
+  const parsed = parseJobPath(pathDisplay, root);
+  if (!parsed || !parsed.subFolder || parsed.depth < 3) return false;
+  if (!folderMatches(parsed.subFolder, videoSyncFolders)) return false;
+  return isVideoFile(parsed.filename);
+}
+
 // Case-insensitive membership.
 export function folderMatches(subFolder, list) {
   const s = String(subFolder || '').toLowerCase();
@@ -99,4 +113,4 @@ export function downloadCopyPath(jobFolderPath, downloadSubfolder, filename) {
   return `${jobFolderPath}/${downloadSubfolder}/${base}.jpg`;
 }
 
-export { WEB_IMAGE_EXTS };
+export { WEB_IMAGE_EXTS, VIDEO_EXTS };

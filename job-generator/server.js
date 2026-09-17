@@ -575,7 +575,16 @@ async function handleApi(req, res, urlPath) {
       // createdAt is preserved from the existing folder either way (real
       // job or draft) -- jobFolderPath / folderName were computed up above
       // (needed for findExistingJob).
-      const jobId = saveAsDraft ? null : (hasRealId ? existing.jobId : idGenerator.getNextJobId(effectiveRootFolder));
+      // getNextJobIdChecked (not the plain local-only getNextJobId) --
+      // guards against the cross-machine collision id-generator.js's own
+      // comment documents (2026-09-15 incident). Only applied at the
+      // actual finalization point, not /api/plan's live preview above --
+      // that stays local-only/instant so a Dropbox round-trip doesn't add
+      // latency to every keystroke; a preview ID occasionally bumping by
+      // one at real creation time is an acceptable cosmetic tradeoff.
+      const jobId = saveAsDraft
+        ? null
+        : (hasRealId ? existing.jobId : await idGenerator.getNextJobIdChecked(effectiveRootFolder, undefined, dropboxSync.jobIdExistsOnDropbox));
       const createdAt = folderExists ? (existing.createdAt || nowIso) : nowIso;
       // True only on the one call that actually turns a Save-Draft'd
       // folder into a real job -- lets the response (and the UI) say
@@ -641,6 +650,7 @@ async function handleApi(req, res, urlPath) {
           jobId, clientName: body.clientName, address: body.address,
           shootDate: body.shootDate, shootTime: body.shootTime,
           notes: body.notes, images: effectiveImages,
+          order: body.order, photographerName: body.photographerName,
         });
       }
 

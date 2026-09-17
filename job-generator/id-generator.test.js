@@ -11,6 +11,7 @@ const {
   nextSequenceFromExistingIds,
   collectExistingJobIds,
   getNextJobId,
+  getNextJobIdChecked,
   findExistingJob,
 } = require('./id-generator.js');
 
@@ -20,6 +21,18 @@ let failed = 0;
 function test(name, fn) {
   try {
     fn();
+    passed++;
+    console.log('  PASS  ' + name);
+  } catch (err) {
+    failed++;
+    console.log('  FAIL  ' + name);
+    console.log('        ' + err.message);
+  }
+}
+
+async function testAsync(name, fn) {
+  try {
+    await fn();
     passed++;
     console.log('  PASS  ' + name);
   } catch (err) {
@@ -203,5 +216,74 @@ test('findExistingJob: null when a FILE (not a directory) has that name', () => 
   }
 });
 
-console.log('\n' + passed + ' passed, ' + failed + ' failed');
-if (failed > 0) process.exit(1);
+// ---- getNextJobIdChecked: the cross-machine collision guard ----
+
+async function runAsyncTests() {
+
+await testAsync('getNextJobIdChecked: no checkFn behaves exactly like getNextJobId', async () => {
+  const root = makeTmpDir();
+  try {
+    const date = new Date(2026, 8, 15);
+    const plain = getNextJobId(root, date);
+    const checked = await getNextJobIdChecked(root, date, undefined);
+    assert.strictEqual(checked, plain);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+await testAsync('getNextJobIdChecked: checkFn says no collision -> uses the local candidate as-is', async () => {
+  const root = makeTmpDir();
+  try {
+    const date = new Date(2026, 8, 15);
+    const checkFn = async () => ({ checked: true, exists: false });
+    const result = await getNextJobIdChecked(root, date, checkFn);
+    assert.strictEqual(result, 'FVS-20260915-001');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+await testAsync('getNextJobIdChecked: a collision bumps the sequence until a free one is found', async () => {
+  const root = makeTmpDir();
+  try {
+    const date = new Date(2026, 8, 15);
+    const taken = new Set(['FVS-20260915-001', 'FVS-20260915-002']);
+    const checkFn = async (candidate) => ({ checked: true, exists: taken.has(candidate) });
+    const result = await getNextJobIdChecked(root, date, checkFn);
+    assert.strictEqual(result, 'FVS-20260915-003');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+await testAsync('getNextJobIdChecked: checkFn unable to check (checked:false) stops the loop, trusts the local candidate', async () => {
+  const root = makeTmpDir();
+  try {
+    const date = new Date(2026, 8, 15);
+    const checkFn = async () => ({ checked: false, exists: false });
+    const result = await getNextJobIdChecked(root, date, checkFn);
+    assert.strictEqual(result, 'FVS-20260915-001'); // never bumped, even though exists is meaningless here
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+await testAsync('getNextJobIdChecked: a throwing checkFn never blocks -- falls back to the local candidate', async () => {
+  const root = makeTmpDir();
+  try {
+    const date = new Date(2026, 8, 15);
+    const checkFn = async () => { throw new Error('Dropbox down'); };
+    const result = await getNextJobIdChecked(root, date, checkFn);
+    assert.strictEqual(result, 'FVS-20260915-001');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+}
+
+runAsyncTests().then(() => {
+  console.log('\n' + passed + ' passed, ' + failed + ' failed');
+  if (failed > 0) process.exit(1);
+});
