@@ -12,6 +12,7 @@ import { createSupabase } from './supabase.js';
 import { createStream } from './stream.js';
 import { runDelta, processPhotoBatch, runBackfill, processRenderRetryPoll } from './sync.js';
 import { processVideoBatch, processVideoPoll } from './video-sync.js';
+import { processTourLinkBatch } from './tour-link-sync.js';
 
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } });
@@ -115,6 +116,8 @@ export default {
           await processVideoBatch(env, deps, body);
         } else if (body.type === 'video-poll') {
           await processVideoPoll(env, deps);
+        } else if (body.type === 'tour-link-batch') {
+          await processTourLinkBatch(env, deps, body);
         } else if (body.type === 'backfill') {
           await runBackfill(env, deps, { jobId: body.jobId || null });
         } else if (body.type === 'render-retry-poll') {

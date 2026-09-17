@@ -478,6 +478,31 @@ test('runDelta: also fans out one video-batch per tagged job, alongside photo-ba
   assert.equal(videoMsg.items[0].filename, 'walkthrough.mp4');
 });
 
+test('runDelta: also fans out one tour-link-batch per tagged job, alongside photo-batch', async () => {
+  const dbx = makeDbx({
+    async listFolderContinue() {
+      return {
+        entries: [
+          { '.tag': 'file', path_display: '/JobA/MLS/a.jpg', path_lower: '/joba/mls/a.jpg', id: 'id:1', rev: 'r1' },
+          { '.tag': 'file', path_display: '/JobA/Tour Link.txt', path_lower: '/joba/tour link.txt' },
+        ],
+        cursor: 'C1',
+        has_more: false,
+      };
+    },
+  });
+  const sb = makeSb();
+  const enqueued = [];
+  const res = await runDelta({ ...ENV, TOUR_LINK_FILENAME: 'Tour Link.txt' }, { dbx, sb, enqueue: (m) => enqueued.push(m), now: () => 'T' });
+
+  assert.equal(res.dispatched, 1);
+  assert.equal(res.tourLinkDispatched, 1);
+  const tourMsg = enqueued.find((m) => m.type === 'tour-link-batch');
+  assert.ok(tourMsg);
+  assert.equal(tourMsg.jobId, 'FV-1');
+  assert.equal(tourMsg.items[0].path, '/JobA/Tour Link.txt');
+});
+
 test('runDelta: skips when the lease is held', async () => {
   const dbx = makeDbx();
   const sb = makeSb({ async acquireLease() { return false; } });

@@ -13,6 +13,7 @@ import {
   matchAncestorFolder,
   downloadCopyPath,
   parseAddressFromJobFolder,
+  isTourLinkCandidate,
 } from '../src/paths.js';
 
 test('normalizeRoot', () => {
@@ -164,4 +165,13 @@ test('isSyncCandidate / isVideoSyncCandidate recognize a folder nested at any de
 
   const videoSyncFolders = ['Video'];
   assert.ok(isVideoSyncCandidate('/JobA/HDR Photos/Video/clip.mp4', { root: '', videoSyncFolders }));
+});
+
+test('isTourLinkCandidate: only matches the exact filename directly at the job folder root', () => {
+  const cfg = { root: '', tourLinkFilename: 'Tour Link.txt' };
+  assert.ok(isTourLinkCandidate('/JobA/Tour Link.txt', cfg));
+  assert.ok(isTourLinkCandidate('/JobA/TOUR LINK.TXT', cfg)); // case-insensitive
+  assert.ok(!isTourLinkCandidate('/JobA/HDR Photos/Tour Link.txt', cfg)); // nested -- not the job root
+  assert.ok(!isTourLinkCandidate('/JobA/Notes.txt', cfg)); // different filename
+  assert.ok(!isTourLinkCandidate('/Tour Link.txt', cfg)); // no job folder segment at all
 });
