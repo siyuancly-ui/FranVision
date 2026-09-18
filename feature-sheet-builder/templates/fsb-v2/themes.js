@@ -120,6 +120,25 @@
       css: 'linear-gradient(157deg, #431a1f 0%, #331216 44%, #1c0809 100%)',
     }),
 
+    // Same emerald green as the estate-emerald velvet artwork (sampled from
+    // templates/fsb-v2/assets/estate-bg-emerald.jpg), rendered here as a
+    // gradient background instead of an image, matching navy/burgundy.
+    emerald: theme('emerald', '墨绿 · Emerald', {
+      bg: '#153a2c',
+      bgDeep: '#0a1911',
+      ink: '#F4EFE6',
+      inkMuted: '#cdbfa6',
+      gold: '#D9B28D',
+      goldDeep: '#c0925f',
+      goldLine: '#a97c4f',
+      goldSoft: '#E7D2BC',    // pale gold -- page-1 hero keyline only
+      panelInk: '#F4EFE6',
+      agentText: '#D9B28D',
+    }, {
+      asset: null,
+      css: 'linear-gradient(157deg, #1e4a3a 0%, #153a2c 42%, #0a1911 100%)',
+    }),
+
     // ---- Estate layout (single agent) ----------------------------
     // Same geometry / chevron / metalbar / white text for every colour;
     // only `bg.asset` (a recoloured velvet) changes. Add a colour = one
