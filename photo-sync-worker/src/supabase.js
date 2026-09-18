@@ -30,7 +30,7 @@ export function createSupabase(env) {
     },
 
     // photos/<jobId>/<photoId>_large.jpg -- the w2048h1536 render for
-    // delivery-page's full-bleed slots (Cover Photo/Closing Photo/Drone
+    // delivery-page's full-bleed slots (Cover&Closing/Drone
     // Callout/Local Report). Same upsert semantics as uploadThumb.
     async uploadLarge(jobId, photoId, bytes) {
       const path = `photos/${encodeURIComponent(jobId)}/${photoId}_large.jpg`;

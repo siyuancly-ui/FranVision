@@ -150,8 +150,8 @@ export function readConfig(env) {
     syncFolders: parseFolderList(env.SYNC_FOLDERS),
     downloadSetFolders: parseFolderList(env.DOWNLOAD_SET_FOLDERS),
     // Folders that also get a w2048h1536 "large" render uploaded to
-    // Supabase (delivery-page's full-bleed slots: Cover Photo/Closing
-    // Photo/Drone Callout/Local Report). Deliberately NOT the whole main
+    // Supabase (delivery-page's full-bleed slots: Cover&Closing/Drone
+    // Callout/Local Report). Deliberately NOT the whole main
     // gallery (HDR Photos/MLS) -- see photo-sync-worker/CLAUDE.md.
     largeThumbFolders: parseFolderList(env.LARGE_THUMB_FOLDERS),
     downloadSubfolder: env.DOWNLOAD_SUBFOLDER || 'MLS for download',
@@ -457,7 +457,7 @@ export async function processPhotoBatch(env, deps, msg) {
   }
 
   // ---- large render: a bigger (w2048h1536) copy for delivery-page's
-  // full-bleed slots (Cover Photo/Closing Photo/Drone Callout/Local
+  // full-bleed slots (Cover&Closing/Drone Callout/Local
   // Report), uploaded to Supabase Storage as <photoId>_large.jpg.
   // Separate pass, own thumbnail request -- the main Gallery/Supabase
   // thumb above stays small. Entirely best-effort: the Gallery record is
@@ -528,7 +528,7 @@ export async function processPhotoBatch(env, deps, msg) {
   // gallery photos delivery-page's hero/closing fallback would actually pick
   // (3rd/5th by filename -- see pickGalleryFallbackTargets) get a large
   // render, not the whole gallery (LARGE_THUMB_FOLDERS stays deliberately
-  // scoped to Cover/Closing/Callout/Local Report -- see CLAUDE.md). Only
+  // scoped to Cover&Closing/Callout/Local Report -- see CLAUDE.md). Only
   // worth re-checking when this batch actually touched a gallery-folder
   // item (upsert or delete), since that's the only thing that can shift
   // which photo is "3rd/5th" -- reads the CURRENT full gallery from
