@@ -25,8 +25,7 @@ async function handleDelivery(jobId, env) {
     galleryFolders: folderList(env, 'GALLERY_FOLDERS'),
     localReportFolder: env.LOCAL_REPORT_FOLDER || 'Local Report',
     videoFolders: folderList(env, 'VIDEO_FOLDERS'),
-    coverPhotoFolder: env.COVER_PHOTO_FOLDER || 'Cover',
-    closingPhotoFolder: env.CLOSING_PHOTO_FOLDER || 'Closing',
+    coverClosingFolder: env.COVER_CLOSING_FOLDER || 'Cover&Closing',
     droneCalloutFolder: env.DRONE_CALLOUT_FOLDER || 'Callout',
   });
   return html(renderDeliveryPage(model));
