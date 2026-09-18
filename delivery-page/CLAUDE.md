@@ -15,14 +15,14 @@ cd delivery-page
 npm install                     # devDependency: wrangler only, zero runtime deps
 cp .dev.vars.example .dev.vars  # fill in with the SAME SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY
                                  # photo-sync-worker/.dev.vars uses, plus a new ADMIN_TOKEN
-npx wrangler dev                # GET /, GET /delivery/<jobId>, POST /admin/jobs/<jobId>
+npx wrangler dev                # GET /, GET /delivery/<jobId> or /<slug>/<jobId>, GET /admin, POST /admin/jobs/<jobId>
 ```
 
 ## Tests
 
 ```bash
 cd delivery-page
-npm test    # node --test, 32 cases, NO network
+npm test    # node --test, 36 cases, NO network
 ```
 
 `src/render.js` is pure (`buildDeliveryModel` shapes a Supabase `projects` row into a template model; `renderDeliveryPage`/`renderNotFoundPage` are string-building functions) — fully unit-tested without touching Supabase. `src/index.js` (the Worker's `fetch` handler) and `src/supabase.js` (raw-fetch client) are thin and untested directly, same division of labor as photo-sync-worker.
@@ -44,7 +44,7 @@ npx wrangler deploy
 
 **What was done instead: registered a brand-new root domain, `realgta.ca`, directly through Cloudflare Registrar** ($9.19/year, no markup, confirmed available via direct CIRA WHOIS before buying). Registering through Cloudflare Registrar makes Cloudflare the DNS authority automatically — no delegation dance, and `gta3d.ca`'s existing DNS surface (Wix's own site, Zenfolio's `realimage(s).gta3d.ca`, a large number of legacy per-listing subdomains, MX/email) stays completely untouched, since it's not being used for this at all anymore.
 
-Bound as the **root domain**, no subdomain prefix (Cloudflare dashboard → `franvision-delivery-page` Worker → Domains → Add Domain → `realgta.ca`, subdomain field left blank). **Live at `https://realgta.ca/delivery/<jobId>`** as of 2026-09-17. The pretty-URL slug format (see the URL-slug plan elsewhere in project memory: `{address-slug}-{jobId digits}`, no `/delivery/` prefix) is not implemented yet — still on the raw `/delivery/<jobId>` path for now.
+Bound as the **root domain**, no subdomain prefix (Cloudflare dashboard → `franvision-delivery-page` Worker → Domains → Add Domain → `realgta.ca`, subdomain field left blank). **Live at `https://realgta.ca`**, both URL shapes work (see Architecture below for the pretty-URL format, added 2026-09-17).
 
 **Feature Sheet Builder is NOT a usable template for domain setups in this repo** — checked directly (2026-09-16): the `franvision` Worker (FSB) has no Cloudflare Custom Domain bound at all; it's only reachable via `franvision.frankystudio-6f3.workers.dev`.
 
@@ -55,11 +55,17 @@ Bound as the **root domain**, no subdomain prefix (Cloudflare dashboard → `fra
 ## Architecture
 
 ```
-GET /delivery/<jobId>
-  -> supabase.getProject(jobId)              (raw fetch, service-role key)
-  -> render.buildDeliveryModel(project, ...) (pure: pick hero/gallery/closing
+GET /delivery/<jobId>            -- original path, still works
+GET /<address-slug>/<jobId>      -- pretty path (2026-09-17), e.g.
+                                     /1371-kestell-blvd-oakville/FVS-20260917-003
+  Both -> supabase.getProject(jobId)         (raw fetch, service-role key --
+                                               the address-slug segment is
+                                               NEVER inspected, purely
+                                               cosmetic; only the jobId
+                                               segment does the lookup)
+       -> render.buildDeliveryModel(project, ...) (pure: pick hero/gallery/closing
                                                photos, video, tour, local report)
-  -> render.renderDeliveryPage(model)        (pure: HTML string, sections
+       -> render.renderDeliveryPage(model)        (pure: HTML string, sections
                                                omitted when their data is absent)
 
 POST /admin/jobs/<jobId>   (bearer ADMIN_TOKEN)
@@ -78,15 +84,16 @@ GET /admin?admin=<ADMIN_TOKEN>
 
 | File | Role |
 |---|---|
-| `src/index.js` | Worker `fetch` handler: routes `GET /`, `GET /delivery/<jobId>`, `GET /admin`, `POST /admin/jobs/<jobId>` |
+| `src/index.js` | Worker `fetch` handler: routes `GET /`, `GET /delivery/<jobId>`, `GET /<address-slug>/<jobId>`, `GET /admin`, `POST /admin/jobs/<jobId>` |
 | `src/supabase.js` | Raw-fetch client: `getProject(jobId)` (read-only), `listProjects()` (read-only, admin directory), `setDeliveryInfo(jobId, fields)` (the one write this Worker does), generic `rpc()` |
-| `src/render.js` | All pure logic: photo/video/tour selection (`buildDeliveryModel`), HTML template (`renderDeliveryPage`, `renderNotFoundPage`), `escapeHtml` |
+| `src/render.js` | All pure logic: photo/video/tour selection (`buildDeliveryModel`), HTML template (`renderDeliveryPage`, `renderNotFoundPage`), `escapeHtml`, `slugifyAddress`/`deliveryPath` (pretty-URL builder) |
 | `src/admin.js` | Pure logic for the admin directory: `buildAdminModel(rows)`, `renderAdminPage(model, {origin})` (imports `escapeHtml` from `render.js`) |
 | `supabase/schema.sql` | Run once — adds `project_set_delivery_info()` |
 
 ## Confirmed design decisions
 
-- **Admin directory at `GET /admin?admin=<ADMIN_TOKEN>` (2026-09-17), same query-param-token shape as Feature Sheet Builder's own admin page** — a bookmarkable-but-secret link Franky keeps, not a curl-only bearer endpoint like `POST /admin/jobs/<jobId>` above. Lists every `projects` row with address, agent(s), photo count, video/tour presence, updated time, and a "Copy agent link" button (writes the full absolute `/delivery/<jobId>` URL to the clipboard, `navigator.clipboard.writeText` + a `prompt()` fallback — same pattern as FSB admin.js's own copy-link button); a plain client-side filter box, no build step. **Deliberately read-only, no create/duplicate/delete/recycle-bin unlike FSB's admin** — a delivery page exists because a Job exists, it isn't a separate thing to manage the lifecycle of from here.
+- **Admin directory at `GET /admin?admin=<ADMIN_TOKEN>` (2026-09-17), same query-param-token shape as Feature Sheet Builder's own admin page** — a bookmarkable-but-secret link Franky keeps, not a curl-only bearer endpoint like `POST /admin/jobs/<jobId>` above. Lists every `projects` row with address, agent(s), photo count, video/tour presence, updated time, and a "Copy agent link" button (writes the full absolute delivery-page URL to the clipboard via `render.js#deliveryPath` — the pretty `/<address-slug>/<jobId>` form when an address is known, else `/delivery/<jobId>` — `navigator.clipboard.writeText` + a `prompt()` fallback — same pattern as FSB admin.js's own copy-link button); a plain client-side filter box, no build step. **Deliberately read-only, no create/duplicate/delete/recycle-bin unlike FSB's admin** — a delivery page exists because a Job exists, it isn't a separate thing to manage the lifecycle of from here.
+- **Pretty URL `/<address-slug>/<jobId>` added 2026-09-17** (`render.js#slugifyAddress`/`deliveryPath`, routed in `index.js`) — e.g. `realgta.ca/1371-kestell-blvd-oakville/FVS-20260917-003`. The address segment is generated purely for readability and is **never read back** on the request path — the jobId segment alone does the lookup (`getProject(jobId)`, unchanged) — so a stale/edited/oddly-punctuated/even-empty address slug can never break a link, only make it less pretty. The original `/delivery/<jobId>` path keeps working unconditionally (already-sent links, e.g. from before this existed, don't break). No address yet -> `deliveryPath` falls back to `/delivery/<jobId>` since there's nothing to slug.
 - **`listProjects()` filters to `id=like.FVS-*` server-side (2026-09-17).** `projects` is shared with Feature Sheet Builder, whose own projects today use a random hex id (its `templateSystem`/`agentInfo`/`confirmed` shape, not a Job at all), not `FVS-YYYYMMDD-NNN` -- 34 of an early 47-row sample were FSB drafts (some already in its own recycle bin) with no address/photos/tourUrl, cluttering what's supposed to be a directory of delivery pages. Job Generator's jobIds are always `FVS-`-prefixed (id-generator.js), so this is a permanent filter, not a today-only workaround: once FSB's own projects move onto the same shared jobId scheme (planned, see [[franvision-custom-system-buildout]]), they'll already satisfy it and start appearing here with no code change.
 - **Agent column and sort order match Feature Sheet Builder's own admin page exactly, for the same forward-compatible reason as the filter above.** `agents` reads `data.agentInfo.name`/`data.agentInfo2.name` -- FSB's own fields, mirroring `storage.js#listProjects`' derivation (`[agentInfo.name, agentInfo2.name].filter(Boolean)`) -- not populated by anything for a Job Generator jobId today, but will be the moment FSB's projects share this jobId scheme. Sort order matches FSB admin.js#sortRows() exactly: primary agent's first name A-Z (no-agent jobs sink to the bottom), then newest-updated first within the same name -- computed once in `buildAdminModel`, not client-side, since this page is server-rendered rather than an SPA.
 - **Section visibility is data-presence-driven for v1, not purchased-services-driven.** A section renders iff its underlying data exists (a hero photo, a video, a `tourUrl`, gallery photos, a Local Report photo, an address) — see `franvision-delivery-page-design-spec.md`'s "Section visibility is service-driven, not fixed" note for the eventual target (which services/packages a Job's client purchased) and why v1 doesn't attempt that yet (job-generator/pricing data isn't in Supabase at all today).

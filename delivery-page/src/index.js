@@ -85,6 +85,23 @@ export default {
       }
     }
 
+    // Pretty URL: /<address-slug>/<jobId> (see render.js#deliveryPath). The
+    // first segment is never inspected -- only the second (the jobId) does
+    // the actual lookup -- so this works no matter what the address slug
+    // says, and stays correct even if an address is edited after the link
+    // was generated/shared. Excludes a first segment of "admin" so this can
+    // never shadow the /admin routes below regardless of check order (a
+    // real address slug colliding with "admin" is effectively impossible
+    // anyway).
+    if (request.method === 'GET' && parts.length === 2 && parts[0] !== 'admin') {
+      try {
+        return await handleDelivery(decodeURIComponent(parts[1]), env);
+      } catch (err) {
+        console.log('delivery_render_error', { jobId: parts[1], error: String(err) });
+        return html(renderNotFoundPage(parts[1]), 500);
+      }
+    }
+
     if (request.method === 'GET' && parts[0] === 'admin' && parts.length === 1) {
       try {
         return await handleAdmin(url, env);

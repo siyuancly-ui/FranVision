@@ -8,7 +8,7 @@
 // renderAdminPage), same split as render.js, so this is unit-tested without
 // touching Supabase.
 
-import { escapeHtml } from './render.js';
+import { escapeHtml, deliveryPath } from './render.js';
 
 // agentInfo/agentInfo2 are Feature Sheet Builder's fields (this system's
 // `projects` table is shared with it -- see supabase.js#listProjects). Not
@@ -119,7 +119,7 @@ export function renderAdminPage(model, { origin = '' } = {}) {
   const jobs = model.jobs || [];
   const base = String(origin || '').replace(/\/+$/, '');
   const rows = jobs.map((j) => {
-    const path = `/delivery/${encodeURIComponent(j.jobId)}`;
+    const path = deliveryPath(j.jobId, j.address);
     const fullLink = base + path;
     return `
     <tr data-search="${escapeHtml((j.address || '') + ' ' + j.jobId + ' ' + j.agents.join(' ')).toLowerCase()}">

@@ -10,6 +10,24 @@
 // Supabase, which doesn't exist yet. See that doc's "Section visibility is
 // service-driven, not fixed" note before extending this.
 
+// Pretty delivery-page path: "/<address-slug>/<jobId>" when an address is
+// known, else the plain "/delivery/<jobId>" path (no address to build a
+// slug from yet). The address segment is PURELY cosmetic -- lookup always
+// uses the jobId segment verbatim (see index.js's routing), so an unusual
+// address (odd punctuation, non-ASCII, etc.) slugifying to something ugly
+// or even empty can never break the actual link, only how pretty it looks.
+export function slugifyAddress(address) {
+  return String(address || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+export function deliveryPath(jobId, address) {
+  const slug = slugifyAddress(address);
+  return slug ? `/${slug}/${encodeURIComponent(jobId)}` : `/delivery/${encodeURIComponent(jobId)}`;
+}
+
 export function escapeHtml(str) {
   return String(str == null ? '' : str).replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',

@@ -72,7 +72,7 @@ test('buildAdminModel: same agent first name -> newest-updated first', () => {
 test('renderAdminPage: lists every job with its delivery-page link and agent', () => {
   const model = buildAdminModel([row('FVS-1', { data: { address: '48 Red Ash Dr', agentInfo: { name: 'Jane Doe' } } })]);
   const out = renderAdminPage(model);
-  assert.ok(out.includes('href="/delivery/FVS-1"'));
+  assert.ok(out.includes('href="/48-red-ash-dr/FVS-1"'));
   assert.ok(out.includes('48 Red Ash Dr'));
   assert.ok(out.includes('Jane Doe'));
   assert.ok(out.includes('1 job'));

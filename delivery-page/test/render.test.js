@@ -1,6 +1,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildDeliveryModel, renderDeliveryPage, renderNotFoundPage, escapeHtml } from '../src/render.js';
+import { buildDeliveryModel, renderDeliveryPage, renderNotFoundPage, escapeHtml, slugifyAddress, deliveryPath } from '../src/render.js';
+
+test('slugifyAddress: lowercases, replaces non-alphanumeric runs with a hyphen, trims edges', () => {
+  assert.equal(slugifyAddress('1371 Kestell Blvd, Oakville'), '1371-kestell-blvd-oakville');
+  assert.equal(slugifyAddress('  48 Red Ash Dr.  '), '48-red-ash-dr');
+  assert.equal(slugifyAddress(''), '');
+  assert.equal(slugifyAddress(null), '');
+});
+
+test('deliveryPath: "/<address-slug>/<jobId>" when an address is known', () => {
+  assert.equal(deliveryPath('FVS-20260917-003', '1371 Kestell Blvd, Oakville'), '/1371-kestell-blvd-oakville/FVS-20260917-003');
+});
+
+test('deliveryPath: falls back to "/delivery/<jobId>" with no address (nothing to slug)', () => {
+  assert.equal(deliveryPath('FVS-20260917-003', null), '/delivery/FVS-20260917-003');
+  assert.equal(deliveryPath('FVS-20260917-003', '   '), '/delivery/FVS-20260917-003');
+});
 
 const OPTS = {
   jobId: 'FVS-20260915-001',
