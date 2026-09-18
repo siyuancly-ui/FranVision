@@ -51,8 +51,8 @@ test('geometry: bed/bath/garage icon row entries', () => {
 });
 
 // ================================================================
-test('themes: 3 themes, each with the token + font set', () => {
-  ['navy', 'marble', 'burgundy'].forEach((id) => {
+test('themes: 4 standard themes, each with the token + font set', () => {
+  ['navy', 'marble', 'burgundy', 'emerald'].forEach((id) => {
     const t = THEMES[id];
     assert.ok(t, id + ' theme exists');
     ['ink', 'gold', 'goldLine', 'goldSoft', 'bg', 'agentText'].forEach((tok) => {
