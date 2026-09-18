@@ -26,6 +26,7 @@ const OPTS = {
   videoFolders: ['Video', 'VLOG'],
   coverClosingFolder: 'Cover&Closing',
   droneCalloutFolder: 'Drone Callout',
+  floorplanFolder: 'Floorplan',
 };
 
 function photo(overrides = {}) {
@@ -41,6 +42,7 @@ test('buildDeliveryModel: empty project has no sections', () => {
   assert.deepEqual(model.gallery, []);
   assert.equal(model.localReport, null);
   assert.deepEqual(model.aerial, []);
+  assert.deepEqual(model.floorplan, []);
   assert.equal(model.address, null);
 });
 
@@ -174,6 +176,57 @@ test('buildDeliveryModel: Drone Callout photos populate aerial as an array, empt
 
   const without = buildDeliveryModel({ data: { photos: [photo()] } }, OPTS);
   assert.deepEqual(without.aerial, []);
+});
+
+test('buildDeliveryModel: Floor Plan photos populate floorplan as an array, empty when absent, excluded from the gallery', () => {
+  const withOne = buildDeliveryModel(
+    { data: { photos: [photo({ photoId: 'fp', folder: 'Floorplan' })] } },
+    OPTS,
+  );
+  assert.equal(withOne.floorplan.length, 1);
+  assert.equal(withOne.floorplan[0].photoId, 'fp');
+  assert.deepEqual(withOne.gallery, []);
+
+  const withMultiple = buildDeliveryModel(
+    { data: { photos: [
+      photo({ photoId: 'fp1', folder: 'Floorplan', filename: 'main-floor.jpg' }),
+      photo({ photoId: 'fp2', folder: 'Floorplan', filename: 'basement.jpg' }),
+    ] } },
+    OPTS,
+  );
+  assert.equal(withMultiple.floorplan.length, 2);
+  assert.deepEqual(withMultiple.floorplan.map((p) => p.photoId), ['fp2', 'fp1']); // sorted by filename
+
+  const without = buildDeliveryModel({ data: { photos: [photo()] } }, OPTS);
+  assert.deepEqual(without.floorplan, []);
+});
+
+test('buildDeliveryModel: a Floor Plan photo with hasLarge:true uses the _large.jpg render', () => {
+  const project = { data: { photos: [photo({ photoId: 'fp', folder: 'Floorplan', hasLarge: true })] } };
+  const model = buildDeliveryModel(project, OPTS);
+  assert.ok(model.floorplan[0].url.endsWith('fp_large.jpg'));
+});
+
+test('renderDeliveryPage: a single Floor Plan photo renders as a static image, not a track, positioned before the neighborhood report', () => {
+  const project = { data: { photos: [photo({ photoId: 'fp', folder: 'Floorplan' })], address: '1 Main St' } };
+  project.data.photos.push({ photoId: 'report', filename: 'report.jpg', folder: 'Local Report', status: 'ok', hasThumb: true });
+  const model = buildDeliveryModel(project, OPTS);
+  const out = renderDeliveryPage(model);
+  assert.ok(out.includes('fp_thumb.jpg'));
+  assert.ok(!out.includes('id="floorplanTrack"'));
+  assert.ok(out.indexOf('fp_thumb.jpg') < out.indexOf('report_thumb.jpg')); // floor plan comes before local report
+});
+
+test('renderDeliveryPage: more than one Floor Plan photo renders the auto-advancing track', () => {
+  const project = { data: { photos: [
+    photo({ photoId: 'fp1', folder: 'Floorplan', filename: 'a.jpg' }),
+    photo({ photoId: 'fp2', folder: 'Floorplan', filename: 'b.jpg' }),
+  ] } };
+  const model = buildDeliveryModel(project, OPTS);
+  const out = renderDeliveryPage(model);
+  assert.ok(out.includes('id="floorplanTrack"'));
+  assert.ok(out.includes('fp1_thumb.jpg'));
+  assert.ok(out.includes('fp2_thumb.jpg'));
 });
 
 test('renderDeliveryPage: a single Drone Callout photo renders as a static image, not a track', () => {

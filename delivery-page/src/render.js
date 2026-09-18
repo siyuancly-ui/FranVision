@@ -67,7 +67,7 @@ function pickVideo(videos, folders) {
 // if the Job has no row yet (nothing synced, nothing manually entered).
 export function buildDeliveryModel(project, {
   jobId, supabaseUrl, galleryFolders, localReportFolder, videoFolders,
-  coverClosingFolder, droneCalloutFolder,
+  coverClosingFolder, droneCalloutFolder, floorplanFolder,
 }) {
   const data = (project && project.data) || {};
   const photos = data.photos || [];
@@ -97,6 +97,11 @@ export function buildDeliveryModel(project, {
   const coverOverride = coverClosingPhotos[0] || null;
   const closingOverride = coverClosingPhotos.length > 1 ? coverClosingPhotos[coverClosingPhotos.length - 1] : null;
   const aerialPhotos = droneCalloutFolder ? pickPhotos(photos, [droneCalloutFolder]) : [];
+  // Floor Plan / Site Plan (2026-09-18) -- same "drop file(s) in Dropbox, no
+  // data entry" shape as Local Report/Drone Callout. Can be more than one
+  // page (main floor, second floor, basement), so this is an array like
+  // aerial, not a single photo like Local Report.
+  const floorplanPhotos = floorplanFolder ? pickPhotos(photos, [floorplanFolder]) : [];
 
   // No override -> falls back to the 3rd / 5th gallery photo by filename
   // (confirmed 2026-09-15) -- the very first/last shot in a folder is often
@@ -137,6 +142,9 @@ export function buildDeliveryModel(project, {
     // (design-spec allows it), rendered as a static image when there's
     // just one, or a gallery-style auto-advancing track when there's more.
     aerial: aerialPhotos.map(toImgLarge),
+    // Array, same reasoning as aerial -- a static image when there's one
+    // page, an auto-advancing track when there's more than one.
+    floorplan: floorplanPhotos.map(toImgLarge),
     localReport: localReportPhoto ? toImgLarge(localReportPhoto) : null,
     closing: closingPhoto,
   };
@@ -162,7 +170,8 @@ ${section('<section>', model.video && videoHtml(model.video))}
 ${section('<section class="section-alt">', model.tour && tourHtml(model.tour))}
 ${section('<section>', model.gallery.length > 0 && galleryHtml(model.gallery))}
 ${section('<section class="section-alt">', model.aerial.length > 0 && aerialHtml(model.aerial))}
-${section('<section>', model.localReport && localReportHtml(model.localReport))}
+${section('<section>', model.floorplan.length > 0 && floorplanHtml(model.floorplan))}
+${section('<section class="section-alt">', model.localReport && localReportHtml(model.localReport))}
 ${closingHtml(model)}`;
   return page(model.address ? `${model.address} — FranVision Media` : 'FranVision Delivery Page', body);
 }
@@ -226,6 +235,20 @@ function aerialHtml(photos) {
   </div>`;
   }
   return trackHtml(photos, { track: 'aerialTrack', prev: 'aerialPrev', next: 'aerialNext' });
+}
+
+// Floor Plan / Site Plan (2026-09-18) -- same "drop file(s) in, no data
+// entry" shape as Drone Callout, positioned right above the neighborhood
+// report. A single page is a static image; more than one (main floor,
+// second floor, basement) reuses the gallery's auto-advancing track,
+// staggered against the other tracks so none of them scroll in lockstep.
+function floorplanHtml(photos) {
+  if (photos.length === 1) {
+    return `  <div class="media-frame">
+    <img src="${escapeHtml(photos[0].url)}" alt="Floor plan" style="width:100%;border-radius:6px;display:block;">
+  </div>`;
+  }
+  return trackHtml(photos, { track: 'floorplanTrack', prev: 'floorplanPrev', next: 'floorplanNext' });
 }
 
 // v1: the neighborhood report is a manually cropped HoodQ screenshot (see
@@ -370,5 +393,6 @@ const SCRIPT = `<script>
 
   setupTrack('galTrack', 'galPrev', 'galNext', 0);
   setupTrack('aerialTrack', 'aerialPrev', 'aerialNext', 1000);
+  setupTrack('floorplanTrack', 'floorplanPrev', 'floorplanNext', 2000);
 })();
 </script>`;
