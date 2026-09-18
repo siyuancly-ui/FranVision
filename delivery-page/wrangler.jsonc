@@ -44,6 +44,11 @@
     // lowest-numbered filename becomes the cover/hero override, the
     // highest-numbered becomes the closing override (see render.js#buildDeliveryModel).
     "COVER_CLOSING_FOLDER": "Cover&Closing",
-    "DRONE_CALLOUT_FOLDER": "Callout"
+    "DRONE_CALLOUT_FOLDER": "Callout",
+
+    // Floor Plan / Site Plan (2026-09-18) -- same "drop file(s) in, no data
+    // entry" shape, positioned right above the neighborhood report. Can be
+    // more than one page (main floor, second floor, basement).
+    "FLOORPLAN_FOLDER": "Floorplan"
   }
 }

@@ -27,6 +27,7 @@ async function handleDelivery(jobId, env) {
     videoFolders: folderList(env, 'VIDEO_FOLDERS'),
     coverClosingFolder: env.COVER_CLOSING_FOLDER || 'Cover&Closing',
     droneCalloutFolder: env.DRONE_CALLOUT_FOLDER || 'Callout',
+    floorplanFolder: env.FLOORPLAN_FOLDER || 'Floorplan',
   });
   return html(renderDeliveryPage(model));
 }
