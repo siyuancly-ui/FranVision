@@ -42,7 +42,7 @@ async function handleAdmin(url, env) {
   const sb = createSupabase(env);
   const rows = await sb.listProjects();
   const model = buildAdminModel(rows);
-  return html(renderAdminPage(model));
+  return html(renderAdminPage(model, { origin: url.origin }));
 }
 
 async function handleAdminSetJob(jobId, request, env) {

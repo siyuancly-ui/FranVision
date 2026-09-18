@@ -22,7 +22,7 @@ npx wrangler dev                # GET /, GET /delivery/<jobId>, POST /admin/jobs
 
 ```bash
 cd delivery-page
-npm test    # node --test, 28 cases, NO network
+npm test    # node --test, 32 cases, NO network
 ```
 
 `src/render.js` is pure (`buildDeliveryModel` shapes a Supabase `projects` row into a template model; `renderDeliveryPage`/`renderNotFoundPage` are string-building functions) — fully unit-tested without touching Supabase. `src/index.js` (the Worker's `fetch` handler) and `src/supabase.js` (raw-fetch client) are thin and untested directly, same division of labor as photo-sync-worker.
@@ -72,7 +72,8 @@ POST /admin/jobs/<jobId>   (bearer ADMIN_TOKEN)
 
 GET /admin?admin=<ADMIN_TOKEN>
   -> supabase.listProjects()          (every projects row, newest-updated first)
-  -> admin.buildAdminModel(rows)      (pure: address/photoCount/hasVideo/hasTour per Job)
+  -> admin.buildAdminModel(rows)      (pure: address/agents/photoCount/hasVideo/hasTour per
+                                        Job, sorted like FSB's admin -- see below)
   -> admin.renderAdminPage(model)     (pure: HTML directory table, client-side filter)
 ```
 
@@ -83,12 +84,14 @@ GET /admin?admin=<ADMIN_TOKEN>
 | `src/index.js` | Worker `fetch` handler: routes `GET /`, `GET /delivery/<jobId>`, `GET /admin`, `POST /admin/jobs/<jobId>` |
 | `src/supabase.js` | Raw-fetch client: `getProject(jobId)` (read-only), `listProjects()` (read-only, admin directory), `setDeliveryInfo(jobId, fields)` (the one write this Worker does), generic `rpc()` |
 | `src/render.js` | All pure logic: photo/video/tour selection (`buildDeliveryModel`), HTML template (`renderDeliveryPage`, `renderNotFoundPage`), `escapeHtml` |
-| `src/admin.js` | Pure logic for the admin directory: `buildAdminModel(rows)`, `renderAdminPage(model)` (imports `escapeHtml` from `render.js`) |
+| `src/admin.js` | Pure logic for the admin directory: `buildAdminModel(rows)`, `renderAdminPage(model, {origin})` (imports `escapeHtml` from `render.js`) |
 | `supabase/schema.sql` | Run once — adds `project_set_delivery_info()` |
 
 ## Confirmed design decisions
 
-- **Admin directory at `GET /admin?admin=<ADMIN_TOKEN>` (2026-09-17), same query-param-token shape as Feature Sheet Builder's own admin page** — a bookmarkable-but-secret link Franky keeps, not a curl-only bearer endpoint like `POST /admin/jobs/<jobId>` above. Lists every `projects` row (shared with FSB — a Job's presence here doesn't imply it has photos/a tour link/anything specific, same as FSB's own admin list isn't filtered either) with address, photo count, video/tour presence, and a link to its delivery page; a plain client-side filter box, no build step. **Deliberately read-only, no create/duplicate/delete/recycle-bin unlike FSB's admin** — a delivery page exists because a Job exists, it isn't a separate thing to manage the lifecycle of from here.
+- **Admin directory at `GET /admin?admin=<ADMIN_TOKEN>` (2026-09-17), same query-param-token shape as Feature Sheet Builder's own admin page** — a bookmarkable-but-secret link Franky keeps, not a curl-only bearer endpoint like `POST /admin/jobs/<jobId>` above. Lists every `projects` row with address, agent(s), photo count, video/tour presence, updated time, and a "Copy agent link" button (writes the full absolute `/delivery/<jobId>` URL to the clipboard, `navigator.clipboard.writeText` + a `prompt()` fallback — same pattern as FSB admin.js's own copy-link button); a plain client-side filter box, no build step. **Deliberately read-only, no create/duplicate/delete/recycle-bin unlike FSB's admin** — a delivery page exists because a Job exists, it isn't a separate thing to manage the lifecycle of from here.
+- **`listProjects()` filters to `id=like.FVS-*` server-side (2026-09-17).** `projects` is shared with Feature Sheet Builder, whose own projects today use a random hex id (its `templateSystem`/`agentInfo`/`confirmed` shape, not a Job at all), not `FVS-YYYYMMDD-NNN` -- 34 of an early 47-row sample were FSB drafts (some already in its own recycle bin) with no address/photos/tourUrl, cluttering what's supposed to be a directory of delivery pages. Job Generator's jobIds are always `FVS-`-prefixed (id-generator.js), so this is a permanent filter, not a today-only workaround: once FSB's own projects move onto the same shared jobId scheme (planned, see [[franvision-custom-system-buildout]]), they'll already satisfy it and start appearing here with no code change.
+- **Agent column and sort order match Feature Sheet Builder's own admin page exactly, for the same forward-compatible reason as the filter above.** `agents` reads `data.agentInfo.name`/`data.agentInfo2.name` -- FSB's own fields, mirroring `storage.js#listProjects`' derivation (`[agentInfo.name, agentInfo2.name].filter(Boolean)`) -- not populated by anything for a Job Generator jobId today, but will be the moment FSB's projects share this jobId scheme. Sort order matches FSB admin.js#sortRows() exactly: primary agent's first name A-Z (no-agent jobs sink to the bottom), then newest-updated first within the same name -- computed once in `buildAdminModel`, not client-side, since this page is server-rendered rather than an SPA.
 - **Section visibility is data-presence-driven for v1, not purchased-services-driven.** A section renders iff its underlying data exists (a hero photo, a video, a `tourUrl`, gallery photos, a Local Report photo, an address) — see `franvision-delivery-page-design-spec.md`'s "Section visibility is service-driven, not fixed" note for the eventual target (which services/packages a Job's client purchased) and why v1 doesn't attempt that yet (job-generator/pricing data isn't in Supabase at all today).
 - **Floor Tour and 3D Tour share one field pair** (`tourUrl` + `tourType`), not two separate fields — confirmed mutually exclusive, same visual slot, no per-provider frontend difference (design-spec item 4).
 - **The neighborhood report (item 7) renders as a plain image for v1**, not the structured color-coded Schools/Parks/Transit/Safety layout from the visual mockup (see the separate Artifact draft) — the real content is a manually cropped HoodQ screenshot living in each Job's `Local Report` Dropbox folder, already synced by photo-sync-worker as an ordinary photo (folder `Local Report` was already in `SYNC_FOLDERS`). Rebuilding the structured layout needs real per-category data, not an image — only worth doing if/when a HoodQ API (or similar) is found (design-spec "Future automation goal").
