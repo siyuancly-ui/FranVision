@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { runDelta, processPhotoBatch, runBackfill, processRenderRetryPoll, MAX_RENDER_RETRY_ATTEMPTS } from '../src/sync.js';
+import { runDelta, processPhotoBatch, runBackfill, processRenderRetryPoll, MAX_RENDER_RETRY_ATTEMPTS, pickGalleryFallbackTargets } from '../src/sync.js';
 
 const ENV = {
   DROPBOX_JOBS_ROOT: '',
@@ -95,6 +95,9 @@ function makeSb(over = {}) {
     },
     async updatePendingRender() {},
     async deletePendingRender() {},
+    async getProjectPhotos() {
+      return [];
+    },
     ...over,
   };
 }
@@ -109,6 +112,60 @@ const upsertItem = (over = {}) => ({
   rev: 'r1',
   dims: { width: 100, height: 50 },
   ...over,
+});
+
+// ---------------------------------------------------------------------------
+// pickGalleryFallbackTargets
+// ---------------------------------------------------------------------------
+
+function galleryPhoto(n, over = {}) {
+  return { photoId: 'p' + n, filename: String(n).padStart(2, '0') + '.jpg', folder: 'MLS', status: 'ok', hasThumb: true, ...over };
+}
+
+test('pickGalleryFallbackTargets: empty gallery -> no targets', () => {
+  assert.deepEqual(pickGalleryFallbackTargets([], ['MLS']), []);
+  assert.deepEqual(pickGalleryFallbackTargets(null, ['MLS']), []);
+});
+
+test('pickGalleryFallbackTargets: picks the 3rd and 5th photo by filename', () => {
+  const photos = [galleryPhoto(5), galleryPhoto(1), galleryPhoto(3), galleryPhoto(2), galleryPhoto(4), galleryPhoto(6)];
+  const targets = pickGalleryFallbackTargets(photos, ['MLS']);
+  assert.deepEqual(targets.map((p) => p.photoId), ['p3', 'p5']);
+});
+
+test('pickGalleryFallbackTargets: clamps to the last photo when the gallery is smaller than index 4, keeps hero/closing distinct', () => {
+  const photos = [galleryPhoto(1), galleryPhoto(2)];
+  const targets = pickGalleryFallbackTargets(photos, ['MLS']);
+  // index 2 clamps to the last (p2); index 4 also clamps to p2, colliding
+  // with hero -> closing swaps to the first (p1) instead, same as render.js.
+  assert.deepEqual(targets.map((p) => p.photoId), ['p2', 'p1']);
+});
+
+test('pickGalleryFallbackTargets: a single-photo gallery is both hero and closing -> one target', () => {
+  const targets = pickGalleryFallbackTargets([galleryPhoto(1)], ['MLS']);
+  assert.deepEqual(targets.map((p) => p.photoId), ['p1']);
+});
+
+test('pickGalleryFallbackTargets: dedup swap keeps hero and closing distinct when possible', () => {
+  // 3 photos: index 2 (3rd) is p3 exactly; index 4 clamps to the last, p3 too
+  // -- same collision render.js's dedup swap exists for. Should swap closing
+  // to a different photo (the last, or index 0 if the last IS hero).
+  const photos = [galleryPhoto(1), galleryPhoto(2), galleryPhoto(3)];
+  const targets = pickGalleryFallbackTargets(photos, ['MLS']);
+  assert.deepEqual(targets.map((p) => p.photoId), ['p3', 'p1']);
+});
+
+test('pickGalleryFallbackTargets: ignores non-ok, thumbless, or non-gallery-folder photos', () => {
+  const photos = [
+    galleryPhoto(1), galleryPhoto(2),
+    galleryPhoto(3, { status: 'pending_review' }),
+    galleryPhoto(4, { hasThumb: false }),
+    galleryPhoto(5, { folder: 'Local Report' }),
+    galleryPhoto(6), galleryPhoto(7),
+  ];
+  const targets = pickGalleryFallbackTargets(photos, ['MLS']);
+  // real gallery (sorted): 01, 02, 06, 07 -- index 2 is p6, index 4 clamps to the last (p7)
+  assert.deepEqual(targets.map((p) => p.photoId), ['p6', 'p7']);
 });
 
 test('processPhotoBatch: MLS photo -> thumb + download copy + rpc', async () => {
@@ -225,6 +282,79 @@ test('processPhotoBatch: a failing large render does not block the small thumb o
   assert.equal(sb.calls.pendingInserts.length, 1); // queued for retry, not silently dropped
   assert.equal(sb.calls.pendingInserts[0].kind, 'large');
   assert.equal(sb.calls.pendingInserts[0].sourcePath, '/JobA/Local Report/report.jpg');
+});
+
+// ---------------------------------------------------------------------------
+// processPhotoBatch: gallery hero/closing fallback large render
+// ---------------------------------------------------------------------------
+
+test('processPhotoBatch: a gallery-folder upsert triggers a large render for the current 3rd/5th fallback photos', async () => {
+  const dbx = makeDbx();
+  const currentGallery = [
+    { photoId: 'p1', filename: '01.jpg', folder: 'MLS', status: 'ok', hasThumb: true },
+    { photoId: 'p2', filename: '02.jpg', folder: 'MLS', status: 'ok', hasThumb: true },
+    { photoId: 'p3', filename: '03.jpg', folder: 'MLS', status: 'ok', hasThumb: true, dropboxPath: '/JobA/MLS/03.jpg' },
+    { photoId: 'p4', filename: '04.jpg', folder: 'MLS', status: 'ok', hasThumb: true },
+    { photoId: 'p5', filename: '05.jpg', folder: 'MLS', status: 'ok', hasThumb: true, dropboxPath: '/JobA/MLS/05.jpg' },
+  ];
+  const sb = makeSb({ async getProjectPhotos() { return currentGallery; } });
+  const res = await processPhotoBatch(ENV, { dbx, sb }, { jobId: 'FV-1', jobFolderPath: '/JobA', items: [upsertItem({ path: '/JobA/MLS/06.jpg', filename: '06.jpg', relPathFromJob: 'MLS/06.jpg' })] });
+
+  assert.equal(res.ok, 1);
+  assert.deepEqual(dbx.calls.thumbV2.map((c) => c.path).sort(), ['/JobA/MLS/03.jpg', '/JobA/MLS/05.jpg']);
+  assert.deepEqual(sb.calls.larges.map((c) => c.photoId).sort(), ['p3', 'p5']);
+  assert.ok(sb.calls.rpc.some((c) => c.fn === 'photos_upsert' && c.args.p_photo.photoId === 'p3' && c.args.p_photo.hasLarge === true));
+  assert.ok(sb.calls.rpc.some((c) => c.fn === 'photos_upsert' && c.args.p_photo.photoId === 'p5' && c.args.p_photo.hasLarge === true));
+});
+
+test('processPhotoBatch: fallback photos that already have hasLarge:true are not re-rendered', async () => {
+  const dbx = makeDbx();
+  const currentGallery = [
+    { photoId: 'p1', filename: '01.jpg', folder: 'MLS', status: 'ok', hasThumb: true },
+    { photoId: 'p2', filename: '02.jpg', folder: 'MLS', status: 'ok', hasThumb: true },
+    { photoId: 'p3', filename: '03.jpg', folder: 'MLS', status: 'ok', hasThumb: true, hasLarge: true },
+    { photoId: 'p4', filename: '04.jpg', folder: 'MLS', status: 'ok', hasThumb: true },
+    { photoId: 'p5', filename: '05.jpg', folder: 'MLS', status: 'ok', hasThumb: true, hasLarge: true },
+  ];
+  const sb = makeSb({ async getProjectPhotos() { return currentGallery; } });
+  await processPhotoBatch(ENV, { dbx, sb }, { jobId: 'FV-1', jobFolderPath: '/JobA', items: [upsertItem()] });
+
+  assert.equal(dbx.calls.thumbV2.length, 0);
+  assert.equal(sb.calls.larges.length, 0);
+});
+
+test('processPhotoBatch: a batch that never touches a gallery folder never checks the fallback at all', async () => {
+  const dbx = makeDbx();
+  const sb = makeSb({ async getProjectPhotos() { throw new Error('should not be called'); } });
+  const item = upsertItem({ path: '/JobA/Local Report/report.jpg', subFolder: 'Local Report', relPathFromJob: 'Local Report/report.jpg', filename: 'report.jpg' });
+  const res = await processPhotoBatch(ENV, { dbx, sb }, { jobId: 'FV-1', jobFolderPath: '/JobA', items: [item] });
+  assert.equal(res.ok, 1); // did not throw -- getProjectPhotos was never called
+});
+
+test('processPhotoBatch: a failing fallback large render is queued for retry, not silently dropped', async () => {
+  const dbx = makeDbx({ async getThumbnailV2() { throw new Error('dropbox 500'); } });
+  const currentGallery = [
+    { photoId: 'p1', filename: '01.jpg', folder: 'MLS', status: 'ok', hasThumb: true, dropboxPath: '/JobA/MLS/01.jpg' },
+  ];
+  const sb = makeSb({ async getProjectPhotos() { return currentGallery; } });
+  await processPhotoBatch(ENV, { dbx, sb }, { jobId: 'FV-1', jobFolderPath: '/JobA', items: [upsertItem()] });
+
+  assert.equal(sb.calls.pendingInserts.length, 1);
+  assert.equal(sb.calls.pendingInserts[0].kind, 'large');
+  assert.equal(sb.calls.pendingInserts[0].photoId, 'p1');
+});
+
+test('processPhotoBatch: a gallery-folder delete also re-checks the fallback', async () => {
+  const dbx = makeDbx();
+  const currentGallery = [
+    { photoId: 'p1', filename: '01.jpg', folder: 'MLS', status: 'ok', hasThumb: true, dropboxPath: '/JobA/MLS/01.jpg' },
+  ];
+  const sb = makeSb({ async getProjectPhotos() { return currentGallery; } });
+  await processPhotoBatch(ENV, { dbx, sb }, {
+    jobId: 'FV-1', jobFolderPath: '/JobA',
+    items: [{ type: 'delete', path: '/JobA/MLS/gone.jpg', subFolder: 'MLS', relPathFromJob: 'MLS/gone.jpg', filename: 'gone.jpg' }],
+  });
+  assert.deepEqual(sb.calls.larges.map((c) => c.photoId), ['p1']);
 });
 
 test('processPhotoBatch: delivery copy falls back to get_thumbnail_v2 when the batch entry fails', async () => {
