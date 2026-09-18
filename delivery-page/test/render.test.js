@@ -8,8 +8,7 @@ const OPTS = {
   galleryFolders: ['HDR Photos', 'MLS'],
   localReportFolder: 'Local Report',
   videoFolders: ['Video', 'VLOG'],
-  coverPhotoFolder: 'Cover Photo',
-  closingPhotoFolder: 'Closing Photo',
+  coverClosingFolder: 'Cover&Closing',
   droneCalloutFolder: 'Drone Callout',
 };
 
@@ -65,12 +64,12 @@ test('buildDeliveryModel: single gallery photo is both hero and closing', () => 
   assert.equal(model.hero.photoId, model.closing.photoId);
 });
 
-test('buildDeliveryModel: Cover Photo / Closing Photo folders override the auto first/last pick', () => {
+test('buildDeliveryModel: Cover&Closing folder -- lowest filename is cover, highest is closing', () => {
   const project = { data: { photos: [
     photo({ photoId: 'p1', filename: 'a.jpg' }),
     photo({ photoId: 'p2', filename: 'z.jpg' }),
-    photo({ photoId: 'cover', folder: 'Cover Photo' }),
-    photo({ photoId: 'closing', folder: 'Closing Photo' }),
+    photo({ photoId: 'closing', filename: '2.jpg', folder: 'Cover&Closing' }),
+    photo({ photoId: 'cover', filename: '1.jpg', folder: 'Cover&Closing' }),
   ] } };
   const model = buildDeliveryModel(project, OPTS);
   assert.equal(model.hero.photoId, 'cover');
@@ -79,21 +78,32 @@ test('buildDeliveryModel: Cover Photo / Closing Photo folders override the auto 
   assert.deepEqual(model.gallery.map((p) => p.photoId), ['p1', 'p2']);
 });
 
-test('buildDeliveryModel: Cover Photo present but Closing Photo absent -- closing still falls back normally', () => {
+test('buildDeliveryModel: a single Cover&Closing photo is cover-only -- closing still falls back normally', () => {
   const project = { data: { photos: [
     photo({ photoId: 'p1', filename: 'a.jpg' }),
     photo({ photoId: 'p2', filename: 'z.jpg' }),
-    photo({ photoId: 'cover', folder: 'Cover Photo' }),
+    photo({ photoId: 'cover', folder: 'Cover&Closing' }),
   ] } };
   const model = buildDeliveryModel(project, OPTS);
   assert.equal(model.hero.photoId, 'cover');
   assert.equal(model.closing.photoId, 'p2'); // last gallery photo by filename
 });
 
-test('buildDeliveryModel: a pending_review photo in Cover Photo folder does not override (falls back)', () => {
+test('buildDeliveryModel: more than two Cover&Closing photos -- only the lowest/highest filename are used', () => {
+  const project = { data: { photos: [
+    photo({ photoId: 'closing', filename: '3.jpg', folder: 'Cover&Closing' }),
+    photo({ photoId: 'middle', filename: '2.jpg', folder: 'Cover&Closing' }),
+    photo({ photoId: 'cover', filename: '1.jpg', folder: 'Cover&Closing' }),
+  ] } };
+  const model = buildDeliveryModel(project, OPTS);
+  assert.equal(model.hero.photoId, 'cover');
+  assert.equal(model.closing.photoId, 'closing');
+});
+
+test('buildDeliveryModel: a pending_review photo in Cover&Closing folder does not override (falls back)', () => {
   const project = { data: { photos: [
     photo({ photoId: 'p1', filename: 'a.jpg' }),
-    photo({ photoId: 'cover', folder: 'Cover Photo', status: 'pending_review' }),
+    photo({ photoId: 'cover', folder: 'Cover&Closing', status: 'pending_review' }),
   ] } };
   const model = buildDeliveryModel(project, OPTS);
   assert.equal(model.hero.photoId, 'p1');
@@ -102,7 +112,7 @@ test('buildDeliveryModel: a pending_review photo in Cover Photo folder does not 
 test('buildDeliveryModel: hasLarge:true uses the _large.jpg render for full-bleed slots, gallery stays small', () => {
   const project = { data: { photos: [
     photo({ photoId: 'p1', filename: 'a.jpg' }),
-    photo({ photoId: 'cover', folder: 'Cover Photo', hasLarge: true }),
+    photo({ photoId: 'cover', folder: 'Cover&Closing', hasLarge: true }),
     photo({ photoId: 'report', folder: 'Local Report', hasLarge: true }),
     photo({ photoId: 'drone', folder: 'Drone Callout', hasLarge: true }),
   ] } };
@@ -116,7 +126,7 @@ test('buildDeliveryModel: hasLarge:true uses the _large.jpg render for full-blee
 
 test('buildDeliveryModel: no hasLarge (or the plain gallery fallback) falls back to _thumb.jpg', () => {
   const overrideNoLarge = buildDeliveryModel(
-    { data: { photos: [photo({ photoId: 'cover', folder: 'Cover Photo', hasLarge: false })] } },
+    { data: { photos: [photo({ photoId: 'cover', folder: 'Cover&Closing', hasLarge: false })] } },
     OPTS,
   );
   assert.ok(overrideNoLarge.hero.url.endsWith('cover_thumb.jpg'));

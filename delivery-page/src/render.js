@@ -49,7 +49,7 @@ function pickVideo(videos, folders) {
 // if the Job has no row yet (nothing synced, nothing manually entered).
 export function buildDeliveryModel(project, {
   jobId, supabaseUrl, galleryFolders, localReportFolder, videoFolders,
-  coverPhotoFolder, closingPhotoFolder, droneCalloutFolder,
+  coverClosingFolder, droneCalloutFolder,
 }) {
   const data = (project && project.data) || {};
   const photos = data.photos || [];
@@ -65,12 +65,19 @@ export function buildDeliveryModel(project, {
   // photo-sync-worker/CLAUDE.md), so this just gracefully stays small.
   const toImgLarge = (p) => ({ photoId: p.photoId, url: photoUrl(supabaseUrl, jobId, p.photoId, p.hasLarge ? 'large' : 'thumb'), width: p.width, height: p.height });
 
-  // Manual-override folders (Cover Photo / Closing Photo / Drone Callout) --
-  // a human drops one photo in, no data-entry needed. Job Generator doesn't
-  // create these by default yet, so most jobs won't have anything in them;
-  // that's fine, everything below falls back cleanly.
-  const coverOverride = coverPhotoFolder ? pickPhotos(photos, [coverPhotoFolder])[0] : null;
-  const closingOverride = closingPhotoFolder ? pickPhotos(photos, [closingPhotoFolder])[0] : null;
+  // Manual-override folder (Cover&Closing / Drone Callout) -- a human drops
+  // photo(s) in, no data-entry needed. Cover&Closing merges what used to be
+  // two separate folders (confirmed 2026-09-17): pickPhotos already sorts by
+  // filename, so within that one folder the lowest-numbered photo becomes
+  // the cover/hero override and the highest-numbered becomes the closing
+  // override -- a single photo is treated as cover-only (closing still falls
+  // back normally below), and anything beyond two photos just leaves the
+  // middle ones unused. Job Generator doesn't create this folder by default
+  // yet, so most jobs won't have anything in it; that's fine, everything
+  // below falls back cleanly.
+  const coverClosingPhotos = coverClosingFolder ? pickPhotos(photos, [coverClosingFolder]) : [];
+  const coverOverride = coverClosingPhotos[0] || null;
+  const closingOverride = coverClosingPhotos.length > 1 ? coverClosingPhotos[coverClosingPhotos.length - 1] : null;
   const aerialPhotos = droneCalloutFolder ? pickPhotos(photos, [droneCalloutFolder]) : [];
 
   // No override -> falls back to the 3rd / 5th gallery photo by filename
@@ -81,7 +88,7 @@ export function buildDeliveryModel(project, {
   const heroFallback = fallbackPhoto(galleryPhotos, 2);
   let closingFallback = fallbackPhoto(galleryPhotos, 4);
   // Only avoid a duplicate pick when BOTH slots are actually relying on
-  // this fallback -- a Cover Photo override wins its own slot regardless
+  // this fallback -- a Cover&Closing override wins its own slot regardless
   // of what the closing fallback would otherwise have picked.
   if (!coverOverride && closingFallback && heroFallback && closingFallback.photoId === heroFallback.photoId && galleryPhotos.length > 1) {
     const last = galleryPhotos[galleryPhotos.length - 1];
