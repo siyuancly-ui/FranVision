@@ -172,8 +172,19 @@ ${section('<section>', model.gallery.length > 0 && galleryHtml(model.gallery))}
 ${section('<section class="section-alt">', model.aerial.length > 0 && aerialHtml(model.aerial))}
 ${section('<section>', model.floorplan.length > 0 && floorplanHtml(model.floorplan))}
 ${section('<section class="section-alt">', model.localReport && localReportHtml(model.localReport))}
-${closingHtml(model)}`;
+${closingHtml(model)}
+${(model.aerial.length > 0 || model.floorplan.length > 0) ? lightboxHtml() : ''}`;
   return page(model.address ? `${model.address} — FranVision Media` : 'FranVision Delivery Page', body);
+}
+
+// Shared fullscreen viewer for Callout/Floor Plan (2026-09-18) -- any element
+// with class `lightbox-trigger` + a `data-full` URL opens here on click (see
+// SCRIPT). Only rendered when at least one of those sections is present.
+function lightboxHtml() {
+  return `  <div class="lightbox" id="lightbox" hidden>
+    <button class="lightbox-close" id="lightboxClose" aria-label="Close">&times;</button>
+    <img id="lightboxImg" src="" alt="">
+  </div>`;
 }
 
 function heroHtml(model) {
@@ -203,13 +214,18 @@ function tourHtml(tour) {
   </div>`;
 }
 
-// Shared by the main gallery and a multi-photo Drone Callout (see
-// aerialHtml) -- same auto-advancing track, same visual treatment,
-// distinguished only by element ids so the page script can run each
-// independently (see SCRIPT's setupTrack, which also staggers their
-// auto-advance timing so two tracks never scroll in lockstep).
-function trackHtml(images, ids) {
-  const slides = images.map((p) => `<div class="gallery-slide" style="background-image:url('${escapeHtml(p.url)}');background-size:cover;background-position:center;"></div>`).join('\n    ');
+// Shared by the main gallery and a multi-photo Drone Callout/Floor Plan (see
+// aerialHtml/floorplanHtml) -- same auto-advancing track, same visual
+// treatment, distinguished only by element ids so the page script can run
+// each independently (see SCRIPT's setupTrack, which also staggers their
+// auto-advance timing so two tracks never scroll in lockstep). `opts.slideClass`
+// adds an extra class per slide (e.g. `aerial-slide` for Callout's 16:9
+// override -- the main gallery/Floor Plan keep the default 3:2). `opts.lightbox`
+// marks slides clickable to open the shared fullscreen viewer (see SCRIPT).
+function trackHtml(images, ids, opts = {}) {
+  const slideClass = opts.slideClass ? ` ${opts.slideClass}` : '';
+  const clickClass = opts.lightbox ? ' lightbox-trigger' : '';
+  const slides = images.map((p) => `<div class="gallery-slide${slideClass}${clickClass}" data-full="${escapeHtml(p.url)}" style="background-image:url('${escapeHtml(p.url)}');background-size:cover;background-position:center;"></div>`).join('\n    ');
   return `  <div class="gallery-wrap">
     <button class="gallery-arrow prev" id="${ids.prev}" aria-label="Previous photo"><svg viewBox="0 0 24 24" fill="none" stroke="#23211C" stroke-width="2"><path d="M15 5l-7 7 7 7"/></svg></button>
     <div class="gallery-track" id="${ids.track}">
@@ -227,14 +243,20 @@ function galleryHtml(gallery) {
 // -- "drop file(s) in, no data entry" shape, same as Local Report. A single
 // photo is a static image; more than one reuses the gallery's auto-
 // advancing track (confirmed 2026-09-15), staggered against the main
-// gallery's timing so they don't scroll at the same moment.
+// gallery's timing so they don't scroll at the same moment, and auto-
+// advancing on its own 5s cadence (2026-09-18, slower than the main
+// gallery's 2s -- see SCRIPT's setupTrack). **16:9 (2026-09-18)**, not the
+// main gallery's 3:2 (`.aerial-slide` overrides `.gallery-slide`'s aspect-
+// ratio; the single-photo case uses the same ratio via `.aerial-single`).
+// Both the single image and each track slide open the shared fullscreen
+// lightbox on click (`.lightbox-trigger`, see SCRIPT).
 function aerialHtml(photos) {
   if (photos.length === 1) {
     return `  <div class="media-frame">
-    <img src="${escapeHtml(photos[0].url)}" alt="Aerial overview" style="width:100%;border-radius:6px;display:block;">
+    <img class="frame-img aerial-single lightbox-trigger" data-full="${escapeHtml(photos[0].url)}" src="${escapeHtml(photos[0].url)}" alt="Aerial overview">
   </div>`;
   }
-  return trackHtml(photos, { track: 'aerialTrack', prev: 'aerialPrev', next: 'aerialNext' });
+  return trackHtml(photos, { track: 'aerialTrack', prev: 'aerialPrev', next: 'aerialNext' }, { slideClass: 'aerial-slide', lightbox: true });
 }
 
 // Floor Plan / Site Plan (2026-09-18) -- same "drop file(s) in, no data
@@ -242,13 +264,16 @@ function aerialHtml(photos) {
 // report. A single page is a static image; more than one (main floor,
 // second floor, basement) reuses the gallery's auto-advancing track,
 // staggered against the other tracks so none of them scroll in lockstep.
+// Both the single image and each track slide open the shared fullscreen
+// lightbox on click (`.lightbox-trigger`, see SCRIPT) -- unlike Callout,
+// keeps the default 3:2 ratio (only Callout asked for 16:9).
 function floorplanHtml(photos) {
   if (photos.length === 1) {
     return `  <div class="media-frame">
-    <img src="${escapeHtml(photos[0].url)}" alt="Floor plan" style="width:100%;border-radius:6px;display:block;">
+    <img class="frame-img lightbox-trigger" data-full="${escapeHtml(photos[0].url)}" src="${escapeHtml(photos[0].url)}" alt="Floor plan">
   </div>`;
   }
-  return trackHtml(photos, { track: 'floorplanTrack', prev: 'floorplanPrev', next: 'floorplanNext' });
+  return trackHtml(photos, { track: 'floorplanTrack', prev: 'floorplanPrev', next: 'floorplanNext' }, { lightbox: true });
 }
 
 // v1: the neighborhood report is a manually cropped HoodQ screenshot (see
@@ -338,9 +363,18 @@ const CSS = `
   .gallery-track{display:flex;gap:16px;overflow-x:auto;scroll-snap-type:x mandatory;padding:0 12vw;scrollbar-width:none;}
   .gallery-track::-webkit-scrollbar{display:none;}
   .gallery-slide{flex:0 0 76%;max-width:900px;aspect-ratio:3/2;border-radius:var(--radius-m);scroll-snap-align:center;}
+  .aerial-slide{aspect-ratio:16/9;}
   .gallery-arrow{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;border:none;background:var(--paper);box-shadow:0 1px 4px rgba(0,0,0,0.12);display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:3;}
   .gallery-arrow.prev{left:14px;} .gallery-arrow.next{right:14px;}
   .gallery-arrow svg{width:16px;height:16px;}
+  .frame-img{width:100%;border-radius:var(--radius-m);display:block;}
+  .aerial-single{aspect-ratio:16/9;object-fit:cover;}
+  .lightbox-trigger{cursor:zoom-in;}
+  .lightbox{position:fixed;inset:0;background:rgba(10,8,14,0.92);display:flex;align-items:center;justify-content:center;z-index:50;padding:24px;}
+  .lightbox[hidden]{display:none;}
+  .lightbox img{max-width:92vw;max-height:92vh;object-fit:contain;border-radius:4px;}
+  .lightbox-close{position:absolute;top:20px;right:24px;width:40px;height:40px;border-radius:50%;border:none;background:rgba(255,255,255,0.14);color:#fff;font-size:26px;line-height:1;cursor:pointer;}
+  .lightbox-close:hover{background:rgba(255,255,255,0.24);}
   .closing{position:relative;height:92vh;min-height:560px;overflow:hidden;background-size:cover;background-position:center;}
   .closing-card{
     position:absolute;left:50%;bottom:10%;transform:translateX(-50%);
@@ -373,7 +407,9 @@ const SCRIPT = `<script>
   // phaseOffsetMs staggers this track's auto-advance start against any
   // other track on the page (e.g. the aerial track starts 1s after the
   // main gallery) so two tracks never scroll at the same moment.
-  function setupTrack(trackId, prevId, nextId, phaseOffsetMs){
+  // intervalMs (default 2000) is how often it auto-advances -- Callout runs
+  // slower, 5000ms, since 16:9 photos read a bit differently (2026-09-18).
+  function setupTrack(trackId, prevId, nextId, phaseOffsetMs, intervalMs){
     var track = document.getElementById(trackId);
     if(!track) return;
     var slideWidth = function(){ return track.firstElementChild ? track.firstElementChild.getBoundingClientRect().width + 16 : 0; };
@@ -383,7 +419,7 @@ const SCRIPT = `<script>
 
     var prev = document.getElementById(prevId), next = document.getElementById(nextId);
     var timer = null;
-    function startAuto(){ if(!reduceMotion) timer = setInterval(goNext, 2000); }
+    function startAuto(){ if(!reduceMotion) timer = setInterval(goNext, intervalMs || 2000); }
     function resetAuto(){ if(timer) clearInterval(timer); startAuto(); }
 
     if(prev) prev.addEventListener('click', function(){ goPrev(); resetAuto(); });
@@ -392,7 +428,24 @@ const SCRIPT = `<script>
   }
 
   setupTrack('galTrack', 'galPrev', 'galNext', 0);
-  setupTrack('aerialTrack', 'aerialPrev', 'aerialNext', 1000);
+  setupTrack('aerialTrack', 'aerialPrev', 'aerialNext', 1000, 5000);
   setupTrack('floorplanTrack', 'floorplanPrev', 'floorplanNext', 2000);
+
+  // Fullscreen viewer for Callout/Floor Plan (2026-09-18) -- any
+  // .lightbox-trigger (a single static image or a track slide) opens the
+  // shared overlay on click; Esc, the close button, or clicking the
+  // backdrop itself all close it.
+  var lightbox = document.getElementById('lightbox');
+  if(lightbox){
+    var lightboxImg = document.getElementById('lightboxImg');
+    function openLightbox(url){ lightboxImg.src = url; lightbox.hidden = false; }
+    function closeLightbox(){ lightbox.hidden = true; lightboxImg.src = ''; }
+    document.querySelectorAll('.lightbox-trigger').forEach(function(el){
+      el.addEventListener('click', function(){ openLightbox(el.dataset.full || el.src); });
+    });
+    document.getElementById('lightboxClose').addEventListener('click', closeLightbox);
+    lightbox.addEventListener('click', function(e){ if(e.target === lightbox) closeLightbox(); });
+    document.addEventListener('keydown', function(e){ if(e.key === 'Escape') closeLightbox(); });
+  }
 })();
 </script>`;
