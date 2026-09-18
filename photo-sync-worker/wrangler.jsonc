@@ -113,10 +113,14 @@
 
     // Sub-folders that ALSO get a large (DOWNLOAD_THUMB_SIZE) render
     // uploaded to Supabase Storage as <photoId>_large.jpg, for delivery-
-    // page's full-bleed sections (hero/closing/aerial/neighborhood-report).
-    // Deliberately NOT the main gallery (MLS/HDR Photos) -- those stay
-    // small-only; see photo-sync-worker/CLAUDE.md for why.
-    "LARGE_THUMB_FOLDERS": "Cover&Closing,Callout,Local Report",
+    // page's full-bleed sections (hero/closing/aerial/neighborhood-report/
+    // floor-plan). "Floorplan" added 2026-09-18 alongside delivery-page's
+    // new Floor Plan section -- a floor plan is a technical diagram (room
+    // labels, measurements), so legibility benefits from the large render
+    // even more than a regular photo does. Deliberately NOT the main
+    // gallery (MLS/HDR Photos) -- those stay small-only; see
+    // photo-sync-worker/CLAUDE.md for why.
+    "LARGE_THUMB_FOLDERS": "Cover&Closing,Callout,Local Report,Floorplan",
 
     // Safety cap: max delta entries pulled per queue message before the
     // cursor is saved and processing continues in a fresh message.
