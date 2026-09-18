@@ -249,6 +249,64 @@ test('renderDeliveryPage: more than one Drone Callout photo renders the auto-adv
   assert.ok(out.includes('drone2_thumb.jpg'));
 });
 
+test('renderDeliveryPage: Callout is 16:9 (aerial-slide/aerial-single), Floor Plan keeps the default ratio', () => {
+  const project = { data: { photos: [
+    photo({ photoId: 'drone', folder: 'Drone Callout' }),
+    photo({ photoId: 'fp', folder: 'Floorplan' }),
+  ] } };
+  const model = buildDeliveryModel(project, OPTS);
+  const out = renderDeliveryPage(model);
+  assert.ok(out.includes('aerial-single'));
+  const fpImgTag = out.slice(out.indexOf('fp_thumb.jpg') - 200, out.indexOf('fp_thumb.jpg') + 50);
+  assert.ok(!fpImgTag.includes('aerial-single')); // floor plan img has no aerial-single class
+
+  const multiProject = { data: { photos: [
+    photo({ photoId: 'drone1', folder: 'Drone Callout', filename: 'a.png' }),
+    photo({ photoId: 'drone2', folder: 'Drone Callout', filename: 'b.png' }),
+  ] } };
+  const multiModel = buildDeliveryModel(multiProject, OPTS);
+  const multiOut = renderDeliveryPage(multiModel);
+  assert.ok(multiOut.includes('gallery-slide aerial-slide lightbox-trigger'));
+});
+
+test('renderDeliveryPage: Callout auto-advances every 5s, the main gallery/Floor Plan stay at 2s', () => {
+  const project = { data: { photos: [
+    photo({ photoId: 'drone1', folder: 'Drone Callout', filename: 'a.png' }),
+    photo({ photoId: 'drone2', folder: 'Drone Callout', filename: 'b.png' }),
+  ] } };
+  const model = buildDeliveryModel(project, OPTS);
+  const out = renderDeliveryPage(model);
+  assert.ok(out.includes("setupTrack('aerialTrack', 'aerialPrev', 'aerialNext', 1000, 5000)"));
+  assert.ok(out.includes("setupTrack('galTrack', 'galPrev', 'galNext', 0)"));
+});
+
+test('renderDeliveryPage: Callout and Floor Plan images/slides are lightbox triggers with the full-res URL', () => {
+  const project = { data: { photos: [
+    photo({ photoId: 'drone', folder: 'Drone Callout', hasLarge: true }),
+    photo({ photoId: 'fp', folder: 'Floorplan', hasLarge: true }),
+  ] } };
+  const model = buildDeliveryModel(project, OPTS);
+  const out = renderDeliveryPage(model);
+  assert.ok(out.includes('class="frame-img aerial-single lightbox-trigger" data-full="' + model.aerial[0].url + '"'));
+  assert.ok(out.includes('class="frame-img lightbox-trigger" data-full="' + model.floorplan[0].url + '"'));
+  assert.ok(out.includes('id="lightbox"'));
+  assert.ok(out.includes('id="lightboxImg"'));
+});
+
+test('renderDeliveryPage: the lightbox markup is omitted when there is no Callout or Floor Plan', () => {
+  const model = buildDeliveryModel({ data: { address: '1 Main St', photos: [photo()] } }, OPTS);
+  const out = renderDeliveryPage(model);
+  assert.ok(!out.includes('id="lightbox"'));
+});
+
+test('renderDeliveryPage: the lightbox stays hidden by default (a `.lightbox{display:flex}` rule alone would win over [hidden] and show it permanently)', () => {
+  const project = { data: { photos: [photo({ photoId: 'drone', folder: 'Drone Callout' })] } };
+  const model = buildDeliveryModel(project, OPTS);
+  const out = renderDeliveryPage(model);
+  assert.ok(out.includes('<div class="lightbox" id="lightbox" hidden>'));
+  assert.ok(out.includes('.lightbox[hidden]{display:none;}'));
+});
+
 test('renderDeliveryPage: video autoplays muted and loops', () => {
   const project = { data: { videos: [{ videoId: 'v1', folder: 'Video', status: 'ok', streamUid: 'abc' }] } };
   const model = buildDeliveryModel(project, OPTS);
