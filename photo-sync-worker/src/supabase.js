@@ -117,6 +117,21 @@ export function createSupabase(env) {
       return readJson(res);
     },
 
+    // The full projects.data.photos[] array for one Job, or [] if the row
+    // doesn't exist yet. Used by the gallery hero/closing large-render pass
+    // (see sync.js#pickGalleryFallbackTargets) -- it needs the CURRENT full
+    // gallery, not just the items in the batch being processed, since which
+    // photo is "3rd/5th by filename" can shift as photos are added/removed
+    // in earlier batches too.
+    async getProjectPhotos(jobId) {
+      const res = await fetch(`${BASE}/rest/v1/projects?id=eq.${encodeURIComponent(jobId)}&select=data`, {
+        headers: authHeaders,
+      });
+      const rows = await readJson(res);
+      const row = Array.isArray(rows) ? rows[0] : rows;
+      return (row && row.data && row.data.photos) || [];
+    },
+
     // One video's current record from projects.data.videos[], or null. Used
     // before a Dropbox-side delete to find the streamUid to free in Stream.
     async getProjectVideo(projectId, videoId) {

@@ -110,6 +110,37 @@ export function base64ToBytes(b64) {
   return out;
 }
 
+// Mirrors delivery-page/src/render.js's pickPhotos() + fallbackPhoto() +
+// hero/closing dedup EXACTLY -- these are the (at most two) gallery photos
+// (3rd/5th by filename, clamped to whatever's available, deduped when the
+// gallery is small) delivery-page's hero/closing sections actually display
+// when a Job has no Cover/Closing override folder (2026-09-17: this used to
+// stay on the small w1024h768 thumb forever in that case -- see
+// LARGE_THUMB_FOLDERS' note in CLAUDE.md -- this is what changed that).
+// Deliberately does NOT check for a Cover/Closing override existing (unlike
+// render.js's dedup, which skips the swap when hero comes from a Cover
+// override instead of the fallback) -- the worst case of that simplification
+// is one harmless unused large render sitting in Storage, never fetched by
+// delivery-page, not a functional bug. Pure, no I/O.
+export function pickGalleryFallbackTargets(photos, galleryFolders) {
+  const wanted = new Set((galleryFolders || []).map((f) => f.toLowerCase()));
+  const gallery = (photos || [])
+    .filter((p) => p && p.status === 'ok' && p.hasThumb && wanted.has(String(p.folder || '').toLowerCase()))
+    .sort((a, b) => String(a.filename || '').localeCompare(String(b.filename || '')));
+
+  if (!gallery.length) return [];
+
+  const at = (i) => gallery[i] || gallery[gallery.length - 1];
+  const hero = at(2);
+  let closing = at(4);
+  if (closing.photoId === hero.photoId && gallery.length > 1) {
+    const last = gallery[gallery.length - 1];
+    closing = last.photoId !== hero.photoId ? last : gallery[0];
+  }
+
+  return hero.photoId === closing.photoId ? [hero] : [hero, closing];
+}
+
 // ---------------------------------------------------------------------------
 // Config read off env
 // ---------------------------------------------------------------------------
@@ -490,6 +521,43 @@ export async function processPhotoBatch(env, deps, msg) {
       log({ evt: 'photo_pending_review', jobId, photoId: pid, path: item.path });
     } catch (err) {
       log({ evt: 'delete_error', jobId, path: item.path, error: String(err && err.message || err) });
+    }
+  }
+
+  // ---- gallery hero/closing fallback large render: only the (at most two)
+  // gallery photos delivery-page's hero/closing fallback would actually pick
+  // (3rd/5th by filename -- see pickGalleryFallbackTargets) get a large
+  // render, not the whole gallery (LARGE_THUMB_FOLDERS stays deliberately
+  // scoped to Cover/Closing/Callout/Local Report -- see CLAUDE.md). Only
+  // worth re-checking when this batch actually touched a gallery-folder
+  // item (upsert or delete), since that's the only thing that can shift
+  // which photo is "3rd/5th" -- reads the CURRENT full gallery from
+  // Supabase, not just this batch's items, since an earlier batch's photo
+  // can be the one that needs it.
+  const galleryTouched = items.some((i) => folderMatches(i.subFolder, cfg.downloadSetFolders));
+  if (galleryTouched) {
+    try {
+      const allPhotos = await sb.getProjectPhotos(jobId);
+      const targets = pickGalleryFallbackTargets(allPhotos, cfg.downloadSetFolders).filter((p) => !p.hasLarge);
+      for (const target of targets) {
+        try {
+          const bytes = await dbx.getThumbnailV2(target.dropboxPath, cfg.downloadThumbSize);
+          await sb.uploadLarge(jobId, target.photoId, bytes);
+          await sb.rpc('photos_upsert', { p_project_id: jobId, p_photo: { photoId: target.photoId, hasLarge: true } });
+        } catch (err) {
+          const message = String(err && err.message || err);
+          log({ evt: 'gallery_fallback_large_render_failed', jobId, photoId: target.photoId, error: message });
+          try {
+            await sb.insertPendingRender({
+              projectId: jobId, kind: 'large', sourcePath: target.dropboxPath, photoId: target.photoId, filename: target.filename, error: message,
+            });
+          } catch (pendingErr) {
+            log({ evt: 'render_pending_insert_failed', jobId, path: target.dropboxPath, error: String(pendingErr && pendingErr.message || pendingErr) });
+          }
+        }
+      }
+    } catch (err) {
+      log({ evt: 'gallery_fallback_lookup_failed', jobId, error: String(err && err.message || err) });
     }
   }
 
