@@ -101,5 +101,63 @@
     clearAll: function (projectId) { return store.clearPhotos(projectId); },
   };
 
-  window.FSB.photoSource = uploadSource;
+  // ---- job-linked sheets: read-only gallery from Dropbox-synced photos --------
+  // (project id = jobId; see job-gallery.js). The picker lists HDR Photos / MLS
+  // photos as 1024 thumbs; slots / preview / PDF use the 2048 render. Headshot
+  // and logo (role-tagged) still upload like before.
+  var J = window.FSB.jobGallery;
+  var dimCache = {};   // photoId -> {width,height}; only for synced photos whose dims the worker could not read
+
+  function isJob(project) { return !!(project && J.isJobId(project.projectId)); }
+  function dimsOf(m) {
+    var c = dimCache[m.photoId];
+    return { width: m.width || (c && c.width) || 0, height: m.height || (c && c.height) || 0 };
+  }
+
+  function probeDims(project) {
+    var missing = J.galleryPhotos(project.photos).filter(function (m) { return !(m.width > 0 && m.height > 0) && !dimCache[m.photoId]; });
+    if (!missing.length) return Promise.resolve();
+    var jobs = missing.map(function (m) {
+      return new Promise(function (resolve) {
+        var img = new Image();
+        img.onload = function () { dimCache[m.photoId] = { width: img.naturalWidth, height: img.naturalHeight }; resolve(); };
+        img.onerror = resolve;
+        img.src = store.photoUrls(project.projectId, m).thumb;
+      });
+    });
+    // never hold the first render hostage to slow thumbnails
+    return Promise.race([Promise.all(jobs), new Promise(function (r) { setTimeout(r, 5000); })]);
+  }
+
+  var source = {
+    id: 'auto',
+    ready: function (project) { return isJob(project) ? probeDims(project) : undefined; },
+
+    list: function (project) {
+      if (!isJob(project)) return uploadSource.list(project);
+      return J.galleryPhotos(project.photos).map(function (p) {
+        var d = dimsOf(p);
+        return { id: p.photoId, filename: p.filename, width: d.width, height: d.height };
+      });
+    },
+    getMeta: function (project, id) {
+      var m = metaOf(project, id);
+      if (!m) return null;
+      if (!isJob(project) || !J.isSynced(m)) return uploadSource.getMeta(project, id);
+      var d = dimsOf(m);
+      return { width: d.width, height: d.height, filename: m.filename || '' };
+    },
+    thumbUrl: function (project, id) { return uploadSource.thumbUrl(project, id); },
+    fullUrl: function (project, id) { return uploadSource.fullUrl(project, id); },
+
+    // the photo LIBRARY (grid upload / delete / clear-all): read-only for a job
+    supportsUpload: function (project) { return !isJob(project); },
+    // headshot / logo uploads (info form) are always allowed
+    supportsAssetUpload: function () { return true; },
+    upload: uploadSource.upload,
+    remove: uploadSource.remove,
+    clearAll: uploadSource.clearAll,
+  };
+
+  window.FSB.photoSource = source;
 })();

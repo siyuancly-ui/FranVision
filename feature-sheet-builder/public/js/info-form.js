@@ -167,7 +167,7 @@
       inputs[groupKey + '.' + f.key] = wrap;
       wrap.appendChild(fileInput);        // must be IN the DOM for the picker + change event
       wrap.appendChild(preview);
-      if (src.supportsUpload && src.supportsUpload()) wrap.appendChild(pick);
+      if (src.supportsAssetUpload ? src.supportsAssetUpload() : (src.supportsUpload && src.supportsUpload(app.project))) wrap.appendChild(pick);
       wrap.appendChild(clear);
       renderPrev();
       return wrap;

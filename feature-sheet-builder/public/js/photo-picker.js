@@ -32,7 +32,9 @@
     overlay.appendChild(body);
 
     if (!photos.length) {
-      grid.appendChild(el('div', { class: 'fsb-picker-empty', text: 'No photos yet — upload some in the Photo Library on the left. 请先在左侧图库上传照片。' }));
+      grid.appendChild(el('div', { class: 'fsb-picker-empty', text: (window.FSB.jobGallery && window.FSB.jobGallery.isJobId(project.projectId))
+        ? 'No photos have synced from Dropbox yet — check back in a few minutes. 照片尚未从 Dropbox 同步,请稍后再试。'
+        : 'No photos yet — upload some in the Photo Library on the left. 请先在左侧图库上传照片。' }));
     }
 
     photos.forEach(function (p) {

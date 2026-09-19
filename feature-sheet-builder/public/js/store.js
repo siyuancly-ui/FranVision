@@ -249,6 +249,22 @@
       });
     }
 
+    // ---- job-linked sheets (id = jobId) ---------------------------------
+    // Their row is shared with the photo-sync-worker / delivery-page, so we
+    // never write the whole blob: fsb_project_patch merges only FSB-owned keys
+    // (+ the role-tagged headshot/logo entries of photos[]).
+    var J = window.FSB.jobGallery;
+    function rpcPatch(id, patch, assets) {
+      return sb.rpc('fsb_project_patch', { p_id: id, p_patch: patch, p_assets: assets === undefined ? null : assets })
+        .then(function (res) {
+          if (res.error) throw new Error(res.error.message);
+          return row2project(res.data);
+        });
+    }
+    function jobRefuses(what) {
+      return Promise.reject(new Error(what + ' is not available for a job\'s Feature Sheet'));
+    }
+
     return {
       mode: 'supabase',
 
@@ -270,6 +286,7 @@
       getProject: fetchProject,
 
       updateProject: function (id, project) {
+        if (J.isJobId(id)) return rpcPatch(id, J.patchOf(project), J.assetPhotos(project.photos));
         return sb.from('projects')
           .update({ data: pickData(project), updated_at: nowIso() })
           .eq('id', id).select('*').single()
@@ -281,6 +298,11 @@
 
       confirmProject: function (id, confirmed) {
         confirmed = confirmed === undefined ? true : !!confirmed;
+        if (J.isJobId(id)) {
+          return fetchProject(id).then(function (p) {
+            return rpcPatch(id, { confirmed: confirmed, confirmedAt: confirmed ? (p.confirmedAt || nowIso()) : null });
+          });
+        }
         return fetchProject(id).then(function (p) {
           p.confirmed = confirmed;
           p.confirmedAt = confirmed ? (p.confirmedAt || nowIso()) : null;
@@ -293,6 +315,7 @@
       },
 
       deleteProject: function (id) {   // -> recycle bin (soft)
+        if (J.isJobId(id)) return jobRefuses('Deleting');
         return fetchProject(id).then(function (p) {
           p.deletedAt = nowIso();
           return sb.from('projects').update({ data: pickData(p), updated_at: nowIso() })
@@ -303,6 +326,7 @@
         });
       },
       restoreProject: function (id) {
+        if (J.isJobId(id)) return jobRefuses('Restoring');
         return fetchProject(id).then(function (p) {
           delete p.deletedAt;
           return sb.from('projects').update({ data: pickData(p), updated_at: nowIso() })
@@ -313,6 +337,7 @@
         });
       },
       purgeProject: function (id) {
+        if (J.isJobId(id)) return jobRefuses('Purging');
         return sb.storage.from(BUCKET).list(id).then(function (res) {
           var files = ((res && res.data) || []).map(function (f) { return id + '/' + f.name; });
           return files.length ? sb.storage.from(BUCKET).remove(files) : Promise.resolve({});
@@ -339,6 +364,7 @@
       },
 
       duplicateProject: function (id) {
+        if (J.isJobId(id)) return jobRefuses('Duplicating');
         return fetchProject(id).then(function (src) {
           var a1 = src.agentInfo || {};
           var a2 = src.agentInfo2 || null;
@@ -397,6 +423,15 @@
       deletePhoto: function (id, photoId) {
         return fetchProject(id).then(function (project) {
           var meta = (project.photos || []).filter(function (p) { return p.photoId === photoId; })[0];
+          if (J.isJobId(id)) {
+            if (meta && !meta.role) throw new Error('Gallery photos are managed in Dropbox');
+            var jobPaths = [];
+            if (meta) { jobPaths.push(origPath(id, meta)); if (meta.hasThumb) jobPaths.push(thumbPath(id, meta)); }
+            project.photos = (project.photos || []).filter(function (p) { return p.photoId !== photoId; });
+            clearPhotoRefs(project, photoId);
+            var rm = jobPaths.length ? sb.storage.from(BUCKET).remove(jobPaths) : Promise.resolve({});
+            return rm.then(function () { return rpcPatch(id, J.patchOf(project), J.assetPhotos(project.photos)); });
+          }
           var paths = [];
           if (meta) {
             paths.push(origPath(id, meta));
@@ -416,6 +451,7 @@
       },
 
       clearPhotos: function (id) {
+        if (J.isJobId(id)) return jobRefuses('Clearing the library');
         return fetchProject(id).then(function (project) {
           var photos = (project.photos || []).filter(function (p) { return !p.role; });
           var paths = [];
@@ -437,6 +473,10 @@
       },
 
       photoUrls: function (id, meta) {
+        if (J.isSynced(meta)) {   // worker-synced: no original in the bucket, only _thumb / _large
+          var f = J.syncedFiles(meta);
+          return { full: pubUrl(id + '/' + f.full), thumb: pubUrl(id + '/' + f.thumb) };
+        }
         return {
           full: pubUrl(origPath(id, meta)),
           thumb: meta.hasThumb ? pubUrl(thumbPath(id, meta)) : pubUrl(origPath(id, meta)),
