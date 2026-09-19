@@ -413,6 +413,28 @@ await testAsync('ensureMlsForDownloadFolder: never throws -- a real failure come
   });
 });
 
+await testAsync('ensureCoverClosingFolder: creates the top-level Cover&Closing folder (Dropbox-only)', async () => {
+  const created = [];
+  const fakeDbx = { filesCreateFolderV2: async ({ path }) => { created.push(path); return { result: {} }; } };
+  await withFakeCredentials(async () => {
+    const result = await dropboxSync.ensureCoverClosingFolder({ folderName: 'Job', client: fakeDbx });
+    assert.strictEqual(result.success, true);
+    assert.deepStrictEqual(created, ['/Job/Cover&Closing']);
+  });
+});
+
+await testAsync('ensureCoverClosingFolder: already-exists is success; skips cleanly when not configured', async () => {
+  const fakeDbx = { filesCreateFolderV2: async () => { const e = new Error('c'); e.error = { error_summary: 'path/conflict/folder/..' }; throw e; } };
+  await withFakeCredentials(async () => {
+    assert.strictEqual((await dropboxSync.ensureCoverClosingFolder({ folderName: 'Job', client: fakeDbx })).success, true);
+  });
+  const saved = process.env.DROPBOX_APP_KEY;
+  delete process.env.DROPBOX_APP_KEY;
+  try {
+    assert.strictEqual((await dropboxSync.ensureCoverClosingFolder({ folderName: 'Job' })).skipped, true);
+  } finally { if (saved !== undefined) process.env.DROPBOX_APP_KEY = saved; }
+});
+
 // ---- createSharedLink (delivery-email.js's per-line link resolver) ----
 
 await testAsync('createSharedLink: fails cleanly when not configured', async () => {

@@ -17,6 +17,7 @@
 //   Revisions           <- always, empty
 //   Local Report        <- always, empty (added 2026-09-07)
 //   HDR Photos          <- always (renamed from "MLS" 2026-09-12 -- see below)
+//     Callout          <- always, empty (added 2026-09-18, delivery page's Callout photos)
 //   Floorplan           <- Floor Plan OR Site Plan selected (Site Plan merges in, no separate folder)
 //   Virtual Staging     <- Virtual Staging selected
 //   Feature Sheets      <- Feature Sheets selected
@@ -58,6 +59,29 @@
 const fs = require('fs');
 const path = require('path');
 
+// 3D Virtual Tour selected -> a Tour Link.txt at the job folder's root for
+// staff to paste the tour URL into (added 2026-09-18). photo-sync-worker's
+// tour-link-sync.js watches for exactly this filename (TOUR_LINK_FILENAME
+// there) and writes its text into the delivery page's tourUrl -- so the
+// file is created EMPTY (an empty file just yields no tour, a placeholder
+// sentence would be published as the URL). Created locally only, and only
+// if missing (an Update must never overwrite a link already pasted in);
+// it syncs to Dropbox through the normal Push like any other file -- NOT
+// uploaded from here, since a directly-uploaded copy with no sync-manifest
+// entry would make the very first Push after it's edited look like a
+// both-sides-changed conflict. Not removed if 3D Tour is later unchecked.
+const TOUR_LINK_FILENAME = 'Tour Link.txt';
+
+// Returns 'created' | 'exists' | null (3D Tour not selected).
+function ensureTourLinkFile(jobFolderAbsolutePath, order) {
+  const addons = (order && order.addons) || {};
+  if (!addons.three_d_tour) return null;
+  const file = path.join(jobFolderAbsolutePath, TOUR_LINK_FILENAME);
+  if (fs.existsSync(file)) return 'exists';
+  fs.writeFileSync(file, '', 'utf8');
+  return 'created';
+}
+
 // Pure logic: given an order, return the list of component folders to
 // create, as '/'-joined relative paths (POSIX-style regardless of host
 // OS -- callers split on '/' and path.join() for the real filesystem call).
@@ -79,7 +103,12 @@ function getComponentFolders(order) {
   const stagingQty = Number(addons.virtual_staging_qty) || 0;
   const wantsVirtualStaging = !!addons.virtual_staging || stagingQty > 0;
 
-  const folders = ['0 RAW/1 Raws', 'Revisions', 'Local Report', 'HDR Photos'];
+  // 'HDR Photos/Callout' (added 2026-09-18): where the photos for the
+  // delivery page's Callout section go (drone/aerial or any highlight
+  // shots) -- delivery-page/photo-sync-worker read it as a nested folder
+  // under HDR Photos. A normal synced component folder, unlike the
+  // Dropbox-only 'Cover&Closing' (see dropbox-sync.js).
+  const folders = ['0 RAW/1 Raws', 'Revisions', 'Local Report', 'HDR Photos', 'HDR Photos/Callout'];
 
   if (isLuxury) {
     folders.push('0 RAW/4 Raw HDR');
@@ -159,4 +188,4 @@ function folderHasRealFiles(absDir) {
   return false;
 }
 
-module.exports = { getComponentFolders, createJobFolders, diffComponentFolders, folderHasRealFiles };
+module.exports = { TOUR_LINK_FILENAME, ensureTourLinkFile, getComponentFolders, createJobFolders, diffComponentFolders, folderHasRealFiles };

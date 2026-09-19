@@ -52,6 +52,19 @@ const TEMPLATE_NAME = 'FranVision Job';
 // immediately, instead of waiting for the first photo to sync.
 const MLS_FOR_DOWNLOAD_SUBFOLDER = 'MLS for download';
 
+// The second Dropbox-only folder (added 2026-09-18): where staff drop the
+// 1-2 photos hand-picked (from the All-in-One gallery) as the delivery
+// page's cover + closing shots -- delivery-page/CLAUDE.md's "Manual photo
+// overrides are Dropbox folders" decision (lowest filename = cover, highest
+// = closing). Same shape as 'MLS for download': top-level, sibling to
+// 'HDR Photos', never created on local disk (the picking happens in
+// Dropbox, nothing ever populates it locally), excluded from Push/Pull
+// via file-sync.js's DROPBOX_ONLY_FOLDER_NAMES. The name must match
+// photo-sync-worker's SYNC_FOLDERS/LARGE_THUMB_FOLDERS entry exactly.
+// (Its sibling override, 'Callout', is NOT Dropbox-only -- it's a normal
+// component folder nested under 'HDR Photos', see folder-builder.js.)
+const COVER_CLOSING_SUBFOLDER = 'Cover&Closing';
+
 function isConfigured() {
   return !!(
     process.env.DROPBOX_APP_KEY &&
@@ -340,11 +353,11 @@ async function updateJobFoldersOnDropbox({ folderName, foldersToCreate, foldersT
 // "already exists" response is success, not an error. Deliberately
 // separate from syncJobFolderToDropbox/folder-builder.js -- this folder is
 // Dropbox-only and not part of the job's normal component-folder list.
-async function ensureMlsForDownloadFolder({ folderName, client }) {
+async function ensureDropboxOnlyFolder({ folderName, subfolder, client }) {
   if (!isConfigured()) {
     return { attempted: false, success: false, skipped: true, error: 'Dropbox is not configured -- local job creation is unaffected.' };
   }
-  const dropboxPath = '/' + folderName + '/' + MLS_FOR_DOWNLOAD_SUBFOLDER;
+  const dropboxPath = '/' + folderName + '/' + subfolder;
   try {
     const dbx = client || getClient();
     await dbx.filesCreateFolderV2({ path: dropboxPath });
@@ -355,6 +368,16 @@ async function ensureMlsForDownloadFolder({ folderName, client }) {
     }
     return { attempted: true, success: false, dropboxPath, error: extractDropboxErrorMessage(err) };
   }
+}
+
+async function ensureMlsForDownloadFolder({ folderName, client }) {
+  return ensureDropboxOnlyFolder({ folderName, subfolder: MLS_FOR_DOWNLOAD_SUBFOLDER, client });
+}
+
+// Pre-creates the empty top-level 'Cover&Closing' folder -- see
+// COVER_CLOSING_SUBFOLDER above. Same never-throw / idempotent contract.
+async function ensureCoverClosingFolder({ folderName, client }) {
+  return ensureDropboxOnlyFolder({ folderName, subfolder: COVER_CLOSING_SUBFOLDER, client });
 }
 
 // Dropbox shared-link URLs default to a trailing `dl=0`, which opens
@@ -503,6 +526,7 @@ async function jobIdExistsOnDropbox(jobId, { client } = {}) {
 module.exports = {
   TEMPLATE_NAME,
   MLS_FOR_DOWNLOAD_SUBFOLDER,
+  COVER_CLOSING_SUBFOLDER,
   isConfigured,
   getClient,
   expandFolderPaths,
@@ -515,6 +539,7 @@ module.exports = {
   syncJobFolderToDropbox,
   updateJobFoldersOnDropbox,
   ensureMlsForDownloadFolder,
+  ensureCoverClosingFolder,
   createSharedLink,
   deleteJobFolderFromDropbox,
   renameJobFolderOnDropbox,

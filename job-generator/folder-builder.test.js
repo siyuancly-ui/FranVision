@@ -5,7 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { getComponentFolders, createJobFolders, diffComponentFolders, folderHasRealFiles } = require('./folder-builder.js');
+const { getComponentFolders, createJobFolders, diffComponentFolders, folderHasRealFiles, ensureTourLinkFile, TOUR_LINK_FILENAME } = require('./folder-builder.js');
 
 let passed = 0;
 let failed = 0;
@@ -28,9 +28,9 @@ function sortedSet(arr) {
 
 // ---- pure logic ----
 
-test('Standard photography, no add-ons: baseline four folders only', () => {
+test('Standard photography, no add-ons: baseline five folders only (incl. HDR Photos/Callout)', () => {
   const order = { propertyType: 'condo', photography: 'standard', addons: {} };
-  assert.deepStrictEqual(sortedSet(getComponentFolders(order)), sortedSet(['0 RAW/1 Raws', 'Revisions', 'Local Report', 'HDR Photos']));
+  assert.deepStrictEqual(sortedSet(getComponentFolders(order)), sortedSet(['0 RAW/1 Raws', 'Revisions', 'Local Report', 'HDR Photos', 'HDR Photos/Callout']));
 });
 
 test('Luxury photography: adds Raw HDR, no dedicated Twilight folder (removed 2026-09-06)', () => {
@@ -80,11 +80,11 @@ test('Site Plan selected (without floor_plan flag): still produces Floorplan, no
   assert.ok(!folders.some((f) => /site plan/i.test(f)));
 });
 
-test('3D Virtual Tour selected: no dedicated folder (removed 2026-09-06) -- still just the baseline four', () => {
+test('3D Virtual Tour selected: no dedicated folder (removed 2026-09-06) -- still just the baseline', () => {
   const order = { propertyType: 'condo', photography: 'standard', addons: { three_d_tour: true } };
   const folders = getComponentFolders(order);
   assert.ok(!folders.some((f) => /3d/i.test(f)));
-  assert.deepStrictEqual(sortedSet(folders), sortedSet(['0 RAW/1 Raws', 'Revisions', 'Local Report', 'HDR Photos']));
+  assert.deepStrictEqual(sortedSet(folders), sortedSet(['0 RAW/1 Raws', 'Revisions', 'Local Report', 'HDR Photos', 'HDR Photos/Callout']));
 });
 
 test('Virtual Staging: checkbox alone with qty 0 still creates the folder (photo count often unknown yet -- intentional)', () => {
@@ -102,10 +102,40 @@ test('Feature Sheets selected: Feature Sheets folder', () => {
   assert.ok(getComponentFolders(order).includes('Feature Sheets'));
 });
 
+test('HDR Photos/Callout is always created, nested under HDR Photos', () => {
+  const folders = getComponentFolders({ propertyType: 'condo', photography: 'standard', addons: {} });
+  assert.ok(folders.includes('HDR Photos/Callout'));
+});
+
+test('ensureTourLinkFile: null when 3D Tour is not selected, nothing written', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fv-tour-'));
+  try {
+    assert.strictEqual(ensureTourLinkFile(dir, { addons: {} }), null);
+    assert.ok(!fs.existsSync(path.join(dir, TOUR_LINK_FILENAME)));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('ensureTourLinkFile: 3D Tour selected -> EMPTY Tour Link.txt created at the job root', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fv-tour-'));
+  try {
+    assert.strictEqual(ensureTourLinkFile(dir, { addons: { three_d_tour: true } }), 'created');
+    assert.strictEqual(fs.readFileSync(path.join(dir, 'Tour Link.txt'), 'utf8'), '');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('ensureTourLinkFile: never overwrites a link already pasted in (Update)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fv-tour-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'Tour Link.txt'), 'https://my.matterport.com/show/?m=abc');
+    assert.strictEqual(ensureTourLinkFile(dir, { addons: { three_d_tour: true } }), 'exists');
+    assert.strictEqual(fs.readFileSync(path.join(dir, 'Tour Link.txt'), 'utf8'), 'https://my.matterport.com/show/?m=abc');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('Drone Photos selected: no dedicated folder at all', () => {
   const order = { propertyType: 'condo', photography: 'standard', addons: { drone_photos: true } };
   const folders = getComponentFolders(order);
-  assert.deepStrictEqual(sortedSet(folders), sortedSet(['0 RAW/1 Raws', 'Revisions', 'Local Report', 'HDR Photos']));
+  assert.deepStrictEqual(sortedSet(folders), sortedSet(['0 RAW/1 Raws', 'Revisions', 'Local Report', 'HDR Photos', 'HDR Photos/Callout']));
 });
 
 test('Everything selected at once: full folder set, each exactly once', () => {
@@ -127,7 +157,7 @@ test('Everything selected at once: full folder set, each exactly once', () => {
   const folders = getComponentFolders(order);
   const expected = [
     '0 RAW/1 Raws', '0 RAW/4 Raw HDR', '0 RAW/2 Video', '0 RAW/3 Image',
-    'Revisions', 'Local Report', 'HDR Photos', 'Floorplan',
+    'Revisions', 'Local Report', 'HDR Photos', 'HDR Photos/Callout', 'Floorplan',
     'Virtual Staging', 'Feature Sheets', 'Video', 'VLOG',
   ];
   assert.deepStrictEqual(sortedSet(folders), sortedSet(expected));

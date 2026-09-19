@@ -567,6 +567,9 @@ async function handleApi(req, res, urlPath) {
       // MLS, ...) were unaffected, which is why only "0 RAW" looked missing.
       folderBuilder.createJobFolders(jobFolderPath, order);
       const componentFolders = folderBuilder.getComponentFolders(order);
+      // 3D Virtual Tour -> an empty Tour Link.txt for staff to paste the URL
+      // into (see folder-builder.js#ensureTourLinkFile).
+      const tourLinkFile = folderBuilder.ensureTourLinkFile(jobFolderPath, order);
 
       // Updating an existing folder (real job OR draft) only: prune
       // component folders that are no longer part of the selected
@@ -648,7 +651,16 @@ async function handleApi(req, res, urlPath) {
       // that assigns the real ID (finalizedFromDraft) same as any other
       // create/update.
       let deliveryEmailResult = null;
+      let coverClosingResult = null;
       if (jobId) {
+        // Dropbox-only 'Cover&Closing' (delivery page's cover/closing photo
+        // picks, see dropbox-sync.js) -- same real-ID-only timing and
+        // best-effort contract as 'MLS for download' right below.
+        try {
+          coverClosingResult = await dropboxSync.ensureCoverClosingFolder({ folderName });
+        } catch (err) {
+          coverClosingResult = { attempted: true, success: false, error: 'Unexpected Cover&Closing failure: ' + err.message };
+        }
         try {
           await dropboxSync.ensureMlsForDownloadFolder({ folderName });
           deliveryEmailResult = await deliveryEmail.generateDeliveryEmails({
@@ -727,6 +739,8 @@ async function handleApi(req, res, urlPath) {
         dropbox: dropboxResult,
         dropboxPrune: dropboxPruneResult || null,
         deliveryEmail: deliveryEmailResult,
+        coverClosing: coverClosingResult,
+        tourLinkFile,
         pendingConfirmation,
       });
     }

@@ -1261,6 +1261,12 @@
       }
 
       const jobStatusLabel = result.finalizedFromDraft ? 'finalized from Draft' : (isUpdate ? 'updated' : 'created');
+      const tourLinkHtml = result.tourLinkFile === 'created'
+        ? '<div>3D Tour selected: empty <code>Tour Link.txt</code> created in the job folder -- paste the tour URL into it, then Sync to Dropbox.</div>'
+        : '';
+      const coverClosingHtml = result.coverClosing && result.coverClosing.success
+        ? '<div>Dropbox <code>Cover&amp;Closing</code> folder ready (put the hand-picked cover/closing photo(s) there).</div>'
+        : '';
       const renameHtml = result.renamedFrom
         ? '<div>Folder renamed from <code>' + result.renamedFrom + '</code> to <code>' + result.folderName + '</code> (same Job ID)'
           + (result.dropboxRename && result.dropboxRename.success === false ? ', but the Dropbox-side rename failed -- see below' : ', including on Dropbox') + '.</div>'
@@ -1271,6 +1277,8 @@
         '<div class="path">' + result.jobFolderPath + '</div>' +
         '<div>Job Info.txt and job.json ' + (isUpdate ? 'rewritten' : 'written') + '.</div>' +
         renameHtml +
+        tourLinkHtml +
+        coverClosingHtml +
         updateHtml +
         calendarHtml +
         deliveryEmailHtml +
