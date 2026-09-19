@@ -42,6 +42,14 @@ export function isWebImage(name) {
   return WEB_IMAGE_EXTS.has(fileExt(name));
 }
 
+// Content-Type for a true-original upload (see supabase.js#uploadLarge's
+// ORIGINAL_RENDER_FOLDERS path) -- defaults to jpeg for anything
+// unrecognized, same as every Dropbox-thumbnail-API render already is.
+const IMAGE_CONTENT_TYPES = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
+export function imageContentType(name) {
+  return IMAGE_CONTENT_TYPES[fileExt(name)] || 'image/jpeg';
+}
+
 export function isVideoFile(name) {
   return VIDEO_EXTS.has(fileExt(name));
 }
