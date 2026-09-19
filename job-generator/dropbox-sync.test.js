@@ -435,6 +435,46 @@ await testAsync('ensureCoverClosingFolder: already-exists is success; skips clea
   } finally { if (saved !== undefined) process.env.DROPBOX_APP_KEY = saved; }
 });
 
+await testAsync('ensureTourLinkFile: uploads an EMPTY Tour Link.txt at the job root, add-mode (never overwrite)', async () => {
+  const uploads = [];
+  const fakeDbx = { filesUpload: async (arg) => { uploads.push(arg); return { result: {} }; } };
+  await withFakeCredentials(async () => {
+    const r = await dropboxSync.ensureTourLinkFile({ folderName: 'Job', client: fakeDbx });
+    assert.strictEqual(r.created, true);
+    assert.strictEqual(uploads[0].path, '/Job/Tour Link.txt');
+    assert.strictEqual(uploads[0].contents.length, 0);
+    assert.deepStrictEqual(uploads[0].mode, { '.tag': 'add' });
+    assert.strictEqual(uploads[0].autorename, false);
+  });
+});
+
+await testAsync('ensureTourLinkFile: an existing file (conflict) is success, created:false; skips when unconfigured; failure never throws', async () => {
+  await withFakeCredentials(async () => {
+    const conflict = { filesUpload: async () => { const e = new Error('c'); e.error = { error_summary: 'path/conflict/file/..' }; throw e; } };
+    const r = await dropboxSync.ensureTourLinkFile({ folderName: 'Job', client: conflict });
+    assert.strictEqual(r.success, true); assert.strictEqual(r.created, false);
+    const boom = { filesUpload: async () => { const e = new Error('b'); e.error = { error_summary: 'internal_error/..' }; throw e; } };
+    assert.strictEqual((await dropboxSync.ensureTourLinkFile({ folderName: 'Job', client: boom })).success, false);
+  });
+  const saved = process.env.DROPBOX_APP_KEY; delete process.env.DROPBOX_APP_KEY;
+  try { assert.strictEqual((await dropboxSync.ensureTourLinkFile({ folderName: 'Job' })).skipped, true); }
+  finally { if (saved !== undefined) process.env.DROPBOX_APP_KEY = saved; }
+});
+
+await testAsync('removeTourLinkFile: deletes /<job>/Tour Link.txt; not-found is success; real failure is success:false', async () => {
+  const deleted = [];
+  await withFakeCredentials(async () => {
+    const ok = { filesDeleteV2: async ({ path }) => { deleted.push(path); return { result: {} }; } };
+    assert.strictEqual((await dropboxSync.removeTourLinkFile({ folderName: 'Job', client: ok })).removed, true);
+    assert.deepStrictEqual(deleted, ['/Job/Tour Link.txt']);
+    const gone = { filesDeleteV2: async () => { const e = new Error('n'); e.error = { error_summary: 'path_lookup/not_found/..' }; throw e; } };
+    const r = await dropboxSync.removeTourLinkFile({ folderName: 'Job', client: gone });
+    assert.strictEqual(r.success, true); assert.strictEqual(r.removed, false);
+    const boom = { filesDeleteV2: async () => { const e = new Error('b'); e.error = { error_summary: 'internal_error/..' }; throw e; } };
+    assert.strictEqual((await dropboxSync.removeTourLinkFile({ folderName: 'Job', client: boom })).success, false);
+  });
+});
+
 // ---- createSharedLink (delivery-email.js's per-line link resolver) ----
 
 await testAsync('createSharedLink: fails cleanly when not configured', async () => {

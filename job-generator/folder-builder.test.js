@@ -5,7 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { getComponentFolders, createJobFolders, diffComponentFolders, folderHasRealFiles, ensureTourLinkFile, TOUR_LINK_FILENAME } = require('./folder-builder.js');
+const { getComponentFolders, createJobFolders, diffComponentFolders, folderHasRealFiles } = require('./folder-builder.js');
 
 let passed = 0;
 let failed = 0;
@@ -105,31 +105,6 @@ test('Feature Sheets selected: Feature Sheets folder', () => {
 test('HDR Photos/Callout is always created, nested under HDR Photos', () => {
   const folders = getComponentFolders({ propertyType: 'condo', photography: 'standard', addons: {} });
   assert.ok(folders.includes('HDR Photos/Callout'));
-});
-
-test('ensureTourLinkFile: null when 3D Tour is not selected, nothing written', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fv-tour-'));
-  try {
-    assert.strictEqual(ensureTourLinkFile(dir, { addons: {} }), null);
-    assert.ok(!fs.existsSync(path.join(dir, TOUR_LINK_FILENAME)));
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test('ensureTourLinkFile: 3D Tour selected -> EMPTY Tour Link.txt created at the job root', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fv-tour-'));
-  try {
-    assert.strictEqual(ensureTourLinkFile(dir, { addons: { three_d_tour: true } }), 'created');
-    assert.strictEqual(fs.readFileSync(path.join(dir, 'Tour Link.txt'), 'utf8'), '');
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test('ensureTourLinkFile: never overwrites a link already pasted in (Update)', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fv-tour-'));
-  try {
-    fs.writeFileSync(path.join(dir, 'Tour Link.txt'), 'https://my.matterport.com/show/?m=abc');
-    assert.strictEqual(ensureTourLinkFile(dir, { addons: { three_d_tour: true } }), 'exists');
-    assert.strictEqual(fs.readFileSync(path.join(dir, 'Tour Link.txt'), 'utf8'), 'https://my.matterport.com/show/?m=abc');
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('Drone Photos selected: no dedicated folder at all', () => {

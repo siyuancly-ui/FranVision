@@ -118,6 +118,10 @@ const LOCAL_ONLY_FOLDER_NAMES = new Set(['Shoot Info']);
 // disk. Push must never upload into it (nothing ever will locally); Pull
 // must never download it (it would just be a redundant second copy of
 // every photo, at Dropbox's expense too).
+// Dropbox-only FILES (2026-09-18): Tour Link.txt -- created/removed on
+// Dropbox by dropbox-sync.js, edited there, never present locally. Skipped
+// by Push (nothing local) and Pull (would otherwise download it).
+const DROPBOX_ONLY_FILENAMES = new Set([dropboxSync.TOUR_LINK_FILENAME]);
 const DROPBOX_ONLY_FOLDER_NAMES = new Set([dropboxSync.MLS_FOR_DOWNLOAD_SUBFOLDER, dropboxSync.COVER_CLOSING_SUBFOLDER]);
 
 // Dropbox limits: a single files/upload call must be under 150 MiB; above
@@ -132,7 +136,7 @@ const DEFAULT_CHUNK_SIZE = 8 * 1024 * 1024; // multiple of 4 MiB
 function isExcludedName(name) {
   return name === '.DS_Store' || name === MANIFEST_FILENAME || name.startsWith('~$') ||
     LOCAL_ONLY_FILENAMES.has(name) || LOCAL_ONLY_FOLDER_NAMES.has(name) ||
-    DROPBOX_ONLY_FOLDER_NAMES.has(name);
+    DROPBOX_ONLY_FOLDER_NAMES.has(name) || DROPBOX_ONLY_FILENAMES.has(name);
 }
 
 // listDropboxFiles() below deals in relative FILE paths (e.g. 'MLS for
@@ -570,6 +574,7 @@ module.exports = {
   LOCAL_ONLY_FILENAMES,
   LOCAL_ONLY_FOLDER_NAMES,
   DROPBOX_ONLY_FOLDER_NAMES,
+  DROPBOX_ONLY_FILENAMES,
   KNOWN_COMPONENT_FOLDER_NAMES,
   DEFAULT_SINGLE_SHOT_MAX_BYTES,
   DEFAULT_CHUNK_SIZE,

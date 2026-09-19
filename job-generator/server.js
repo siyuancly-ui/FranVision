@@ -567,9 +567,6 @@ async function handleApi(req, res, urlPath) {
       // MLS, ...) were unaffected, which is why only "0 RAW" looked missing.
       folderBuilder.createJobFolders(jobFolderPath, order);
       const componentFolders = folderBuilder.getComponentFolders(order);
-      // 3D Virtual Tour -> an empty Tour Link.txt for staff to paste the URL
-      // into (see folder-builder.js#ensureTourLinkFile).
-      const tourLinkFile = folderBuilder.ensureTourLinkFile(jobFolderPath, order);
 
       // Updating an existing folder (real job OR draft) only: prune
       // component folders that are no longer part of the selected
@@ -652,6 +649,7 @@ async function handleApi(req, res, urlPath) {
       // create/update.
       let deliveryEmailResult = null;
       let coverClosingResult = null;
+      let tourLinkResult = null;
       if (jobId) {
         // Dropbox-only 'Cover&Closing' (delivery page's cover/closing photo
         // picks, see dropbox-sync.js) -- same real-ID-only timing and
@@ -660,6 +658,19 @@ async function handleApi(req, res, urlPath) {
           coverClosingResult = await dropboxSync.ensureCoverClosingFolder({ folderName });
         } catch (err) {
           coverClosingResult = { attempted: true, success: false, error: 'Unexpected Cover&Closing failure: ' + err.message };
+        }
+        // Tour Link.txt (Dropbox-only, see dropbox-sync.js): created when 3D
+        // Virtual Tour is ordered, removed when it was on before and is now
+        // unchecked (an Update). Only ever removed on that transition -- a
+        // Tour Link.txt on a job that never had 3D (e.g. a Floor Tour link
+        // pasted by hand) is left alone.
+        const wants3d = !!(order.addons && order.addons.three_d_tour);
+        const had3d = !!(folderExists && existing.order && existing.order.addons && existing.order.addons.three_d_tour);
+        try {
+          if (wants3d) tourLinkResult = await dropboxSync.ensureTourLinkFile({ folderName });
+          else if (had3d) tourLinkResult = await dropboxSync.removeTourLinkFile({ folderName });
+        } catch (err) {
+          tourLinkResult = { attempted: true, success: false, error: 'Unexpected Tour Link failure: ' + err.message };
         }
         try {
           await dropboxSync.ensureMlsForDownloadFolder({ folderName });
@@ -740,7 +751,7 @@ async function handleApi(req, res, urlPath) {
         dropboxPrune: dropboxPruneResult || null,
         deliveryEmail: deliveryEmailResult,
         coverClosing: coverClosingResult,
-        tourLinkFile,
+        tourLink: tourLinkResult,
         pendingConfirmation,
       });
     }

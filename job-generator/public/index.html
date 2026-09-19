@@ -1261,9 +1261,11 @@
       }
 
       const jobStatusLabel = result.finalizedFromDraft ? 'finalized from Draft' : (isUpdate ? 'updated' : 'created');
-      const tourLinkHtml = result.tourLinkFile === 'created'
-        ? '<div>3D Tour selected: empty <code>Tour Link.txt</code> created in the job folder -- paste the tour URL into it, then Sync to Dropbox.</div>'
-        : '';
+      const tl = result.tourLink;
+      const tourLinkHtml = tl && tl.success && tl.created
+        ? '<div>3D Tour selected: empty <code>Tour Link.txt</code> created on Dropbox (job folder root) -- paste the tour URL into it there.</div>'
+        : (tl && tl.success && tl.removed ? '<div>3D Tour unchecked: <code>Tour Link.txt</code> removed from Dropbox.</div>'
+        : (tl && tl.attempted && !tl.success ? '<div style="color:#7a1f1f;">Tour Link.txt on Dropbox could not be updated: ' + tl.error + '</div>' : ''));
       const coverClosingHtml = result.coverClosing && result.coverClosing.success
         ? '<div>Dropbox <code>Cover&amp;Closing</code> folder ready (put the hand-picked cover/closing photo(s) there).</div>'
         : '';
