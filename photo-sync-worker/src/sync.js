@@ -2,7 +2,7 @@
 // for unit tests; the runners (runDelta / runBackfill / processPhotoBatch)
 // take an injectable `deps` bag so tests can hand in fake Dropbox/Supabase.
 
-import { parseJobPath, isSyncCandidate, folderMatches, matchAncestorFolder, parseFolderList, downloadCopyPath, parseAddressFromJobFolder } from './paths.js';
+import { parseJobPath, isSyncCandidate, folderMatches, matchAncestorFolder, parseFolderList, downloadCopyPath, parseAddressFromJobFolder, imageContentType } from './paths.js';
 import { photoId } from './photo-id.js';
 import { classifyForVideoSync, readVideoConfig } from './video-sync.js';
 import { classifyForTourLink, readTourLinkConfig } from './tour-link-sync.js';
@@ -154,6 +154,12 @@ export function readConfig(env) {
     // Callout/Local Report). Deliberately NOT the whole main
     // gallery (HDR Photos/MLS) -- see photo-sync-worker/CLAUDE.md.
     largeThumbFolders: parseFolderList(env.LARGE_THUMB_FOLDERS),
+    // Subset of largeThumbFolders that gets the TRUE original file bytes
+    // instead of a Dropbox-thumbnail-API render (2026-09-18) -- for a
+    // folder like Floorplan where the source is already small, so a
+    // w2048h1536 derivative just adds JPEG re-compression for no size
+    // benefit. See supabase.js#uploadLarge and dropbox.js#downloadFile.
+    originalRenderFolders: parseFolderList(env.ORIGINAL_RENDER_FOLDERS),
     downloadSubfolder: env.DOWNLOAD_SUBFOLDER || 'MLS for download',
     thumbSize: env.THUMB_SIZE || 'w1024h768',
     // Bigger render for the downloadable delivery set written back to
@@ -457,14 +463,39 @@ export async function processPhotoBatch(env, deps, msg) {
   }
 
   // ---- large render: a bigger (w2048h1536) copy for delivery-page's
-  // full-bleed slots (Cover&Closing/Drone Callout/Local
-  // Report), uploaded to Supabase Storage as <photoId>_large.jpg.
-  // Separate pass, own thumbnail request -- the main Gallery/Supabase
-  // thumb above stays small. Entirely best-effort: the Gallery record is
-  // already saved; a failure here just means delivery-page falls back to
-  // the small thumb for that one photo.
-  const largeItems = succeeded.filter((i) => folderMatches(i.subFolder, cfg.largeThumbFolders));
-  for (const part of chunk(largeItems, 25)) {
+  // full-bleed slots (Cover&Closing/Drone Callout/Local Report/Floorplan),
+  // uploaded to Supabase Storage as <photoId>_large.jpg. Separate pass, own
+  // thumbnail request -- the main Gallery/Supabase thumb above stays small.
+  // Entirely best-effort: the Gallery record is already saved; a failure
+  // here just means delivery-page falls back to the small thumb for that
+  // one photo. Split by originalRenderFolders (2026-09-18): those items get
+  // the TRUE original file, not a Dropbox-thumbnail-API render -- see
+  // readConfig's originalRenderFolders comment. Not worth batching (one
+  // downloadFile call per item, no thumbnail-batch-style endpoint for it).
+  const allLargeItems = succeeded.filter((i) => folderMatches(i.subFolder, cfg.largeThumbFolders));
+  const originalItems = allLargeItems.filter((i) => folderMatches(i.subFolder, cfg.originalRenderFolders));
+  const thumbLargeItems = allLargeItems.filter((i) => !folderMatches(i.subFolder, cfg.originalRenderFolders));
+
+  for (const item of originalItems) {
+    const pid = await photoId(jobId, item.relPathFromJob);
+    try {
+      const bytes = await dbx.downloadFile(item.path);
+      await sb.uploadLarge(jobId, pid, bytes, imageContentType(item.filename));
+      await sb.rpc('photos_upsert', { p_project_id: jobId, p_photo: { photoId: pid, hasLarge: true } });
+    } catch (err) {
+      const message = String(err && err.message || err);
+      log({ evt: 'large_render_failed', jobId, path: item.path, error: message });
+      try {
+        await sb.insertPendingRender({
+          projectId: jobId, kind: 'large', sourcePath: item.path, photoId: pid, filename: item.filename, error: message,
+        });
+      } catch (pendingErr) {
+        log({ evt: 'render_pending_insert_failed', jobId, path: item.path, error: String(pendingErr && pendingErr.message || pendingErr) });
+      }
+    }
+  }
+
+  for (const part of chunk(thumbLargeItems, 25)) {
     let lbatch = null;
     try {
       lbatch = await dbx.getThumbnailBatch(part.map((i) => i.path), cfg.downloadThumbSize);
@@ -685,11 +716,19 @@ export async function processRenderRetryPoll(env, deps) {
 
   for (const row of pending) {
     try {
-      const bytes = await dbx.getThumbnailV2(row.source_path, cfg.downloadThumbSize);
       if (row.kind === 'download_copy') {
+        const bytes = await dbx.getThumbnailV2(row.source_path, cfg.downloadThumbSize);
         await dbx.filesUpload(row.dest_path, bytes);
       } else {
-        await sb.uploadLarge(row.project_id, row.photo_id, bytes);
+        // 'large' -- re-derive whether this photo's folder is an
+        // ORIGINAL_RENDER_FOLDERS one from source_path itself (the pending
+        // row doesn't store subFolder separately, and doesn't need to).
+        const parsed = parseJobPath(row.source_path, cfg.root);
+        const useOriginal = parsed && !!matchAncestorFolder(parsed.ancestors, cfg.originalRenderFolders);
+        const bytes = useOriginal
+          ? await dbx.downloadFile(row.source_path)
+          : await dbx.getThumbnailV2(row.source_path, cfg.downloadThumbSize);
+        await sb.uploadLarge(row.project_id, row.photo_id, bytes, useOriginal ? imageContentType(row.filename) : undefined);
         await sb.rpc('photos_upsert', { p_project_id: row.project_id, p_photo: { photoId: row.photo_id, hasLarge: true } });
       }
       await sb.deletePendingRender(row.id);

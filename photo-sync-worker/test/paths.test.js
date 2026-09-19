@@ -14,6 +14,7 @@ import {
   downloadCopyPath,
   parseAddressFromJobFolder,
   isTourLinkCandidate,
+  imageContentType,
 } from '../src/paths.js';
 
 test('normalizeRoot', () => {
@@ -39,6 +40,16 @@ test('fileExt / isWebImage', () => {
   assert.ok(isWebImage('x.WEBP'));
   assert.ok(!isWebImage('x.cr2'));
   assert.ok(!isWebImage('x.pdf'));
+});
+
+test('imageContentType: maps a filename to its real Content-Type, defaults to jpeg', () => {
+  assert.equal(imageContentType('main.png'), 'image/png');
+  assert.equal(imageContentType('main.PNG'), 'image/png');
+  assert.equal(imageContentType('a.jpg'), 'image/jpeg');
+  assert.equal(imageContentType('a.jpeg'), 'image/jpeg');
+  assert.equal(imageContentType('a.webp'), 'image/webp');
+  assert.equal(imageContentType('a.pdf'), 'image/jpeg'); // unrecognized -> jpeg default
+  assert.equal(imageContentType('noext'), 'image/jpeg');
 });
 
 test('parseJobPath at root', () => {

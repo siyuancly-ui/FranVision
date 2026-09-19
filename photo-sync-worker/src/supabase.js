@@ -30,13 +30,22 @@ export function createSupabase(env) {
     },
 
     // photos/<jobId>/<photoId>_large.jpg -- the w2048h1536 render for
-    // delivery-page's full-bleed slots (Cover&Closing/Drone
-    // Callout/Local Report). Same upsert semantics as uploadThumb.
-    async uploadLarge(jobId, photoId, bytes) {
+    // delivery-page's full-bleed slots (Cover&Closing/Drone Callout/Local
+    // Report/Floorplan), or (2026-09-18, ORIGINAL_RENDER_FOLDERS) the TRUE
+    // original file bytes for a folder like Floorplan where the source is
+    // already small. `contentType` defaults to image/jpeg (every Dropbox-
+    // thumbnail-API render is JPEG) but a true-original upload passes the
+    // source file's real type (e.g. image/png) -- the Storage object key
+    // still ends in `_large.jpg` regardless (delivery-page's URL builder
+    // assumes that suffix universally), only the Content-Type header and
+    // actual bytes reflect the real format; browsers render from the
+    // Content-Type + sniffed bytes, not the URL's extension, so this is
+    // harmless. Same upsert semantics as uploadThumb.
+    async uploadLarge(jobId, photoId, bytes, contentType = 'image/jpeg') {
       const path = `photos/${encodeURIComponent(jobId)}/${photoId}_large.jpg`;
       const res = await fetch(`${BASE}/storage/v1/object/${path}`, {
         method: 'POST',
-        headers: { ...authHeaders, 'Content-Type': 'image/jpeg', 'x-upsert': 'true', 'cache-control': '3600' },
+        headers: { ...authHeaders, 'Content-Type': contentType, 'x-upsert': 'true', 'cache-control': '3600' },
         body: bytes,
       });
       return readJson(res);

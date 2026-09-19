@@ -10,6 +10,7 @@ const ENV = {
   THUMB_SIZE: 'w1024h768',
   DOWNLOAD_THUMB_SIZE: 'w2048h1536',
   LARGE_THUMB_FOLDERS: 'Cover Photo,Closing Photo,Drone Callout,Local Report',
+  ORIGINAL_RENDER_FOLDERS: '',
   DROPBOX_TEMPLATE_ID: 'ptid:TEST',
   MAX_DELTA_ENTRIES_PER_RUN: '2000',
 };
@@ -30,7 +31,7 @@ function bytesToText(bytes) {
 }
 
 function makeDbx(over = {}) {
-  const calls = { uploads: [], deletes: [], thumbBatch: [], thumbV2: [], metadata: [] };
+  const calls = { uploads: [], deletes: [], thumbBatch: [], thumbV2: [], metadata: [], downloads: [] };
   return {
     calls,
     async getThumbnailBatch(paths, size) {
@@ -40,6 +41,10 @@ function makeDbx(over = {}) {
     async getThumbnailV2(path, size) {
       calls.thumbV2.push({ path, size });
       return base64ToBytesLocal(fakeThumb(path, size));
+    },
+    async downloadFile(path) {
+      calls.downloads.push(path);
+      return base64ToBytesLocal(btoa(`original:${path}`));
     },
     async filesUpload(path, bytes) {
       calls.uploads.push({ path, len: bytes.length, text: bytesToText(bytes) });
@@ -67,8 +72,8 @@ function makeSb(over = {}) {
     async uploadThumb(jobId, photoId, bytes) {
       calls.thumbs.push({ jobId, photoId, len: bytes.length });
     },
-    async uploadLarge(jobId, photoId, bytes) {
-      calls.larges.push({ jobId, photoId, len: bytes.length });
+    async uploadLarge(jobId, photoId, bytes, contentType) {
+      calls.larges.push({ jobId, photoId, len: bytes.length, contentType });
     },
     async rpc(fn, args) {
       calls.rpc.push({ fn, args });
@@ -260,6 +265,48 @@ test('processPhotoBatch: a LARGE_THUMB_FOLDERS photo also gets a large render up
 
   const largeUpsert = sb.calls.rpc.find((c) => c.fn === 'photos_upsert' && c.args.p_photo.hasLarge === true);
   assert.ok(largeUpsert, 'expected a follow-up photos_upsert marking hasLarge:true');
+});
+
+test('processPhotoBatch: an ORIGINAL_RENDER_FOLDERS photo uses the TRUE original file, not a Dropbox thumbnail render', async () => {
+  const dbx = makeDbx();
+  const sb = makeSb();
+  const item = upsertItem({ path: '/JobA/Floorplan/main.png', subFolder: 'Floorplan', relPathFromJob: 'Floorplan/main.png', filename: 'main.png' });
+  const cfg = { ...ENV, LARGE_THUMB_FOLDERS: 'Floorplan', ORIGINAL_RENDER_FOLDERS: 'Floorplan' };
+  await processPhotoBatch(cfg, { dbx, sb, now: () => 'T' }, { jobId: 'FV-1', jobFolderPath: '/JobA', items: [item] });
+
+  assert.deepEqual(dbx.calls.downloads, ['/JobA/Floorplan/main.png']);
+  // the small Gallery thumb (THUMB_SIZE) still goes through the normal
+  // thumbnail-API path regardless -- only the LARGE render skips it here.
+  assert.ok(dbx.calls.thumbBatch.every((b) => b.size === 'w1024h768'));
+  assert.equal(dbx.calls.thumbV2.length, 0);
+  assert.equal(sb.calls.larges.length, 1);
+  assert.equal(sb.calls.larges[0].contentType, 'image/png'); // real content-type, not the jpeg default
+  assert.ok(sb.calls.rpc.some((c) => c.fn === 'photos_upsert' && c.args.p_photo.hasLarge === true));
+});
+
+test('processPhotoBatch: a LARGE_THUMB_FOLDERS photo NOT also in ORIGINAL_RENDER_FOLDERS still uses the Dropbox thumbnail render', async () => {
+  const dbx = makeDbx();
+  const sb = makeSb();
+  const item = upsertItem({ path: '/JobA/Local Report/report.jpg', subFolder: 'Local Report', relPathFromJob: 'Local Report/report.jpg', filename: 'report.jpg' });
+  const cfg = { ...ENV, ORIGINAL_RENDER_FOLDERS: 'Floorplan' }; // Local Report is large-thumb but not original-render
+  await processPhotoBatch(cfg, { dbx, sb, now: () => 'T' }, { jobId: 'FV-1', jobFolderPath: '/JobA', items: [item] });
+
+  assert.equal(dbx.calls.downloads.length, 0);
+  assert.ok(dbx.calls.thumbBatch.some((b) => b.size === 'w2048h1536'));
+  assert.equal(sb.calls.larges[0].contentType, undefined); // default jpeg content-type applied server-side
+});
+
+test('processPhotoBatch: a failing original-file download for a Floorplan photo is queued for retry', async () => {
+  const dbx = makeDbx({ async downloadFile() { throw new Error('dropbox 500'); } });
+  const sb = makeSb();
+  const item = upsertItem({ path: '/JobA/Floorplan/main.png', subFolder: 'Floorplan', relPathFromJob: 'Floorplan/main.png', filename: 'main.png' });
+  const cfg = { ...ENV, LARGE_THUMB_FOLDERS: 'Floorplan', ORIGINAL_RENDER_FOLDERS: 'Floorplan' };
+  await processPhotoBatch(cfg, { dbx, sb }, { jobId: 'FV-1', jobFolderPath: '/JobA', items: [item] });
+
+  assert.equal(sb.calls.larges.length, 0);
+  assert.equal(sb.calls.pendingInserts.length, 1);
+  assert.equal(sb.calls.pendingInserts[0].kind, 'large');
+  assert.equal(sb.calls.pendingInserts[0].sourcePath, '/JobA/Floorplan/main.png');
 });
 
 test('processPhotoBatch: a photo NOT in LARGE_THUMB_FOLDERS never gets a large render', async () => {
@@ -800,6 +847,27 @@ test('processRenderRetryPoll: a successful large retry uploads + upserts hasLarg
   assert.equal(res.succeeded, 1);
   assert.equal(sb.calls.larges[0].photoId, 'pid-1');
   assert.ok(sb.calls.rpc.some((c) => c.fn === 'photos_upsert' && c.args.p_photo.hasLarge === true));
+  assert.deepEqual(deleted, [1]);
+});
+
+test('processRenderRetryPoll: a large retry for an ORIGINAL_RENDER_FOLDERS photo re-derives that from source_path and uses the true original', async () => {
+  const dbx = makeDbx();
+  const deleted = [];
+  const sb = makeSb({
+    async listPendingRenders() {
+      return [pendingRow({
+        kind: 'large', dest_path: null, photo_id: 'fp-1',
+        source_path: '/JobA/Floorplan/main.png', filename: 'main.png',
+      })];
+    },
+    async deletePendingRender(id) { deleted.push(id); },
+  });
+  const cfg = { ...ENV, ORIGINAL_RENDER_FOLDERS: 'Floorplan' };
+  const res = await processRenderRetryPoll(cfg, { dbx, sb });
+  assert.equal(res.succeeded, 1);
+  assert.deepEqual(dbx.calls.downloads, ['/JobA/Floorplan/main.png']);
+  assert.equal(dbx.calls.thumbV2.length, 0);
+  assert.equal(sb.calls.larges[0].contentType, 'image/png');
   assert.deepEqual(deleted, [1]);
 });
 
