@@ -217,6 +217,14 @@ test('renderDeliveryPage: a single Floor Plan photo renders as a static image, n
   assert.ok(out.indexOf('fp_thumb.jpg') < out.indexOf('report_thumb.jpg')); // floor plan comes before local report
 });
 
+test('renderDeliveryPage: a single Floor Plan photo is height-capped so it fits on screen without scrolling', () => {
+  const project = { data: { photos: [photo({ photoId: 'fp', folder: 'Floorplan' })] } };
+  const model = buildDeliveryModel(project, OPTS);
+  const out = renderDeliveryPage(model);
+  assert.ok(out.includes('class="frame-img floorplan-single lightbox-trigger"'));
+  assert.ok(out.includes('.floorplan-single{') && out.includes('max-height:min(90vh,1000px)'));
+});
+
 test('renderDeliveryPage: more than one Floor Plan photo renders the auto-advancing track', () => {
   const project = { data: { photos: [
     photo({ photoId: 'fp1', folder: 'Floorplan', filename: 'a.jpg' }),
@@ -288,7 +296,7 @@ test('renderDeliveryPage: Callout and Floor Plan images/slides are lightbox trig
   const model = buildDeliveryModel(project, OPTS);
   const out = renderDeliveryPage(model);
   assert.ok(out.includes('class="frame-img aerial-single lightbox-trigger" data-full="' + model.aerial[0].url + '"'));
-  assert.ok(out.includes('class="frame-img lightbox-trigger" data-full="' + model.floorplan[0].url + '"'));
+  assert.ok(out.includes('class="frame-img floorplan-single lightbox-trigger" data-full="' + model.floorplan[0].url + '"'));
   assert.ok(out.includes('id="lightbox"'));
   assert.ok(out.includes('id="lightboxImg"'));
 });

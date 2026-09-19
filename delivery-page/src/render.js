@@ -266,11 +266,19 @@ function aerialHtml(photos) {
 // staggered against the other tracks so none of them scroll in lockstep.
 // Both the single image and each track slide open the shared fullscreen
 // lightbox on click (`.lightbox-trigger`, see SCRIPT) -- unlike Callout,
-// keeps the default 3:2 ratio (only Callout asked for 16:9).
+// keeps the default 3:2 ratio (only Callout asked for 16:9). The single-
+// photo case is also height-capped (`.floorplan-single`, 2026-09-19) --
+// unlike a photo, a floor plan's own aspect ratio is whatever the export
+// happened to be (often much taller/narrower than a 3:2 photo), so
+// scaling it to the full content width the way `.frame-img` does for
+// Local Report could make it far taller than one screen. Capping height
+// instead (width shrinks to fit, `object-fit:contain` so nothing crops)
+// keeps the whole plan visible without scrolling on a typical laptop
+// screen; the multi-page track keeps the regular 3:2 slide sizing.
 function floorplanHtml(photos) {
   if (photos.length === 1) {
     return `  <div class="media-frame">
-    <img class="frame-img lightbox-trigger" data-full="${escapeHtml(photos[0].url)}" src="${escapeHtml(photos[0].url)}" alt="Floor plan">
+    <img class="frame-img floorplan-single lightbox-trigger" data-full="${escapeHtml(photos[0].url)}" src="${escapeHtml(photos[0].url)}" alt="Floor plan">
   </div>`;
   }
   return trackHtml(photos, { track: 'floorplanTrack', prev: 'floorplanPrev', next: 'floorplanNext' }, { lightbox: true });
@@ -353,7 +361,7 @@ const CSS = `
   .hero{position:relative;height:min(78vh,680px);min-height:420px;overflow:hidden;background-color:#3a3450;}
   .hero::after{content:"";position:absolute;inset:0;background:linear-gradient(0deg, rgba(10,8,14,0.55) 0%, rgba(10,8,14,0) 42%);}
   .hero-address{position:absolute;right:28px;bottom:26px;z-index:2;font-family:"Arima Madurai","Segoe Script",cursive;font-weight:400;font-size:24px;color:#fff;text-align:right;text-shadow:0 1px 10px rgba(0,0,0,0.35);margin:0;}
-  section{padding-block:64px;}
+  section{padding-block:36px;}
   .section-alt{background:var(--bg-content-alt);}
   .eyebrow{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);font-weight:600;margin:0 0 8px;}
   .media-frame{max-width:var(--maxw);margin:0 auto;padding-inline:24px;}
@@ -369,6 +377,7 @@ const CSS = `
   .gallery-arrow svg{width:16px;height:16px;}
   .frame-img{width:100%;border-radius:var(--radius-m);display:block;}
   .aerial-single{aspect-ratio:16/9;object-fit:cover;}
+  .floorplan-single{width:auto;max-width:100%;height:auto;max-height:min(90vh,1000px);margin:0 auto;object-fit:contain;}
   .lightbox-trigger{cursor:zoom-in;}
   .lightbox{position:fixed;inset:0;background:rgba(10,8,14,0.92);display:flex;align-items:center;justify-content:center;z-index:50;padding:24px;}
   .lightbox[hidden]{display:none;}
