@@ -522,42 +522,21 @@ await testAsync('createSharedLink: never throws -- a real failure comes back as 
   });
 });
 
-// ---- toDirectDownloadUrl / createSharedLink's dl=0 -> dl=1 rewrite
-// (2026-09-16: opening the link should start the download immediately
-// instead of landing on Dropbox's own preview page) ----
+// ---- createSharedLink leaves Dropbox's URL untouched (dl=0). It was
+// rewritten to dl=1 from 2026-09-16 to 2026-09-19; reverted at Franky's request.
 
-test('toDirectDownloadUrl: rewrites a trailing dl=0', () => {
-  assert.strictEqual(
-    dropboxSync.toDirectDownloadUrl('https://www.dropbox.com/scl/fo/abc123/xyz?rlkey=xyz&dl=0'),
-    'https://www.dropbox.com/scl/fo/abc123/xyz?rlkey=xyz&dl=1',
-  );
-});
-
-test('toDirectDownloadUrl: rewrites dl=0 as the only query param', () => {
-  assert.strictEqual(dropboxSync.toDirectDownloadUrl('https://www.dropbox.com/s/abc?dl=0'), 'https://www.dropbox.com/s/abc?dl=1');
-});
-
-test('toDirectDownloadUrl: leaves a URL with no dl param alone rather than inventing one', () => {
-  assert.strictEqual(dropboxSync.toDirectDownloadUrl('https://dropbox.com/fake/Job/HDR Photos'), 'https://dropbox.com/fake/Job/HDR Photos');
-});
-
-test('toDirectDownloadUrl: non-string input is returned as-is rather than throwing', () => {
-  assert.strictEqual(dropboxSync.toDirectDownloadUrl(null), null);
-  assert.strictEqual(dropboxSync.toDirectDownloadUrl(undefined), undefined);
-});
-
-await testAsync('createSharedLink: a fresh link\'s dl=0 is rewritten to dl=1', async () => {
+await testAsync('createSharedLink: a fresh link keeps Dropbox\'s trailing dl=0 (no rewrite)', async () => {
   const fakeDbx = {
     sharingCreateSharedLinkWithSettings: async ({ path }) => ({ result: { url: 'https://dropbox.com/scl' + path + '?rlkey=abc&dl=0' } }),
   };
   await withFakeCredentials(async () => {
     const result = await dropboxSync.createSharedLink({ dropboxPath: '/Job/HDR Photos', client: fakeDbx });
     assert.strictEqual(result.success, true);
-    assert.strictEqual(result.url, 'https://dropbox.com/scl/Job/HDR Photos?rlkey=abc&dl=1');
+    assert.strictEqual(result.url, 'https://dropbox.com/scl/Job/HDR Photos?rlkey=abc&dl=0');
   });
 });
 
-await testAsync('createSharedLink: a reused existing link\'s dl=0 is rewritten to dl=1 too', async () => {
+await testAsync('createSharedLink: a reused existing link keeps its dl=0 too', async () => {
   const fakeDbx = {
     sharingCreateSharedLinkWithSettings: async () => { const e = new Error('x'); e.error = { error_summary: 'shared_link_already_exists/..' }; throw e; },
     sharingListSharedLinks: async () => ({ result: { links: [{ url: 'https://dropbox.com/existing?dl=0' }] } }),
@@ -565,7 +544,7 @@ await testAsync('createSharedLink: a reused existing link\'s dl=0 is rewritten t
   await withFakeCredentials(async () => {
     const result = await dropboxSync.createSharedLink({ dropboxPath: '/Job/HDR Photos', client: fakeDbx });
     assert.strictEqual(result.success, true);
-    assert.strictEqual(result.url, 'https://dropbox.com/existing?dl=1');
+    assert.strictEqual(result.url, 'https://dropbox.com/existing?dl=0');
   });
 });
 

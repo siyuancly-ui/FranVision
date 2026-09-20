@@ -429,18 +429,10 @@ async function removeTourLinkFile({ folderName, client }) {
   }
 }
 
-// Dropbox shared-link URLs default to a trailing `dl=0`, which opens
-// Dropbox's own preview page (client has to find and click a Download
-// button there); swapping it to `dl=1` makes the link start downloading
-// immediately when opened -- one fewer click for a client who just wants
-// the files (2026-09-16, user request). Only ever touches a `dl=0` query
-// param specifically -- a URL without one (e.g. a test fixture, or some
-// future Dropbox link shape without it) is returned unchanged rather than
-// having a param invented for it.
-function toDirectDownloadUrl(url) {
-  if (typeof url !== 'string') return url;
-  return url.replace(/([?&]dl=)0(?=&|$)/, '$11');
-}
+// NOTE on `dl=`: the URL is returned exactly as Dropbox gives it, i.e. with a
+// trailing `dl=0` (opens Dropbox's preview page). From 2026-09-16 to
+// 2026-09-19 it was rewritten to `dl=1` (start the download immediately);
+// reverted at Franky's request -- do not re-add a rewrite without asking.
 
 // Best-effort: returns a public "anyone with the link can view" Dropbox
 // shared link for dropboxPath, creating one if none exists yet, or
@@ -457,12 +449,12 @@ async function createSharedLink({ dropboxPath, client }) {
     const dbx = client || getClient();
     try {
       const result = await dbx.sharingCreateSharedLinkWithSettings({ path: dropboxPath });
-      return { success: true, url: toDirectDownloadUrl(result.result.url) };
+      return { success: true, url: result.result.url };
     } catch (err) {
       if (!isSharedLinkAlreadyExistsError(err)) throw err;
       const listed = await dbx.sharingListSharedLinks({ path: dropboxPath, direct_only: true });
       const existing = listed.result && listed.result.links && listed.result.links[0];
-      if (existing && existing.url) return { success: true, url: toDirectDownloadUrl(existing.url) };
+      if (existing && existing.url) return { success: true, url: existing.url };
       return { success: false, error: 'Shared link already exists but could not be retrieved.' };
     }
   } catch (err) {
@@ -585,7 +577,6 @@ module.exports = {
   isPropertyGroupAlreadyExistsError,
   isSharedLinkAlreadyExistsError,
   isPathNotFoundError,
-  toDirectDownloadUrl,
   syncJobFolderToDropbox,
   updateJobFoldersOnDropbox,
   ensureMlsForDownloadFolder,
