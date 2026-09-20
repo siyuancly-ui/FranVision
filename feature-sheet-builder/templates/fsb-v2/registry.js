@@ -204,35 +204,13 @@
     };
   }
 
-  // Fill in whatever a project row is MISSING, never overwriting what is there.
-  // A job-linked row is created by the photo-sync-worker with only photos[] /
-  // address / videos / tourUrl -- no pages, agentInfo, colorTheme -- so the FSB
-  // must be able to open (and later save into) a row that has none of its own keys.
-  function withDefaults(p) {
-    var b = blankProject(p.colorTheme);
-    if (!p.colorTheme) p.colorTheme = b.colorTheme;
-    if (p.templateSystem === undefined) p.templateSystem = b.templateSystem;
-    if (p.topPhotoStyle === undefined) p.topPhotoStyle = b.topPhotoStyle;
-    p.propertyInfo = Object.assign({}, b.propertyInfo, p.propertyInfo || {});
-    p.agentInfo = Object.assign({}, b.agentInfo, p.agentInfo || {});
-    if (p.agentInfo2 === undefined) p.agentInfo2 = null;
-    if (!Array.isArray(p.photos)) p.photos = [];
-    if (!p.pages) p.pages = {};
-    ['page1', 'page2'].forEach(function (pg) {
-      if (!p.pages[pg]) p.pages[pg] = { slots: {} };
-      if (!p.pages[pg].slots) p.pages[pg].slots = {};
-    });
-    if (p.confirmed === undefined) p.confirmed = false;
-    if (p.confirmedAt === undefined) p.confirmedAt = null;
-    return p;
-  }
-
   // True once the sheet holds something a person actually entered: any text, a
   // photo in the library, or a photo placed in a slot. A theme / layout change on
   // its own is NOT content -- app.js only creates the projects row from a bare
   // URL once this is true, so "just looking" never leaves an empty draft.
   function hasContent(project) {
     if (!project) return false;
+    if (project.jobId) return true;   // connected to a Job = deliberate
     function text(o) {
       return !!o && Object.keys(o).some(function (k) { return typeof o[k] === 'string' && o[k].trim() !== ''; });
     }
@@ -251,7 +229,7 @@
     });
   }
 
-  var API = { list: list, compose: compose, blankProject: blankProject, slotIds: slotIds, hasContent: hasContent, withDefaults: withDefaults };
+  var API = { list: list, compose: compose, blankProject: blankProject, slotIds: slotIds, hasContent: hasContent };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   if (root) root.FSB_V2 = API;

@@ -6,9 +6,9 @@
  * download the print PDF (the client uploads it to
  * storage: submissions/<projectId>.pdf just before calling this).
  *
- * Job-linked sheets (projectId = a jobId, FVS-...) upload NO PDF: the print PDF
- * needs the paid full-resolution photos, which only the studio's admin export can fetch.
- * For those the email has no download button, just how to export it.
+ * A sheet connected to a Job uploads NO PDF when a client submits it: the print PDF needs
+ * the paid full-resolution photos, which only the studio's admin export can fetch. When no
+ * PDF exists the email has no download button, just how to export it.
  *
  * Request:  POST { "projectId": "<id>" }   (Authorization: Bearer <anon key>, sent automatically by supabase-js)
  * Response: 200 { ok: true }  |  4xx/5xx { error }
@@ -94,17 +94,19 @@ Deno.serve(async (req: Request) => {
   // Link to the print PDF the client just uploaded (photos bucket,
   // submissions/ prefix). Try a long-lived signed URL first; fall back to
   // the public URL if the bucket is public.
-  const isJob = /^FVS-/.test(projectId);
+  // A sheet connected to a Job gets NO client-built PDF (it needs the paid full-resolution
+  // originals, only the admin export can fetch) -- unless the admin submitted it. So decide by
+  // whether the file actually exists, not by the project.
+  const pdfKey = `submissions/${projectId}.pdf`;
+  const { data: listed } = await admin.storage.from("photos")
+    .list("submissions", { search: `${projectId}.pdf`, limit: 5 });
+  const hasPdf = !!listed?.some((f: { name: string }) => f.name === `${projectId}.pdf`);
   let pdfUrl = "";
-  if (!isJob) {
-    const pdfKey = `submissions/${projectId}.pdf`;
+  if (hasPdf) {
     const { data: signed } = await admin.storage.from("photos")
       .createSignedUrl(pdfKey, 60 * 60 * 24 * 30);
-    if (signed?.signedUrl) {
-      pdfUrl = signed.signedUrl;
-    } else {
-      pdfUrl = admin.storage.from("photos").getPublicUrl(pdfKey).data.publicUrl;
-    }
+    pdfUrl = signed?.signedUrl ??
+      admin.storage.from("photos").getPublicUrl(pdfKey).data.publicUrl;
   }
 
   const openUrl = `${APP_BASE_URL}/?p=${encodeURIComponent(projectId)}`;
@@ -116,11 +118,11 @@ Deno.serve(async (req: Request) => {
     <p style="margin:0 0 16px;color:#667">${esc(addr)}</p>
 
     <p style="margin:0 0 16px">
-      ${isJob ? "" : `<a href="${esc(pdfUrl)}" style="display:inline-block;background:#1f5fd6;color:#fff;text-decoration:none;padding:9px 16px;border-radius:6px;font-weight:600">Download print PDF</a>
-      &nbsp;&nbsp;`}
+      ${hasPdf ? `<a href="${esc(pdfUrl)}" style="display:inline-block;background:#1f5fd6;color:#fff;text-decoration:none;padding:9px 16px;border-radius:6px;font-weight:600">Download print PDF</a>
+      &nbsp;&nbsp;` : ""}
       <a href="${esc(openUrl)}" style="display:inline-block;background:#eef3ff;color:#1f5fd6;text-decoration:none;padding:9px 16px;border-radius:6px;font-weight:600">Open project</a>
     </p>
-    ${isJob ? `<p style="margin:0 0 16px;padding:10px 12px;background:#fff8e6;border-radius:6px">
+    ${!hasPdf ? `<p style="margin:0 0 16px;padding:10px 12px;background:#fff8e6;border-radius:6px">
       <b>No print PDF is attached for this job.</b> Open the project with your admin link
       (<code>?p=${esc(projectId)}&amp;admin=&lt;token&gt;</code>) and click <b>Export PDF 导出</b> —
       it pulls the full-resolution photos with your token.<br>
@@ -149,7 +151,7 @@ Deno.serve(async (req: Request) => {
 
     <p style="margin:20px 0 0;color:#8a94a3;font-size:12px">
       Project ${esc(projectId)} · submitted ${esc(new Date().toISOString())}<br>
-      ${isJob ? "Open the project to export the print PDF or make changes." : "Download link valid ~30 days. Open the project to re-generate or make changes."}
+      ${hasPdf ? "Download link valid ~30 days. Open the project to re-generate or make changes." : "Open the project to export the print PDF or make changes."}
     </p>
   </div>`;
 

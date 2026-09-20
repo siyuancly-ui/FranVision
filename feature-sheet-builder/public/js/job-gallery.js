@@ -1,11 +1,11 @@
 /*
- * job-gallery.js -- pure helpers for a JOB-LINKED sheet (project id = a
- * Job Generator jobId such as FVS-20260915-001).
+ * job-gallery.js -- pure helpers for a Feature Sheet that is CONNECTED to a Job.
  *
- * Such a project shares its projects row with the photo-sync-worker, whose
- * photos[] entries mirror the studio's Dropbox job folder. The FSB shows those
- * photos read-only and must save only what it owns (see
- * supabase/fsb_project_patch.sql). No DOM, no network -- unit-tested in Node.
+ * A sheet keeps its own random id (headshot/logo and everything the FSB owns live
+ * in its own projects row). Connecting stores `jobId` on the sheet; the photo
+ * list is then READ from that job's row, which the photo-sync-worker keeps
+ * mirrored from Dropbox (photos[] entries with dropboxPath, folder, ...). The
+ * FSB never writes a job row. No DOM, no network -- unit-tested in Node.
  */
 (function (root) {
   'use strict';
@@ -13,11 +13,19 @@
   // Dropbox sub-folders whose photos the agent may pick from.
   var GALLERY_FOLDERS = ['HDR Photos', 'MLS'];
 
-  // Keys the FSB owns on a project row (everything except photos[]).
-  var FSB_KEYS = ['templateSystem', 'colorTheme', 'topPhotoStyle', 'imageSizes', 'boxOffsets', 'boxSizes',
-    'templateId', 'propertyInfo', 'agentInfo', 'agentInfo2', 'pages', 'confirmed', 'confirmedAt', 'deletedAt'];
+  var JOB_ID_RE = /^FVS-\d{8}-\d{3,}$/;
 
+  // any id that is a Job's row (never a sheet) -- used to refuse whole-blob writes to it
   function isJobId(id) { return typeof id === 'string' && /^FVS-/.test(id); }
+
+  // "  fvs-20260918-001 " -> "FVS-20260918-001"; '' when it isn't a job id
+  function normalizeJobId(raw) {
+    var s = String(raw == null ? '' : raw).trim().toUpperCase();
+    return JOB_ID_RE.test(s) ? s : '';
+  }
+
+  // the job a sheet is connected to, or ''
+  function jobIdOf(project) { return project ? normalizeJobId(project.jobId) : ''; }
 
   function isGalleryPhoto(p) {
     return !!(p && !p.role && p.dropboxPath && p.hasThumb !== false &&
@@ -33,36 +41,21 @@
     return (photos || []).filter(isGalleryPhoto).slice().sort(byFilename);
   }
 
-  // FSB-owned uploads (headshot / logo) living in the same photos[] array
-  function assetPhotos(photos) {
-    return (photos || []).filter(function (p) { return p && p.role; });
-  }
-
-  // Storage object names (relative to <jobId>/). A synced photo has NO
-  // original in the bucket, only the 1024 thumb -- and that is deliberately all
-  // the editor/preview ever show. The full-resolution original (a paid deliverable) is fetched only
-  // for the PDF export, through the photo-sync-worker's token-gated /render.
+  // Storage object names (relative to <jobId>/). A synced photo has NO original in
+  // the bucket, only the 1024 thumb -- deliberately all the editor/preview ever
+  // show. The full-resolution original (a paid deliverable) is fetched only for the
+  // PDF export, through the photo-sync-worker's token-gated /render.
   function syncedFiles(meta) {
     var thumb = meta.photoId + '_thumb.jpg';
     return { thumb: thumb, full: thumb };
   }
   function isSynced(meta) { return !!(meta && meta.dropboxPath); }
 
-  // The patch sent to fsb_project_patch: FSB-owned keys only. A key that is
-  // absent on the project is sent as null so the server removes it (restore
-  // deletes deletedAt this way).
-  function patchOf(project) {
-    var patch = {};
-    FSB_KEYS.forEach(function (k) {
-      patch[k] = project[k] === undefined ? null : project[k];
-    });
-    return patch;
-  }
-
   var API = {
-    GALLERY_FOLDERS: GALLERY_FOLDERS, FSB_KEYS: FSB_KEYS,
-    isJobId: isJobId, isGalleryPhoto: isGalleryPhoto, galleryPhotos: galleryPhotos,
-    assetPhotos: assetPhotos, syncedFiles: syncedFiles, isSynced: isSynced, patchOf: patchOf,
+    GALLERY_FOLDERS: GALLERY_FOLDERS,
+    isJobId: isJobId, normalizeJobId: normalizeJobId, jobIdOf: jobIdOf,
+    isGalleryPhoto: isGalleryPhoto, galleryPhotos: galleryPhotos,
+    syncedFiles: syncedFiles, isSynced: isSynced,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   if (root) { root.FSB = root.FSB || {}; root.FSB.jobGallery = API; }

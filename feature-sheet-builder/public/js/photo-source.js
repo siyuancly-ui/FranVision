@@ -101,32 +101,63 @@
     clearAll: function (projectId) { return store.clearPhotos(projectId); },
   };
 
-  // ---- job-linked sheets: read-only gallery from Dropbox-synced photos --------
-  // (project id = jobId; see job-gallery.js). The picker lists HDR Photos / MLS
-  // photos as 1024 thumbs; the editor / preview show the 1024; only the admin PDF export pulls originals. Headshot
-  // and logo (role-tagged) still upload like before.
+  // ---- a sheet CONNECTED to a Job: read-only gallery from Dropbox-synced photos --------
+  // The sheet keeps its own id/row; `project.jobId` points at a job's row, whose photos[]
+  // the photo-sync-worker mirrors from Dropbox (see job-gallery.js). We only READ it. The
+  // picker lists HDR Photos / MLS as 1024 thumbs; the editor / preview show the 1024; only
+  // the admin PDF export pulls originals. Headshot / logo (role-tagged, in the sheet's own
+  // photos[]) still upload like before.
   var J = window.FSB.jobGallery;
+  var jobCache = {};   // jobId -> { photos: [...], byId: {photoId: meta}, address, error }
   var dimCache = {};   // photoId -> {width,height}; only for synced photos whose dims the worker could not read
 
-  function isJob(project) { return !!(project && J.isJobId(project.projectId)); }
+  function cacheJob(jobId, data) {
+    var byId = {};
+    (data.photos || []).forEach(function (p) { byId[p.photoId] = p; });
+    jobCache[jobId] = { photos: data.photos || [], byId: byId, address: data.address || '', error: null };
+    return jobCache[jobId];
+  }
+  function loadJob(jobId) {
+    return store.getJobGallery(jobId).then(function (d) { return cacheJob(jobId, d); }, function (err) {
+      jobCache[jobId] = { photos: [], byId: {}, address: '', error: err.message || String(err) };
+      return jobCache[jobId];
+    });
+  }
+  function jobOf(project) {
+    var jid = J.jobIdOf(project);
+    return jid ? { id: jid, data: jobCache[jid] || null } : null;
+  }
+
+  // a photo's meta + whose storage folder it lives under (the sheet's own, or the job's)
+  function metaFor(project, id) {
+    var own = metaOf(project, id);
+    if (own) return { m: own, owner: project.projectId };
+    var j = jobOf(project);
+    var jm = j && j.data && j.data.byId[id];
+    return jm ? { m: jm, owner: j.id } : null;
+  }
   function dimsOf(m) {
     var c = dimCache[m.photoId];
     return { width: m.width || (c && c.width) || 0, height: m.height || (c && c.height) || 0 };
   }
 
   function probeDims(project) {
-    var missing = J.galleryPhotos(project.photos).filter(function (m) { return !(m.width > 0 && m.height > 0) && !dimCache[m.photoId]; });
+    var j = jobOf(project);
+    if (!j || !j.data) return Promise.resolve();
+    var missing = J.galleryPhotos(j.data.photos).filter(function (m) { return !(m.width > 0 && m.height > 0) && !dimCache[m.photoId]; });
     if (!missing.length) return Promise.resolve();
     var jobs = missing.map(function (m) {
       return new Promise(function (resolve) {
         var img = new Image();
         img.onload = function () { dimCache[m.photoId] = { width: img.naturalWidth, height: img.naturalHeight }; resolve(); };
         img.onerror = resolve;
-        img.src = store.photoUrls(project.projectId, m).thumb;
+        img.src = store.photoUrls(j.id, m).thumb;
       });
     });
     // never hold the first render hostage to slow thumbnails
-    return Promise.race([Promise.all(jobs), new Promise(function (r) { setTimeout(r, 5000); })]);
+    var timer;
+    var cap = new Promise(function (r) { timer = setTimeout(r, 5000); });
+    return Promise.race([Promise.all(jobs), cap]).then(function () { clearTimeout(timer); });
   }
 
   // ---- PDF export: pull the HDR original of each PLACED synced photo -----------
@@ -139,17 +170,17 @@
     var m = /[?&]local=1\b/.test(window.location.search) && /[?&]photoSync=([^&]+)/.exec(window.location.search);
     return String((m ? decodeURIComponent(m[1]) : cfg.photoSyncUrl) || '').replace(/\/+$/, '');
   }
-  function placedSyncedIds(project) {
-    var ids = {};
+  function placedSyncedMetas(project) {
+    var out = {};
     ['page1', 'page2'].forEach(function (pk) {
       var slots = (project.pages && project.pages[pk] && project.pages[pk].slots) || {};
       Object.keys(slots).forEach(function (sid) {
         var pid = slots[sid] && slots[sid].photoId;
-        var m = pid && metaOf(project, pid);
-        if (m && J.isSynced(m)) ids[pid] = m;
+        var f = pid && metaFor(project, pid);
+        if (f && J.isSynced(f.m)) out[pid] = f.m;
       });
     });
-    return Object.keys(ids).map(function (k) { return ids[k]; });
+    return Object.keys(out).map(function (k) { return out[k]; });
   }
   function releasePrint() {
     Object.keys(printCache).forEach(function (k) { try { URL.revokeObjectURL(printCache[k]); } catch (e) { /* ignore */ } });
@@ -157,8 +188,9 @@
   }
   function preparePrint(project, token) {
     releasePrint();
-    if (!isJob(project)) return Promise.resolve();
-    var metas = placedSyncedIds(project);
+    var jid = J.jobIdOf(project);
+    if (!jid) return Promise.resolve();
+    var metas = placedSyncedMetas(project);
     if (!metas.length) return Promise.resolve();
     var base = workerBase();
     if (!token || !base) return Promise.reject(new Error('High-resolution export needs the admin link. 导出高清 PDF 需要管理员链接。'));
@@ -166,7 +198,7 @@
     function worker() {
       if (i >= metas.length) return Promise.resolve();
       var m = metas[i++];
-      return fetch(base + '/render/' + encodeURIComponent(project.projectId) + '/' + encodeURIComponent(m.photoId), {
+      return fetch(base + '/render/' + encodeURIComponent(jid) + '/' + encodeURIComponent(m.photoId), {
         headers: { Authorization: 'Bearer ' + token },
       }).then(function (r) {
         if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -185,30 +217,62 @@
 
   var source = {
     id: 'auto',
-    ready: function (project) { return isJob(project) ? probeDims(project) : undefined; },
+
+    // load the connected job's photo list before the first render
+    ready: function (project) {
+      var jid = J.jobIdOf(project);
+      return jid ? loadJob(jid).then(function () { return probeDims(project); }) : undefined;
+    },
+
+    // Connect a sheet to a job: validate the id, read the job's gallery, cache it.
+    // Resolves { jobId, count, address }; rejects with a message fit to show.
+    connect: function (project, raw) {
+      var jid = J.normalizeJobId(raw);
+      if (!jid) return Promise.reject(new Error('Not a valid Job ID (like FVS-20260918-001). Job ID 格式不对。'));
+      return loadJob(jid).then(function (d) {
+        if (d.error) throw new Error(/not found/i.test(d.error) ? 'Job not found — no photos have synced for it yet. 找不到该 Job(照片可能还没同步)。' : d.error);
+        var count = J.galleryPhotos(d.photos).length;
+        if (!count) throw new Error('This Job has no HDR Photos synced yet. 该 Job 还没有同步到 HDR 照片。');
+        return probeDims({ jobId: jid }).then(function () { return { jobId: jid, count: count, address: d.address }; });
+      });
+    },
+    // {jobId, count, address, error} for the info form, or null when not connected
+    jobStatus: function (project) {
+      var j = jobOf(project);
+      if (!j) return null;
+      var d = j.data;
+      return { jobId: j.id, count: d ? J.galleryPhotos(d.photos).length : 0, address: d ? d.address : '', error: d ? d.error : null };
+    },
 
     list: function (project) {
-      if (!isJob(project)) return uploadSource.list(project);
-      return J.galleryPhotos(project.photos).map(function (p) {
+      var j = jobOf(project);
+      if (!j) return uploadSource.list(project);
+      return J.galleryPhotos(j.data ? j.data.photos : []).map(function (p) {
         var d = dimsOf(p);
         return { id: p.photoId, filename: p.filename, width: d.width, height: d.height };
       });
     },
     getMeta: function (project, id) {
-      var m = metaOf(project, id);
-      if (!m) return null;
-      if (!isJob(project) || !J.isSynced(m)) return uploadSource.getMeta(project, id);
-      var d = dimsOf(m);
-      return { width: d.width, height: d.height, filename: m.filename || '' };
+      var f = metaFor(project, id);
+      if (!f) return null;
+      if (!J.isSynced(f.m)) return uploadSource.getMeta(project, id);
+      var d = dimsOf(f.m);
+      return { width: d.width, height: d.height, filename: f.m.filename || '' };
     },
-    printUrl: function (project, id) { return printCache[id] || uploadSource.fullUrl(project, id); },
+    thumbUrl: function (project, id) {
+      var f = metaFor(project, id);
+      return f ? store.photoUrls(f.owner, f.m).thumb : '';
+    },
+    fullUrl: function (project, id) {
+      var f = metaFor(project, id);
+      return f ? store.photoUrls(f.owner, f.m).full : '';
+    },
+    printUrl: function (project, id) { return printCache[id] || source.fullUrl(project, id); },
     preparePrint: preparePrint,
     releasePrint: releasePrint,
-    thumbUrl: function (project, id) { return uploadSource.thumbUrl(project, id); },
-    fullUrl: function (project, id) { return uploadSource.fullUrl(project, id); },
 
-    // the photo LIBRARY (grid upload / delete / clear-all): read-only for a job
-    supportsUpload: function (project) { return !isJob(project); },
+    // the photo LIBRARY (grid upload / delete / clear-all): read-only once connected to a job
+    supportsUpload: function (project) { return !J.jobIdOf(project); },
     // headshot / logo uploads (info form) are always allowed
     supportsAssetUpload: function () { return true; },
     upload: uploadSource.upload,

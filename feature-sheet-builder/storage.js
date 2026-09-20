@@ -56,6 +56,7 @@ function applyPatch(project, patch) {
   // fsb-v2 top-level fields
   if (patch.templateSystem) project.templateSystem = patch.templateSystem;
   if (patch.colorTheme) project.colorTheme = patch.colorTheme;
+  if ('jobId' in patch) { if (patch.jobId) project.jobId = String(patch.jobId); else delete project.jobId; }
   if (patch.topPhotoStyle) project.topPhotoStyle = patch.topPhotoStyle;
   // The client holds the complete, current boxOffsets/boxSizes/imageSizes
   // maps in memory and sends the whole object on every save (same as
