@@ -36,6 +36,8 @@ const calendarFile = require('./calendar-file.js');
 const formState = require('./form-state.js');
 const jobList = require('./job-list.js');
 const deliveryEmail = require('./delivery-email.js');
+const jobBackend = require('./job-backend.js');
+const jobSync = require('./job-sync.js');
 
 const PORT = 4173;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -160,6 +162,20 @@ async function renameFolderWithRetry(oldPath, newPath, { attempts = 5, delayMs =
   }
 }
 
+// The shared job backend (job-backend.js) is the authority for Job IDs and
+// job/draft metadata once configured. Creating/updating a job while it can't
+// be reached is REFUSED rather than worked around with a local/temporary ID
+// (explicit decision 2026-09-19) -- Dropbox needs the network anyway.
+function sendBackendError(res, err) {
+  const offline = !!(err && err.unreachable);
+  return sendJson(res, offline ? 503 : 502, {
+    error: (offline
+      ? 'Can\'t reach the job server -- creating or updating a job needs an internet connection. '
+      : 'The job server refused the request. ') + '(' + (err && err.message || err) + ')',
+    backendError: true,
+  });
+}
+
 function sendJson(res, status, body) {
   const json = JSON.stringify(body);
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -257,11 +273,34 @@ async function handleApi(req, res, urlPath) {
       // "Draft/Job unification", 2026-09-13) -- also surfaced, so the UI
       // can relabel Create Job to "assign an ID to this draft" instead of
       // "brand new job" or "update".
-      const existing = idGenerator.findExistingJob(effectiveRootFolder, folderName);
+      // With the shared job backend configured, "exists" also means "exists on
+      // the server" (a job made on the other machine). This is a live
+      // preview, so an unreachable server degrades to the local view + a
+      // flag instead of an error -- Create Job itself is the one that refuses.
+      let existing;
+      let serverUnreachable = false;
+      let jobConflict = null;
+      try {
+        const resolved = await jobSync.resolveExisting(effectiveRootFolder, folderName, jobBackend);
+        existing = resolved.existing;
+        jobConflict = resolved.conflict;
+      } catch (err) {
+        serverUnreachable = true;
+        existing = idGenerator.findExistingJob(effectiveRootFolder, folderName);
+      }
       const folderExists = !!existing && !existing.unreadable;
       const hasRealId = folderExists && typeof existing.jobId === 'string';
-      const jobIdPreview = hasRealId ? null : idGenerator.getNextJobId(effectiveRootFolder);
+      let jobIdPreview = null;
+      if (!hasRealId) {
+        if (jobBackend.isConfigured() && !serverUnreachable) {
+          try { jobIdPreview = await jobSync.previewJobId({ rootFolder: effectiveRootFolder, backend: jobBackend }); }
+          catch (err) { serverUnreachable = true; }
+        }
+        if (!jobIdPreview && !jobBackend.isConfigured()) jobIdPreview = idGenerator.getNextJobId(effectiveRootFolder);
+      }
       return sendJson(res, 200, {
+        serverUnreachable,
+        jobConflict,
         folderName,
         componentFolders,
         jobIdPreview,
@@ -279,11 +318,31 @@ async function handleApi(req, res, urlPath) {
     // the Job Root Folder's job.json files; a "Draft" IS a real job folder
     // (jobId: null), not a separate storage tier -- see root CLAUDE.md's
     // "Draft/Job unification" note (2026-09-13).
+    // With the shared job backend configured both lists come from the
+    // SERVER (so a draft saved on the Mac shows on the Windows desktop);
+    // an unreachable server falls back to this machine's own folders.
     if (urlPath === '/api/drafts' && req.method === 'GET') {
+      if (jobBackend.isConfigured()) {
+        try {
+          const rows = await jobBackend.listDrafts();
+          return sendJson(res, 200, { drafts: (rows || []).map(jobSync.summaryFromRow), source: 'server' });
+        } catch (err) {
+          return sendJson(res, 200, { drafts: jobList.listDrafts(rootFolder), source: 'local', serverError: err.message });
+        }
+      }
       return sendJson(res, 200, { drafts: jobList.listDrafts(rootFolder) });
     }
 
     if (urlPath === '/api/recent-jobs' && req.method === 'GET') {
+      if (jobBackend.isConfigured()) {
+        try {
+          const since = new Date(Date.now() - jobList.RECENT_JOBS_WINDOW_MS).toISOString();
+          const rows = await jobBackend.listRecentJobs(since);
+          return sendJson(res, 200, { jobs: (rows || []).map(jobSync.summaryFromRow), source: 'server' });
+        } catch (err) {
+          return sendJson(res, 200, { jobs: jobList.listRecentJobs(rootFolder), source: 'local', serverError: err.message });
+        }
+      }
       return sendJson(res, 200, { jobs: jobList.listRecentJobs(rootFolder) });
     }
 
@@ -295,6 +354,19 @@ async function handleApi(req, res, urlPath) {
       const body = await readJsonBody(req);
       const effectiveRootFolder = body.rootFolder || rootFolder;
       const jobFolderPath = path.join(effectiveRootFolder, body.folderName || '');
+      // Server row first (authoritative, and the only copy when the job was
+      // made on the other machine); images still come from THIS machine's
+      // folder when it has one (they're not on the server yet).
+      if (jobBackend.isConfigured()) {
+        try {
+          const row = await jobBackend.getJob(body.folderName || '');
+          if (row) {
+            const detail = jobSync.detailFromRow(row);
+            detail.images = fs.existsSync(jobFolderPath) ? calendarFile.readExistingImages(jobFolderPath) : [];
+            return sendJson(res, 200, detail);
+          }
+        } catch (err) { /* unreachable -> fall through to this machine's own copy */ }
+      }
       let data;
       try {
         data = JSON.parse(fs.readFileSync(path.join(jobFolderPath, 'job.json'), 'utf8'));
@@ -331,17 +403,32 @@ async function handleApi(req, res, urlPath) {
       const effectiveRootFolder = body.rootFolder || rootFolder;
       const folderName = body.folderName || '';
       const jobFolderPath = path.join(effectiveRootFolder, folderName);
-      let data;
+      let data = null;
       try {
         data = JSON.parse(fs.readFileSync(path.join(jobFolderPath, 'job.json'), 'utf8'));
-      } catch (err) {
-        return sendJson(res, 404, { error: 'Draft not found (or its job.json is unreadable).' });
-      }
-      if (!data || (typeof data.jobId !== 'string' && data.jobId !== null)) {
+      } catch (err) { /* no local copy on this machine -- fine if the server has the draft */ }
+      if (data && (typeof data.jobId !== 'string' && data.jobId !== null)) {
         return sendJson(res, 400, { error: 'This folder\'s job.json is corrupted -- resolve it by hand before deleting.' });
       }
-      if (data.jobId !== null) {
+      if (data && data.jobId !== null) {
         return sendJson(res, 409, { error: 'This is already a real job (' + data.jobId + '), not a draft -- it can\'t be deleted this way.' });
+      }
+      // The server row goes too (it refuses a real job itself -- same guard,
+      // enforced where the ID actually lives).
+      let serverDeleted = false;
+      if (jobBackend.isConfigured()) {
+        try {
+          const r = await jobBackend.deleteDraft(folderName);
+          if (r && r.reason === 'real_job') {
+            return sendJson(res, 409, { error: 'This is already a real job (' + r.job_id + '), not a draft -- it can\'t be deleted this way.' });
+          }
+          serverDeleted = !!(r && r.deleted);
+        } catch (err) {
+          return sendBackendError(res, err);
+        }
+      }
+      if (!data && !serverDeleted) {
+        return sendJson(res, 404, { error: 'Draft not found (or its job.json is unreadable).' });
       }
       fs.rmSync(jobFolderPath, { recursive: true, force: true });
       let dropboxDelete;
@@ -409,6 +496,7 @@ async function handleApi(req, res, urlPath) {
       // the already-renamed folder and proceeds as an ordinary update --
       // same Job ID, no new one minted, nothing orphaned.
       let renamedFrom = null;
+      let renamedRemoteRow = null; // server row under the OLD name, when the job has no folder on this machine
       let dropboxRenameResult = null;
       if (body.renameFromFolderName && body.renameFromFolderName !== folderName) {
         const oldFolderPath = path.join(effectiveRootFolder, body.renameFromFolderName);
@@ -416,7 +504,16 @@ async function handleApi(req, res, urlPath) {
         try {
           oldData = JSON.parse(fs.readFileSync(path.join(oldFolderPath, 'job.json'), 'utf8'));
         } catch (err) {
-          return sendJson(res, 409, { error: 'Cannot rename -- the original job folder ("' + body.renameFromFolderName + '") has no readable job.json.' });
+          // A job made on the OTHER machine has no folder here -- the server
+          // row still identifies it, and the rename applies to that (and
+          // Dropbox); this machine just builds the folder under the new name.
+          if (jobBackend.isConfigured()) {
+            try {
+              const row = await jobBackend.getJob(body.renameFromFolderName);
+              if (row) { oldData = { jobId: row.job_id }; renamedRemoteRow = row; }
+            } catch (e2) { return sendBackendError(res, e2); }
+          }
+          if (!oldData) return sendJson(res, 409, { error: 'Cannot rename -- the original job folder ("' + body.renameFromFolderName + '") has no readable job.json.' });
         }
         if (!oldData || typeof oldData.jobId !== 'string') {
           return sendJson(res, 409, {
@@ -435,7 +532,7 @@ async function handleApi(req, res, urlPath) {
             error: 'Cannot rename to "' + folderName + '" -- a folder with that name already exists. Resolve the collision by hand before retrying.',
           });
         }
-        await renameFolderWithRetry(oldFolderPath, jobFolderPath);
+        if (fs.existsSync(oldFolderPath)) await renameFolderWithRetry(oldFolderPath, jobFolderPath);
         renamedFrom = body.renameFromFolderName;
         try {
           dropboxRenameResult = await dropboxSync.renameJobFolderOnDropbox({ oldFolderName: body.renameFromFolderName, newFolderName: folderName });
@@ -444,7 +541,26 @@ async function handleApi(req, res, urlPath) {
         }
       }
 
-      const existing = idGenerator.findExistingJob(effectiveRootFolder, folderName);
+      let existing;
+      try {
+        const resolved = await jobSync.resolveExisting(effectiveRootFolder, folderName, jobBackend);
+        existing = resolved.existing;
+        if (resolved.conflict) {
+          return sendJson(res, 409, {
+            error: 'This job exists under two different IDs -- here as ' + resolved.conflict.local + ' but on the job server as '
+              + resolved.conflict.remote + '. Resolve it by hand before continuing.',
+          });
+        }
+      } catch (err) {
+        return sendBackendError(res, err); // nothing has been created yet
+      }
+      // Renaming a job that only exists on the server (made on the other
+      // machine): the row is still filed under the OLD name until the upsert
+      // at the end, so pick it up from there -- otherwise this looked like a
+      // brand-new job and minted a second Job ID.
+      if (renamedRemoteRow && (!existing || existing.jobId == null)) {
+        existing = jobSync.existingFromRow(Object.assign({}, renamedRemoteRow, { folder_name: folderName }), effectiveRootFolder);
+      }
       if (existing && existing.unreadable) {
         return sendJson(res, 409, {
           error: 'A folder named "' + folderName + '" already exists but has no readable job.json. '
@@ -536,9 +652,20 @@ async function handleApi(req, res, urlPath) {
       // that stays local-only/instant so a Dropbox round-trip doesn't add
       // latency to every keystroke; a preview ID occasionally bumping by
       // one at real creation time is an acceptable cosmetic tradeoff.
-      const jobId = saveAsDraft
-        ? null
-        : (hasRealId ? existing.jobId : await idGenerator.getNextJobIdChecked(effectiveRootFolder, undefined, dropboxSync.jobIdExistsOnDropbox));
+      // With the shared job backend configured the SERVER assigns the ID
+      // (atomic per day, never handed out twice -- the real fix for the
+      // cross-machine collisions); the Dropbox check above stays as a
+      // best-effort extra for IDs minted before the backend existed.
+      let jobId;
+      if (saveAsDraft) jobId = null;
+      else if (hasRealId) jobId = existing.jobId;
+      else if (jobBackend.isConfigured()) {
+        try {
+          jobId = await jobSync.allocateJobId({ rootFolder: effectiveRootFolder, backend: jobBackend, checkFn: dropboxSync.jobIdExistsOnDropbox });
+        } catch (err) { return sendBackendError(res, err); }
+      } else {
+        jobId = await idGenerator.getNextJobIdChecked(effectiveRootFolder, undefined, dropboxSync.jobIdExistsOnDropbox);
+      }
       const createdAt = folderExists ? (existing.createdAt || nowIso) : nowIso;
       // True only on the one call that actually turns a Save-Draft'd
       // folder into a real job -- lets the response (and the UI) say
@@ -687,7 +814,7 @@ async function handleApi(req, res, urlPath) {
       // draft or real, so a Draft OR a Recent Job can be re-opened later
       // with Shoot Time/notes/the pricing candidate chosen/commission
       // checkboxes intact (none of which job.json itself carries).
-      formState.writeFormState(jobFolderPath, {
+      const formRecord = formState.writeFormState(jobFolderPath, {
         shootTime: body.shootTime,
         notes: body.notes,
         chosenCandidateIndex: Number.isInteger(Number(body.chosenCandidateIndex)) ? Number(body.chosenCandidateIndex) : null,
@@ -715,6 +842,25 @@ async function handleApi(req, res, urlPath) {
       };
       const written = jobFiles.writeJobFiles(jobFolderPath, jobData);
       const pendingConfirmation = jobFiles.computePendingConfirmation(jobData);
+
+      // Register/refresh this job on the shared backend (the local job.json
+      // above stays -- it's still the per-machine record). A failure here is
+      // NOT fatal (the ID is already allocated and in the local job.json, and
+      // the next Update re-registers it) but is flagged like any other sync
+      // problem, since until it succeeds the OTHER machine can't see this job.
+      let backendSync = null;
+      if (jobBackend.isConfigured()) {
+        try {
+          await jobBackend.upsertJob(jobSync.buildRow({
+            folderName, previousFolderName: renamedFrom,
+            job: jobFiles.buildJobJson(jobData), form: formRecord,
+          }));
+          backendSync = { success: true };
+        } catch (err) {
+          backendSync = { success: false, error: err.message };
+          pendingConfirmation.push('Job server not updated (' + err.message + ') -- the other machine won\'t see this job/draft until you click Update/Save again with a connection.');
+        }
+      }
       // A failed Dropbox-side rename leaves local and Dropbox folder names
       // mismatched (local already moved -- that's the critical path and
       // always succeeds first) -- flag it the same way any other Dropbox
@@ -752,6 +898,7 @@ async function handleApi(req, res, urlPath) {
         deliveryEmail: deliveryEmailResult,
         coverClosing: coverClosingResult,
         tourLink: tourLinkResult,
+        backendSync,
         pendingConfirmation,
       });
     }

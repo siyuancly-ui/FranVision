@@ -962,7 +962,9 @@
     updateCreateButtonLabel();
 
     let head;
-    if (plan.existingFolderUnreadable) {
+    if (plan.jobConflict) {
+      head = '<div style="color:#7a1f1f;">⚠ This job exists under two different IDs -- here as <code>' + plan.jobConflict.local + '</code>, on the job server as <code>' + plan.jobConflict.remote + '</code>. Create Job will refuse until it\'s resolved by hand.</div>';
+    } else if (plan.existingFolderUnreadable) {
       head = '<div style="color:#7a1f1f;">⚠ A folder named <code>' + plan.folderName + '</code> already exists but its job.json can\'t be read. Create Job will refuse until it\'s fixed by hand.</div>';
     } else if (matchesExistingJob) {
       head = '<div style="color:#6b510f;">↻ Matches existing job <code>' + matchesExistingJob + '</code> — Create Job will <strong>update</strong> it (same Job ID). Save as Draft is unavailable here (a real job can\'t go back to being a draft).</div>';
@@ -975,6 +977,9 @@
       head = '<div style="color:#6b510f;">↻ Matches an existing Draft (no Job ID yet) — Save as Draft updates it in place; Create Job assigns it <code>' + plan.jobIdPreview + '</code> and finalizes it.</div>';
     } else {
       head = '<div>Job ID (preview): <code>' + plan.jobIdPreview + '</code></div>';
+    }
+    if (plan.serverUnreachable) {
+      head += '<div style="color:#7a1f1f;">⚠ Can\'t reach the job server -- Create Job / Save as Draft need an internet connection and will be refused until it\'s back.</div>';
     }
     el('folder-preview').innerHTML =
       head +
