@@ -197,11 +197,13 @@ function heroHtml(model) {
 }
 
 function videoHtml(video) {
-  // autoplay requires muted (browser autoplay policy); loop suits a teaser.
+  // Starts muted so autoplay is always allowed (browser autoplay policy); the
+  // page script (Stream Player SDK) then unmutes at VIDEO_VOLUME, falling back
+  // to muted if the browser refuses. Loop suits a teaser.
   const src = `${video.playbackUrl}?autoplay=true&muted=true&loop=true`;
   return `  <div class="media-frame">
     <div class="media-box" style="cursor:default;">
-      <iframe src="${escapeHtml(src)}" style="position:absolute;inset:0;width:100%;height:100%;border:0;" allow="autoplay; fullscreen" allowfullscreen loading="lazy"></iframe>
+      <iframe id="deliveryVideo" src="${escapeHtml(src)}" style="position:absolute;inset:0;width:100%;height:100%;border:0;" allow="autoplay; fullscreen" allowfullscreen loading="lazy"></iframe>
     </div>
   </div>`;
 }
@@ -409,7 +411,10 @@ const CSS = `
   }
 `;
 
-const SCRIPT = `<script>
+const VIDEO_VOLUME = 0.6;
+
+const SCRIPT = `<script src="https://embed.cloudflarestream.com/embed/sdk.latest.js"></script>
+<script>
 (function(){
   var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -434,6 +439,25 @@ const SCRIPT = `<script>
     if(prev) prev.addEventListener('click', function(){ goPrev(); resetAuto(); });
     if(next) next.addEventListener('click', function(){ goNext(); resetAuto(); });
     if(phaseOffsetMs) setTimeout(startAuto, phaseOffsetMs); else startAuto();
+  }
+
+  // Video plays with sound at ${VIDEO_VOLUME * 100}% volume. The iframe starts muted (the only
+  // way autoplay is guaranteed); once the player is up we try to unmute, and if
+  // the browser's autoplay policy pauses it as a result, fall back to muted
+  // playback -- the viewer can still unmute with the player's own control.
+  var videoFrame = document.getElementById('deliveryVideo');
+  if(videoFrame && window.Stream){
+    var player = window.Stream(videoFrame);
+    var unmuted = false;
+    player.addEventListener('playing', function(){
+      if(unmuted) return;
+      unmuted = true;
+      player.volume = ${VIDEO_VOLUME};
+      player.muted = false;
+      setTimeout(function(){
+        if(player.paused){ player.muted = true; player.play(); }
+      }, 500);
+    });
   }
 
   setupTrack('galTrack', 'galPrev', 'galNext', 0);

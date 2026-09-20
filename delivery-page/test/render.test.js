@@ -315,11 +315,14 @@ test('renderDeliveryPage: the lightbox stays hidden by default (a `.lightbox{dis
   assert.ok(out.includes('.lightbox[hidden]{display:none;}'));
 });
 
-test('renderDeliveryPage: video autoplays muted and loops', () => {
+test('renderDeliveryPage: video autoplays, loops, and the page script unmutes it at 60% volume', () => {
   const project = { data: { videos: [{ videoId: 'v1', folder: 'Video', status: 'ok', streamUid: 'abc' }] } };
   const model = buildDeliveryModel(project, OPTS);
   const out = renderDeliveryPage(model);
   assert.ok(out.includes('iframe.videodelivery.net/abc?autoplay=true&amp;muted=true&amp;loop=true'));
+  assert.ok(out.includes('id="deliveryVideo"'));
+  assert.ok(out.includes('embed.cloudflarestream.com/embed/sdk.latest.js'));
+  assert.ok(out.includes('player.volume = 0.6;'));
 });
 
 test('buildDeliveryModel: non-ok or thumbless photos are excluded', () => {
