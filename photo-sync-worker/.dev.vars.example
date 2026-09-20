@@ -11,6 +11,11 @@ SUPABASE_SERVICE_ROLE_KEY=
 # Bearer token that protects POST /admin/* . Make it long and random.
 ADMIN_TOKEN=
 
+# Bearer token for GET /render/<jobId>/<photoId> (the 2048 renders the Feature
+# Sheet Builder's PDF export pulls). Use the SAME value as the FSB's admin token
+# (the one typed as ?admin=<token>), because the FSB sends it as this bearer.
+RENDER_TOKEN=
+
 # Cloudflare Stream (video hosting). CF_ACCOUNT_ID is not sensitive (also set
 # as a `vars` entry in wrangler.jsonc for prod) but listed here too for local
 # runs. CF_STREAM_API_TOKEN needs Stream:Edit permission on that account.
