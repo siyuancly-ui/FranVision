@@ -151,7 +151,7 @@ One Postgres table + one storage bucket + two edge functions. Project ref
   the worker serves the existing `<job>/MLS for download/…` copy, else renders a fresh w2048h1536. Needs
   `photoSyncUrl` in `config.js` and the worker secret `RENDER_TOKEN` = the FSB admin token. A failed fetch aborts the
   export (never a soft PDF). For job sheets the client's **Confirm & Submit no longer builds/uploads a PDF** (it can't
-  fetch the 2048s); it only notifies the studio, who exports — so the email's "Download print PDF" link is dead for them.
+  fetch the 2048s); it only notifies the studio, who exports (`notify-submission` omits the PDF button for `FVS-` ids and tells the studio to use the admin link; **redeploy that edge function** after editing it).
 - Saving goes through `supabase/fsb_project_patch.sql` (**run once in the SQL editor**, already done 2026-09-19): it merges
   only the FSB-owned keys + the role-tagged headshot/logo entries of `photos[]`, never the whole blob — the old
   `update projects set data = <blob>` would wipe the worker's keys. Delete / duplicate / purge / clear-library are refused
