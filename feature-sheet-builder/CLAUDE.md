@@ -30,7 +30,7 @@ confirms, and either exports a print PDF or submits the sheet to the studio.
 ```
 cd feature-sheet-builder
 node server.js            # -> http://localhost:4180
-npm test                  # node --test  (59 tests across this module)
+npm test                  # node --test  (61 tests across this module)
 ```
 
 Or double-click `../Feature Sheet Builder.command` in Finder (starts the server,
@@ -152,6 +152,10 @@ One Postgres table + one storage bucket + two edge functions. Project ref
   `photoSyncUrl` in `config.js` and the worker secret `RENDER_TOKEN` = the FSB admin token. A failed fetch aborts the
   export (never a soft PDF). For job sheets the client's **Confirm & Submit no longer builds/uploads a PDF** (it can't
   fetch the originals); it only notifies the studio, who exports (`notify-submission` omits the PDF button for `FVS-` ids and tells the studio to use the admin link; **redeploy that edge function** after editing it).
+- A job row created by the worker holds only `photos[]`/`address`/`videos`/`tourUrl` — none of the FSB's own keys — so
+  `app.setProject` runs `FSB_V2.withDefaults` (fills what's missing, never overwrites) before anything reads `pages`/`agentInfo`.
+  Without it the FSB crashed on `reading 'page1'` when opening a real job (found 2026-09-19; the local Node backend still
+  can't merge a first save into such a row — dev-only, production saves via the RPC and works).
 - Saving goes through `supabase/fsb_project_patch.sql` (**run once in the SQL editor**, already done 2026-09-19): it merges
   only the FSB-owned keys + the role-tagged headshot/logo entries of `photos[]`, never the whole blob — the old
   `update projects set data = <blob>` would wipe the worker's keys. Delete / duplicate / purge / clear-library are refused

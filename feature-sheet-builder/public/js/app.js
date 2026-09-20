@@ -95,6 +95,7 @@
 
   // ---- mutations -------------------------------------------------
   app.setProject = function (project) {
+    project = window.FSB_V2.withDefaults(project);   // a worker-created job row has none of the FSB's own keys
     app.project = project;
     app.projectId = project.projectId;
     app._dirty = false;

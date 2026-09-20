@@ -257,3 +257,28 @@ test('text-util: formatPhone normalises 10/11-digit numbers', () => {
   assert.equal(TXT.formatPhone('(647) 268-6266'), '647-268-6266');
   assert.equal(TXT.formatPhone('12345'), '12345'); // leave odd input alone
 });
+
+test('registry: withDefaults lets the FSB open a worker-created job row (photos/address only)', () => {
+  const row = { photos: [{ photoId: 'w1', dropboxPath: '/x' }], address: '9 Shape St', videos: [{ videoId: 'v' }], tourUrl: 'https://t', deletedAt: null };
+  const p = REG.withDefaults(row);
+  assert.equal(p.colorTheme, 'navy');
+  assert.equal(p.templateSystem, 'fsb-v2');
+  assert.ok(p.pages.page1.slots && p.pages.page2.slots);
+  assert.equal(p.agentInfo.name, '');
+  assert.equal(p.agentInfo2, null);
+  assert.equal(p.confirmed, false);
+  // worker-owned keys are left exactly as they were
+  assert.equal(p.address, '9 Shape St'); assert.equal(p.tourUrl, 'https://t'); assert.equal(p.videos.length, 1); assert.equal(p.photos.length, 1);
+  // and the result actually composes / enumerates slots without throwing
+  assert.doesNotThrow(() => REG.compose(p));
+  assert.ok(REG.slotIds(p).includes('p1R-hero'));
+});
+
+test('registry: withDefaults never overwrites existing values and is idempotent', () => {
+  const p = REG.blankProject('estate-emerald');
+  p.propertyInfo.address = 'A'; p.agentInfo.name = 'N'; p.agentInfo2 = { name: 'B' }; p.confirmed = true; p.topPhotoStyle = 'paired';
+  p.pages.page1.slots['p1-hero'] = { photoId: 'x', positionX: 0.3, positionY: 0, scale: 1.2 };
+  const before = JSON.stringify(p);
+  REG.withDefaults(p); REG.withDefaults(p);
+  assert.equal(JSON.stringify(p), before);
+});
