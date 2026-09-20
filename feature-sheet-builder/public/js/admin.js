@@ -43,23 +43,6 @@
     } else { prompt('Copy link:', text); }
   }
 
-  // a button that needs a second click within 3s to fire (no browser modal)
-  function armedButton(label, armedLabel, cls, run) {
-    var b = el('button', { class: 'fsb-btn fsb-btn--sm ' + (cls || ''), text: label });
-    var armed = false, t = null;
-    b.addEventListener('click', function () {
-      if (!armed) {
-        armed = true; b.textContent = armedLabel;
-        t = setTimeout(function () { armed = false; b.textContent = label; }, 3000);
-        return;
-      }
-      clearTimeout(t); armed = false;
-      b.disabled = true; b.textContent = '…';
-      run(b, function () { b.disabled = false; b.textContent = label; });
-    });
-    return b;
-  }
-
   function mount(root, token) {
     document.title = 'All Feature Sheets — FranVision';
     root.innerHTML = '';
@@ -73,11 +56,21 @@
     var search = el('input', { id: 'fsb-admin-search', type: 'search', placeholder: 'Filter by address / agent 筛选…' });
     var binLink = el('button', { class: 'fsb-btn fsb-btn--ghost', text: 'Recycle bin 回收站' });
     var newBtn = el('button', { class: 'fsb-btn fsb-btn--primary', text: '+ New feature sheet 新建' });
-    var emptyBtn = armedButton('Empty bin 清空回收站', 'Purge all? 确认清空', 'fsb-btn--danger', function (b, reset) {
-      store.emptyTrash(token).then(function (n) {
-        toast(n + ' permanently deleted 已彻底删除');
-        load();
-      }).catch(function (err) { reset(); toast('Failed 失败: ' + (err.message || err), 'error'); });
+    var emptyBtn = el('button', { class: 'fsb-btn fsb-btn--sm fsb-btn--danger', text: 'Empty bin 清空回收站' });
+    emptyBtn.addEventListener('click', function () {
+      var n = rows.length;
+      window.FSB.util.confirmDialog(
+        ['Permanently delete all ' + n + ' sheet' + (n === 1 ? '' : 's') + ' in the recycle bin, with their photos?\nThis cannot be undone.',
+         '永久删除回收站里的全部 ' + n + ' 份 sheet 及其照片?\n此操作无法撤销。'],
+        { okText: 'Delete all 全部删除', cancelText: 'Cancel 取消' }
+      ).then(function (ok) {
+        if (!ok) return;
+        emptyBtn.disabled = true;
+        store.emptyTrash(token, function (i, total) { emptyBtn.textContent = 'Deleting ' + i + '/' + total + '…'; })
+          .then(function (count) { toast(count + ' permanently deleted 已彻底删除'); })
+          .catch(function (err) { toast('Failed 失败: ' + (err.message || err), 'error'); })
+          .then(function () { emptyBtn.disabled = false; emptyBtn.textContent = 'Empty bin 清空回收站'; load(); });
+      });
     });
 
     var actions = el('div', { class: 'fsb-admin-actions' }, [search, binLink, newBtn, emptyBtn]);
@@ -178,10 +171,21 @@
             store.restoreProject(r.id).then(function () { drop(r.id); toast('Restored 已恢复'); })
               .catch(function (err) { b.disabled = false; toast('Restore failed 恢复失败: ' + (err.message || err), 'error'); });
           } }),
-        armedButton('Delete forever 彻底删除', 'Confirm? 确认彻底删除', 'fsb-btn--danger', function (b, reset) {
-          store.purgeProject(r.id).then(function () { drop(r.id); toast('Permanently deleted 已彻底删除'); })
-            .catch(function (err) { reset(); toast('Failed 失败: ' + (err.message || err), 'error'); });
-        }),
+        el('button', { class: 'fsb-btn fsb-btn--sm fsb-btn--danger', text: 'Delete forever 彻底删除',
+          onclick: function () {
+            var b = this;
+            var name = r.address || '(untitled 未命名)';
+            window.FSB.util.confirmDialog(
+              ['Permanently delete "' + name + '" and its photos?\nThis cannot be undone.',
+               '永久删除「' + name + '」及其照片?\n此操作无法撤销。'],
+              { okText: 'Delete forever 彻底删除', cancelText: 'Cancel 取消' }
+            ).then(function (ok) {
+              if (!ok) return;
+              b.disabled = true; b.textContent = 'Deleting…';
+              store.purgeProject(r.id).then(function () { drop(r.id); toast('Permanently deleted 已彻底删除'); })
+                .catch(function (err) { b.disabled = false; b.textContent = 'Delete forever 彻底删除'; toast('Failed 失败: ' + (err.message || err), 'error'); });
+            });
+          } }),
       ];
     }
 

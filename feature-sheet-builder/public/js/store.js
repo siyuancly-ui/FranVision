@@ -241,6 +241,19 @@
     function pubUrl(path) {
       return sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
     }
+    // every object under <id>/ -- storage.list returns at most 100 per call, so page through it
+    function listAllFiles(id) {
+      var out = [];
+      function page(offset) {
+        return sb.storage.from(BUCKET).list(id, { limit: 100, offset: offset }).then(function (res) {
+          if (res.error) throw new Error(res.error.message);
+          var batch = res.data || [];
+          batch.forEach(function (f) { out.push(id + '/' + f.name); });
+          return batch.length === 100 ? page(offset + 100) : out;
+        });
+      }
+      return page(0);
+    }
     function origPath(id, meta) { return id + '/' + meta.photoId + '.' + (meta.ext || 'jpg'); }
     function thumbPath(id, meta) { return id + '/' + meta.photoId + '_thumb.jpg'; }
 
@@ -335,22 +348,43 @@
       },
       purgeProject: function (id) {
         if (J.isJobId(id)) return jobRowRefuses('Purging');
-        return sb.storage.from(BUCKET).list(id).then(function (res) {
-          var files = ((res && res.data) || []).map(function (f) { return id + '/' + f.name; });
-          return files.length ? sb.storage.from(BUCKET).remove(files) : Promise.resolve({});
+        return listAllFiles(id).then(function (files) {
+          var chunks = [];
+          for (var i = 0; i < files.length; i += 100) chunks.push(files.slice(i, i + 100));
+          return chunks.reduce(function (p, chunk) {
+            return p.then(function () {
+              return sb.storage.from(BUCKET).remove(chunk).then(function (res) {
+                if (res && res.error) throw new Error(res.error.message);
+              });
+            });
+          }, Promise.resolve());
         }).then(function () {
-          return sb.from('projects').delete().eq('id', id);
+          return sb.from('projects').delete().eq('id', id).select('id');
         }).then(function (res) {
-          if (res && res.error) throw new Error(res.error.message);
-          return true;
+          if (res.error) throw new Error(res.error.message);
+          if (res.data && res.data.length) return true;
+          // 0 rows deleted: fine if it was already gone, an error if something (RLS) stopped us
+          return sb.from('projects').select('id').eq('id', id).maybeSingle().then(function (chk) {
+            if (chk.data) throw new Error('The sheet was not removed (blocked by the database).');
+            return true;
+          });
         });
       },
-      emptyTrash: function (token) {
+      // Purges every sheet in the bin, one by one. One failure does not stop the rest; if any failed
+      // the promise rejects AFTER trying them all, saying how many.  onProgress(doneSoFar, total)
+      emptyTrash: function (token, onProgress) {
         var self = this;
         return this.listTrash(token).then(function (list) {
+          var done = 0, failed = [];
           return list.reduce(function (chain, r) {
-            return chain.then(function (n) { return self.purgeProject(r.id).then(function () { return n + 1; }); });
-          }, Promise.resolve(0));
+            return chain.then(function () {
+              return self.purgeProject(r.id).then(function () { done++; }, function (e) { failed.push(r.id + ': ' + e.message); })
+                .then(function () { if (onProgress) onProgress(done + failed.length, list.length); });
+            });
+          }, Promise.resolve()).then(function () {
+            if (failed.length) throw new Error(failed.length + ' of ' + list.length + ' could not be deleted (' + failed[0] + ')');
+            return done;
+          });
         });
       },
       listTrash: function (token) {
