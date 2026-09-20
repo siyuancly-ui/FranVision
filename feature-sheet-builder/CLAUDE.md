@@ -143,14 +143,21 @@ One Postgres table + one storage bucket + two edge functions. Project ref
 
 **Job-linked sheets (2026-09-19).** A project whose id is a jobId (`FVS-…`, `job-gallery.js#isJobId`) is the *same*
 `projects` row the photo-sync-worker and delivery-page write (`photos[]`, `videos[]`, `address`, `tourUrl`). For those:
-the picker/library show only the worker-synced `HDR Photos`/`MLS` photos (read-only; 1024 `_thumb.jpg` in the picker,
-the 2048 `_large.jpg` in slots/preview/PDF — the worker must have `HDR Photos,MLS` in `LARGE_THUMB_FOLDERS`, and old
-jobs need `POST /admin/backfill`; without `hasLarge` the FSB falls back to the thumb). Saving goes through
-`supabase/fsb_project_patch.sql` (**must be run once in the SQL editor** or job-linked saves fail): it merges only the
-FSB-owned keys + the role-tagged headshot/logo entries of `photos[]`, never the whole blob — the old
-`update projects set data = <blob>` would wipe the worker's keys. Delete / duplicate / purge / clear-library are refused
-for job sheets (`store.js`). Headshot/logo uploads still work. Random-id projects are unchanged. Not built yet: a
-delivery-page entry point that opens `?p=<jobId>`, pre-filling `propertyInfo` from `address`, and the order/payment flow.
+- The picker/library show only the worker-synced `HDR Photos`/`MLS` photos, read-only. **The editor, preview and picker
+  all use the 1024 `_thumb.jpg`** (the preview keeps its watermark). There is no 2048 in Supabase on purpose: the 2048
+  set is the paid deliverable.
+- **PDF export** (admin `?admin=<token>` only) fetches the 2048 of each *placed* photo from the photo-sync-worker's
+  bearer-gated `GET /render/<jobId>/<photoId>` (`photo-source.js#preparePrint` -> blob URLs -> renderer `setPrintMode`);
+  the worker serves the existing `<job>/MLS for download/…` copy, else renders a fresh w2048h1536. Needs
+  `photoSyncUrl` in `config.js` and the worker secret `RENDER_TOKEN` = the FSB admin token. A failed fetch aborts the
+  export (never a soft PDF). For job sheets the client's **Confirm & Submit no longer builds/uploads a PDF** (it can't
+  fetch the 2048s); it only notifies the studio, who exports — so the email's "Download print PDF" link is dead for them.
+- Saving goes through `supabase/fsb_project_patch.sql` (**run once in the SQL editor**, already done 2026-09-19): it merges
+  only the FSB-owned keys + the role-tagged headshot/logo entries of `photos[]`, never the whole blob — the old
+  `update projects set data = <blob>` would wipe the worker's keys. Delete / duplicate / purge / clear-library are refused
+  for job sheets (`store.js`). Headshot/logo uploads still work. Random-id projects are unchanged.
+- Not built yet: a delivery-page entry point that opens `?p=<jobId>`, pre-filling `propertyInfo` from `address`, and the
+  order/payment flow (when it exists, gate `/render` on "paid" instead of / in addition to the token).
 
 **Full one-time SQL schema + RLS policies live in `NOTES.md` §7** — run it once
 in the Supabase SQL Editor. That is the authoritative copy; keep it there, not

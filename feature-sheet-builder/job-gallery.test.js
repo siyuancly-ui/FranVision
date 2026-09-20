@@ -30,8 +30,8 @@ test('assetPhotos: only role-tagged entries', () => {
   assert.deepEqual(G.assetPhotos(photos).map((p) => p.photoId), ['h', 'l']);
 });
 
-test('syncedFiles: full is the 2048 render when present, else falls back to the thumb', () => {
-  assert.deepEqual(G.syncedFiles({ photoId: 'x', hasLarge: true }), { thumb: 'x_thumb.jpg', full: 'x_large.jpg' });
+test('syncedFiles: on-screen full is the 1024 thumb, even when a large render exists', () => {
+  assert.deepEqual(G.syncedFiles({ photoId: 'x', hasLarge: true }), { thumb: 'x_thumb.jpg', full: 'x_thumb.jpg' });
   assert.deepEqual(G.syncedFiles({ photoId: 'x' }), { thumb: 'x_thumb.jpg', full: 'x_thumb.jpg' });
 });
 

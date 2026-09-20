@@ -108,13 +108,11 @@ test('confirmProject on a job only patches confirmed/confirmedAt', async () => {
   assert.equal(calls.rpc[0].args.p_assets, null);                  // photos[] untouched
 });
 
-test('photoUrls: synced photo -> _large.jpg / _thumb.jpg; uploaded photo -> original', () => {
+test('photoUrls: synced photo -> 1024 thumb for both (never _large); uploaded photo -> original', () => {
   const { store } = load(null);
   const synced = store.photoUrls(JOB, { photoId: 'w1', dropboxPath: '/x', hasThumb: true, hasLarge: true });
-  assert.ok(synced.full.endsWith('/FVS-20260915-001/w1_large.jpg'));
+  assert.ok(synced.full.endsWith('/FVS-20260915-001/w1_thumb.jpg'));
   assert.ok(synced.thumb.endsWith('/FVS-20260915-001/w1_thumb.jpg'));
-  const noLarge = store.photoUrls(JOB, { photoId: 'w2', dropboxPath: '/x', hasThumb: true });
-  assert.ok(noLarge.full.endsWith('/w2_thumb.jpg'));
   const own = store.photoUrls('abc123abc123', { photoId: 'u1', ext: 'jpg', hasThumb: true });
   assert.ok(own.full.endsWith('/abc123abc123/u1.jpg'));
 });

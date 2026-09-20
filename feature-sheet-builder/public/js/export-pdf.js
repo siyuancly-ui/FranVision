@@ -78,7 +78,11 @@
     var pdf = new JsPDF({ unit: 'pt', format: [TRIM_W, TRIM_H], orientation: 'landscape', compress: true });
     var n = pageCount();
 
-    var chain = Promise.resolve();
+    // job-linked sheets: pull the 2048 render of every placed photo first (needs
+    // the admin link) and render in print mode; always undo both afterwards.
+    var ps = window.FSB.photoSource;
+    var chain = Promise.resolve(ps.preparePrint ? ps.preparePrint(app.project, app.adminToken) : null)
+      .then(function () { render.setPrintMode(true); });
     for (var p = 1; p <= n; p++) {
       (function (pageNum) {
         chain = chain
@@ -89,7 +93,8 @@
           });
       })(p);
     }
-    return chain.then(function () { return pdf; });
+    function done() { render.setPrintMode(false); if (ps.releasePrint) ps.releasePrint(); }
+    return chain.then(function () { done(); return pdf; }, function (err) { done(); throw err; });
   }
 
   function buildBlob(app) {

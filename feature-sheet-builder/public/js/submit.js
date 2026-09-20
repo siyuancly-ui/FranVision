@@ -25,6 +25,13 @@
       return Promise.resolve();
     }
 
+    // Job-linked sheets: the print PDF needs the paid 2048 renders, which only the
+    // studio's admin export can fetch -- so the client just notifies the studio.
+    if (window.FSB.jobGallery.isJobId(app.projectId)) {
+      app.setBusy('Notifying the studio… 通知工作室…');
+      return store.invokeFunction('notify-submission', { projectId: app.projectId });
+    }
+
     app.setBusy('Preparing the print file… 正在生成打印文件…');
     return window.FSB.exportPdf.buildBlob(app)
       .then(function (blob) {
