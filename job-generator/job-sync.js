@@ -75,6 +75,7 @@ function detailFromRow(row) {
     notes: form.notes || '',
     chosenCandidateIndex: Number.isInteger(form.chosenCandidateIndex) ? form.chosenCandidateIndex : null,
     commission: form.commission || { checkedItemIds: [], travelCents: 0 },
+    calendarFile: form.calendarFile || null,
   };
 }
 

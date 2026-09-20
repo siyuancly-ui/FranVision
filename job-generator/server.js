@@ -36,6 +36,7 @@ const calendarFile = require('./calendar-file.js');
 const formState = require('./form-state.js');
 const jobList = require('./job-list.js');
 const deliveryEmail = require('./delivery-email.js');
+const crypto = require('crypto');
 const jobBackend = require('./job-backend.js');
 const jobSync = require('./job-sync.js');
 
@@ -325,7 +326,12 @@ async function handleApi(req, res, urlPath) {
       if (jobBackend.isConfigured()) {
         try {
           const rows = await jobBackend.listDrafts();
-          return sendJson(res, 200, { drafts: (rows || []).map(jobSync.summaryFromRow), source: 'server' });
+          const fromServer = (rows || []).map(jobSync.summaryFromRow);
+          // Old-style drafts (a real folder made before drafts moved to the
+          // server) that the server never heard about stay visible.
+          const known = new Set(fromServer.map((d) => d.folderName));
+          const legacy = jobList.listDrafts(rootFolder).filter((d) => !known.has(d.folderName));
+          return sendJson(res, 200, { drafts: fromServer.concat(legacy), source: 'server' });
         } catch (err) {
           return sendJson(res, 200, { drafts: jobList.listDrafts(rootFolder), source: 'local', serverError: err.message });
         }
@@ -338,7 +344,10 @@ async function handleApi(req, res, urlPath) {
         try {
           const since = new Date(Date.now() - jobList.RECENT_JOBS_WINDOW_MS).toISOString();
           const rows = await jobBackend.listRecentJobs(since);
-          return sendJson(res, 200, { jobs: (rows || []).map(jobSync.summaryFromRow), source: 'server' });
+          const fromServer = (rows || []).map(jobSync.summaryFromRow);
+          const known = new Set(fromServer.map((j) => j.folderName));
+          const legacy = jobList.listRecentJobs(rootFolder).filter((j) => !known.has(j.folderName));
+          return sendJson(res, 200, { jobs: fromServer.concat(legacy), source: 'server' });
         } catch (err) {
           return sendJson(res, 200, { jobs: jobList.listRecentJobs(rootFolder), source: 'local', serverError: err.message });
         }
@@ -363,6 +372,12 @@ async function handleApi(req, res, urlPath) {
           if (row) {
             const detail = jobSync.detailFromRow(row);
             detail.images = fs.existsSync(jobFolderPath) ? calendarFile.readExistingImages(jobFolderPath) : [];
+            // A new-style draft has no folder -- its images are in the calendar
+            // file it dropped into the Job Root Folder (on this machine only;
+            // cross-machine images are a later stage).
+            if (!detail.images.length && detail.calendarFile) {
+              detail.images = calendarFile.readImagesFromIcsFile(path.join(effectiveRootFolder, detail.calendarFile));
+            }
             return sendJson(res, 200, detail);
           }
         } catch (err) { /* unreachable -> fall through to this machine's own copy */ }
@@ -433,7 +448,12 @@ async function handleApi(req, res, urlPath) {
       fs.rmSync(jobFolderPath, { recursive: true, force: true });
       let dropboxDelete;
       try {
-        dropboxDelete = await dropboxSync.deleteJobFolderFromDropbox({ folderName });
+        // A new-style draft never had a Dropbox folder -- deleting one by that
+        // name could wipe an unrelated folder someone made by hand. Only an
+        // old-style draft (it had a local folder, hence a Dropbox mirror) gets it.
+        dropboxDelete = data
+          ? await dropboxSync.deleteJobFolderFromDropbox({ folderName })
+          : { attempted: false, success: true, skipped: true, note: 'no folder was ever created for this draft' };
       } catch (err) {
         dropboxDelete = { attempted: true, success: false, error: 'Unexpected Dropbox delete failure: ' + err.message };
       }
@@ -578,21 +598,12 @@ async function handleApi(req, res, urlPath) {
         });
       }
 
-      // For an update (real job OR an already-Save-Draft'd folder), the
-      // calendar file is regenerated from scratch -- so any images already
-      // attached would be lost unless we carry them forward (the "load
-      // existing job/draft into the form" step -- see /api/job-detail --
-      // still re-sends whatever it read, but a caller that skips it, e.g.
-      // re-submitting the form after a create, would otherwise lose them).
-      // Merge here (a fresh upload with the same name replaces the old
-      // one) and re-check the combined total BEFORE any folder side effects.
-      let effectiveImages = body.images || [];
-      if (folderExists && shootTimeGiven) {
-        effectiveImages = calendarFile.mergeImages(calendarFile.readExistingImages(jobFolderPath), body.images);
-        const mergedProblems = calendarFile.validateImages(effectiveImages);
-        if (mergedProblems.length) {
-          return sendJson(res, 400, { error: 'The images this job already has, plus the new ones, exceed the limit: ' + mergedProblems.join(' ') });
-        }
+      // Save as Draft creates NO folder (2026-09-19) -- the draft's data lives
+      // on the shared job server, so without it there's nowhere to keep one.
+      if (saveAsDraft && !jobBackend.isConfigured()) {
+        return sendJson(res, 400, {
+          error: 'Save as Draft needs the job server (JG_SUPABASE_URL / JG_SUPABASE_ANON_KEY / JG_TOKEN in job-generator/.env) -- drafts no longer create a folder, so they are stored on the server.',
+        });
       }
 
       // Recompute price server-side -- never trust a client-supplied total.
@@ -672,6 +683,75 @@ async function handleApi(req, res, urlPath) {
       // something more specific than the generic "updated".
       const finalizedFromDraft = folderExists && !hasRealId && !!jobId;
 
+      // ---- Save as Draft: NO folder, NO Dropbox, NO job.json (2026-09-19,
+      // supersedes the 2026-09-13 "a draft is a real job folder" model).
+      // The draft's data goes to the job server; the ONLY thing written to
+      // disk is one calendar .ics dropped straight into the Job Root Folder
+      // (named by calendar-file.js#buildDraftCalendarFilename), and only when
+      // a Shoot Time was given. Folders (local + Dropbox) come into existence
+      // at Create Job. An old-style draft that already has a real folder is
+      // left untouched here -- Create Job just reuses it.
+      if (saveAsDraft) {
+        const draftComponentFolders = folderBuilder.getComponentFolders(order);
+        const calendarFilename = shootTimeGiven
+          ? calendarFile.buildDraftCalendarFilename({
+              order, clientName: body.clientName, photographerName: body.photographerName,
+              shootDate: body.shootDate, address: body.address,
+            })
+          : null;
+        const draftForm = {
+          shootTime: body.shootTime || '',
+          notes: body.notes || '',
+          chosenCandidateIndex: Number.isInteger(Number(body.chosenCandidateIndex)) ? Number(body.chosenCandidateIndex) : null,
+          commission: {
+            checkedItemIds: (body.commission && body.commission.checkedItemIds) || [],
+            travelCents: (body.commission && body.commission.travelCents) || 0,
+          },
+          calendarFile: calendarFilename,
+        };
+        const draftJobData = {
+          jobId: null, createdAt, updatedAt: nowIso,
+          clientName: body.clientName, photographerName: body.photographerName, address: body.address,
+          propertyType: body.propertyType, shootDate: body.shootDate, order, price,
+          folderName, componentFolders: draftComponentFolders, commission,
+        };
+        try {
+          await jobBackend.upsertJob(jobSync.buildRow({ folderName, job: jobFiles.buildJobJson(draftJobData), form: draftForm }));
+        } catch (err) {
+          return sendBackendError(res, err); // nothing has been written anywhere yet
+        }
+        let draftCalendar = null;
+        if (calendarFilename) {
+          const written = calendarFile.writeCalendarFile(effectiveRootFolder, {
+            // Stable per draft identity, so re-importing an updated draft file
+            // updates the same calendar event instead of adding a second one.
+            jobId: 'draft-' + crypto.createHash('sha1').update(folderName).digest('hex').slice(0, 16),
+            clientName: body.clientName, address: body.address,
+            shootDate: body.shootDate, shootTime: body.shootTime,
+            notes: body.notes, images: body.images || [],
+            order: body.order, photographerName: body.photographerName,
+          }, { filename: calendarFilename });
+          draftCalendar = { icsPath: written.icsPath, icsFilename: written.icsFilename, imageCount: written.attachedImages.length };
+        }
+        return sendJson(res, 200, {
+          success: true,
+          mode: folderExists ? 'updated' : 'created',
+          isDraft: true,
+          finalizedFromDraft: false,
+          renamedFrom: null,
+          jobId: null,
+          folderName,
+          jobFolderPath: null,
+          componentFolders: draftComponentFolders,
+          calendar: draftCalendar,
+          price,
+          previousTotalCents: folderExists ? existing.previousTotalCents : null,
+          commission,
+          backendSync: { success: true },
+          pendingConfirmation: jobFiles.computePendingConfirmation(draftJobData),
+        });
+      }
+
       // Deliberately does NOT persist effectiveRootFolder as the default --
       // that's opt-in via the UI's "Save as default path" checkbox
       // (POST /api/root-folder), so a one-off job elsewhere never
@@ -717,23 +797,11 @@ async function handleApi(req, res, urlPath) {
         }
       }
 
-      // Calendar file. On an update (real job or draft) where Shoot Time
-      // has been cleared, drop any previously-generated calendar folder.
-      // Otherwise (re)generate it -- with `effectiveImages` (fresh +
-      // preserved) on an update, or just the fresh images on a first save.
-      let calendarResult;
-      if (folderExists && !shootTimeGiven) {
-        fs.rmSync(path.join(jobFolderPath, calendarFile.ICS_FILENAME), { force: true });
-        fs.rmSync(path.join(jobFolderPath, calendarFile.LEGACY_FOLDER_NAME), { recursive: true, force: true });
-        calendarResult = null;
-      } else {
-        calendarResult = calendarFile.writeCalendarFile(jobFolderPath, {
-          jobId, clientName: body.clientName, address: body.address,
-          shootDate: body.shootDate, shootTime: body.shootTime,
-          notes: body.notes, images: effectiveImages,
-          order: body.order, photographerName: body.photographerName,
-        });
-      }
+      // Create Job no longer writes a calendar file (2026-09-19) -- the
+      // calendar event comes from Save as Draft (one .ics dropped in the Job
+      // Root Folder). An existing Shoot Schedule.ics in an older job's folder
+      // is left exactly as it is.
+      const calendarResult = null;
 
       // Local job creation/update above is the critical path and has
       // already succeeded by this point. Dropbox is mirrored best-effort
