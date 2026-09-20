@@ -30,7 +30,7 @@ confirms, and either exports a print PDF or submits the sheet to the studio.
 ```
 cd feature-sheet-builder
 node server.js            # -> http://localhost:4180
-npm test                  # node --test  (48 tests across this module)
+npm test                  # node --test  (59 tests across this module)
 ```
 
 Or double-click `../Feature Sheet Builder.command` in Finder (starts the server,
@@ -59,6 +59,8 @@ public/                      the entire frontend (no build step; classic <script
     config.js                Supabase URL + anon (publishable) key + bucket name
     store.js                 *** the ONLY client<->backend seam *** — 'supabase' | 'local' impls behind one interface
     photo-source.js          *** the ONLY editor<->"where photos come from" seam *** — v1 = this project's uploads
+    job-gallery.js           pure helpers for JOB-LINKED sheets (project id = FVS-… jobId): which worker-synced photos the picker
+                             shows, synced-photo file names, the save patch. Unit-tested; loaded before store.js
     app.js                   controller: in-memory project, debounced autosave, event bus, ?p= contract
     template-render-v2.js    (template spec + project) -> DOM. Used by editor, preview, export. Single geometry gate.
     editor.js                drag/drop into slots, in-slot pan & zoom
@@ -93,6 +95,7 @@ thumbnailer.js               `sips` shell-out for thumbnails/dimensions (local b
 crop-math.js                 "photo always covers its slot" pan/zoom clamping — shared browser + Node
 prepare-static.js            copies /shared/* and /template-assets/* into public/ for the static Cloudflare deploy
 supabase/functions/          two Deno edge functions (see §4)
+supabase/fsb_project_patch.sql  RPC the FSB saves job-linked sheets through (run once in the SQL editor; see §4)
 ```
 
 **Two deliberate seams** — everything else is built so these are the only files
@@ -137,6 +140,24 @@ One Postgres table + one storage bucket + two edge functions. Project ref
   `APP_BASE_URL`). Redeploy on change: `supabase functions deploy
   notify-submission`. Until set up, Confirm & Submit still saves + locks the
   design but the email step errors (agent can retry).
+
+**Job-linked sheets (2026-09-19).** A project whose id is a jobId (`FVS-…`, `job-gallery.js#isJobId`) is the *same*
+`projects` row the photo-sync-worker and delivery-page write (`photos[]`, `videos[]`, `address`, `tourUrl`). For those:
+- The picker/library show only the worker-synced `HDR Photos`/`MLS` photos, read-only. **The editor, preview and picker
+  all use the 1024 `_thumb.jpg`** (the preview keeps its watermark). There is no 2048 in Supabase on purpose: the 2048
+  set is the paid deliverable.
+- **PDF export** (admin `?admin=<token>` only) fetches the 2048 of each *placed* photo from the photo-sync-worker's
+  bearer-gated `GET /render/<jobId>/<photoId>` (`photo-source.js#preparePrint` -> blob URLs -> renderer `setPrintMode`);
+  the worker serves the existing `<job>/MLS for download/…` copy, else renders a fresh w2048h1536. Needs
+  `photoSyncUrl` in `config.js` and the worker secret `RENDER_TOKEN` = the FSB admin token. A failed fetch aborts the
+  export (never a soft PDF). For job sheets the client's **Confirm & Submit no longer builds/uploads a PDF** (it can't
+  fetch the 2048s); it only notifies the studio, who exports (`notify-submission` omits the PDF button for `FVS-` ids and tells the studio to use the admin link; **redeploy that edge function** after editing it).
+- Saving goes through `supabase/fsb_project_patch.sql` (**run once in the SQL editor**, already done 2026-09-19): it merges
+  only the FSB-owned keys + the role-tagged headshot/logo entries of `photos[]`, never the whole blob — the old
+  `update projects set data = <blob>` would wipe the worker's keys. Delete / duplicate / purge / clear-library are refused
+  for job sheets (`store.js`). Headshot/logo uploads still work. Random-id projects are unchanged.
+- Not built yet: a delivery-page entry point that opens `?p=<jobId>`, pre-filling `propertyInfo` from `address`, and the
+  order/payment flow (when it exists, gate `/render` on "paid" instead of / in addition to the token).
 
 **Full one-time SQL schema + RLS policies live in `NOTES.md` §7** — run it once
 in the Supabase SQL Editor. That is the authoritative copy; keep it there, not

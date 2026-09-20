@@ -13,6 +13,7 @@ import { createStream } from './stream.js';
 import { runDelta, processPhotoBatch, runBackfill, processRenderRetryPoll } from './sync.js';
 import { processVideoBatch, processVideoPoll } from './video-sync.js';
 import { processTourLinkBatch } from './tour-link-sync.js';
+import { CORS, parseRenderPath, handleRender } from './render.js';
 
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } });
@@ -71,6 +72,15 @@ export default {
         ),
       );
       return new Response('', { status: 200 });
+    }
+
+    // 2048 render of one synced photo for the Feature Sheet Builder's PDF
+    // export (token-gated; see render.js)
+    if (pathname.startsWith('/render/')) {
+      if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
+      const ids = parseRenderPath(pathname);
+      if (request.method !== 'GET' || !ids) return json({ error: 'not found' }, 404);
+      return handleRender(request, env, makeDeps(env), ids, log);
     }
 
     // Manual backfill (cursor-independent)
