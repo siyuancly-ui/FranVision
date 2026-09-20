@@ -12,6 +12,6 @@ window.FSB_CONFIG = {
   supabaseUrl: 'https://papaswihicvajzcubbri.supabase.co',
   supabaseAnonKey: 'sb_publishable_4Ct6GKlbNJbPEFzFL-CN_A_DudWMwBy',
   photosBucket: 'photos',
-  // photo-sync-worker: token-gated /render/<jobId>/<photoId> = the 2048 render the PDF export pulls
+  // photo-sync-worker: token-gated /render/<jobId>/<photoId> = the HDR original the PDF export pulls
   photoSyncUrl: 'https://franvision-photo-sync.frankystudio-6f3.workers.dev',
 };

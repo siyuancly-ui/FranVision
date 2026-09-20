@@ -103,7 +103,7 @@
 
   // ---- job-linked sheets: read-only gallery from Dropbox-synced photos --------
   // (project id = jobId; see job-gallery.js). The picker lists HDR Photos / MLS
-  // photos as 1024 thumbs; slots / preview / PDF use the 2048 render. Headshot
+  // photos as 1024 thumbs; the editor / preview show the 1024; only the admin PDF export pulls originals. Headshot
   // and logo (role-tagged) still upload like before.
   var J = window.FSB.jobGallery;
   var dimCache = {};   // photoId -> {width,height}; only for synced photos whose dims the worker could not read
@@ -129,7 +129,7 @@
     return Promise.race([Promise.all(jobs), new Promise(function (r) { setTimeout(r, 5000); })]);
   }
 
-  // ---- PDF export: pull the 2048 render of each PLACED synced photo -----------
+  // ---- PDF export: pull the HDR original of each PLACED synced photo -----------
   // The worker's /render is bearer-gated, so an <img> can't fetch it directly:
   // download each as a blob (limited parallelism), hand out blob: URLs, revoke after.
   var printCache = {};   // photoId -> blob: URL

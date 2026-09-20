@@ -78,7 +78,7 @@
     var pdf = new JsPDF({ unit: 'pt', format: [TRIM_W, TRIM_H], orientation: 'landscape', compress: true });
     var n = pageCount();
 
-    // job-linked sheets: pull the 2048 render of every placed photo first (needs
+    // job-linked sheets: pull the HDR original of every placed photo first (needs
     // the admin link) and render in print mode; always undo both afterwards.
     var ps = window.FSB.photoSource;
     var chain = Promise.resolve(ps.preparePrint ? ps.preparePrint(app.project, app.adminToken) : null)

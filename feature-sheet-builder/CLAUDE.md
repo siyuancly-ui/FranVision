@@ -144,14 +144,14 @@ One Postgres table + one storage bucket + two edge functions. Project ref
 **Job-linked sheets (2026-09-19).** A project whose id is a jobId (`FVS-…`, `job-gallery.js#isJobId`) is the *same*
 `projects` row the photo-sync-worker and delivery-page write (`photos[]`, `videos[]`, `address`, `tourUrl`). For those:
 - The picker/library show only the worker-synced `HDR Photos`/`MLS` photos, read-only. **The editor, preview and picker
-  all use the 1024 `_thumb.jpg`** (the preview keeps its watermark). There is no 2048 in Supabase on purpose: the 2048
-  set is the paid deliverable.
-- **PDF export** (admin `?admin=<token>` only) fetches the 2048 of each *placed* photo from the photo-sync-worker's
+  all use the 1024 `_thumb.jpg`** (the preview keeps its watermark). Nothing larger goes in Supabase on purpose: the
+  2048 set and the originals are the paid deliverable.
+- **PDF export** (admin `?admin=<token>` only) fetches the **true HDR original** of each *placed* photo (not the 2048 `MLS for download` copy) from the photo-sync-worker's
   bearer-gated `GET /render/<jobId>/<photoId>` (`photo-source.js#preparePrint` -> blob URLs -> renderer `setPrintMode`);
-  the worker serves the existing `<job>/MLS for download/…` copy, else renders a fresh w2048h1536. Needs
+  the worker streams the file from the photo's `HDR Photos`/`MLS` Dropbox path (no fallback to a smaller render). Needs
   `photoSyncUrl` in `config.js` and the worker secret `RENDER_TOKEN` = the FSB admin token. A failed fetch aborts the
   export (never a soft PDF). For job sheets the client's **Confirm & Submit no longer builds/uploads a PDF** (it can't
-  fetch the 2048s); it only notifies the studio, who exports (`notify-submission` omits the PDF button for `FVS-` ids and tells the studio to use the admin link; **redeploy that edge function** after editing it).
+  fetch the originals); it only notifies the studio, who exports (`notify-submission` omits the PDF button for `FVS-` ids and tells the studio to use the admin link; **redeploy that edge function** after editing it).
 - Saving goes through `supabase/fsb_project_patch.sql` (**run once in the SQL editor**, already done 2026-09-19): it merges
   only the FSB-owned keys + the role-tagged headshot/logo entries of `photos[]`, never the whole blob — the old
   `update projects set data = <blob>` would wipe the worker's keys. Delete / duplicate / purge / clear-library are refused
