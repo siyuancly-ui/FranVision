@@ -30,7 +30,7 @@ confirms, and either exports a print PDF or submits the sheet to the studio.
 ```
 cd feature-sheet-builder
 node server.js            # -> http://localhost:4180
-npm test                  # node --test  (70 tests across this module)
+npm test                  # node --test  (78 tests across this module)
 ```
 
 Or double-click `../Feature Sheet Builder.command` in Finder (starts the server,
@@ -291,6 +291,11 @@ the static host has them. Never commit those directories.
 - **Last-write-wins** on the whole project document — fine for one client at a
   time; two people on the same link can clobber each other. No optimistic
   concurrency yet.
+- **The admin page's recycle bin** (`admin.js`): "Delete forever" / "Empty bin" ask for confirmation in an in-app dialog, and
+  `store.purgeProject` removes EVERY file under `<id>/` (storage.list caps at 100 per call, so it pages) before deleting the row,
+  and refuses to say "done" if the row survived. `util.toast` creates its own container, because the admin page has none --
+  before that every admin-page message (errors included) was silently dropped, which made a failed delete look like "nothing
+  happened". `emptyTrash` tries every sheet and reports how many failed.
 - **Delete is soft** → recycle bin (`deletedAt` in `data`). Permanent purge needs
   the `delete` grant/policy from the `NOTES.md` schema block.
 - Confirming a sheet (`confirmed: true`) makes the editor **read-only**; an admin

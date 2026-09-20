@@ -55,8 +55,10 @@
   }
 
   function toast(msg, kind) {
+    // the editor builds this container in app.js, the admin page never does -- create it on demand
+    // (without it every admin-page message, errors included, was silently dropped)
     var host = document.getElementById('fsb-toasts');
-    if (!host) return;
+    if (!host) { host = el('div', { id: 'fsb-toasts' }); document.body.appendChild(host); }
     var t = el('div', { class: 'fsb-toast ' + (kind || 'info'), text: msg });
     host.appendChild(t);
     setTimeout(function () { t.classList.add('show'); }, 10);
