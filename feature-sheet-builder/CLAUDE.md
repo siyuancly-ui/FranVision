@@ -30,7 +30,7 @@ confirms, and either exports a print PDF or submits the sheet to the studio.
 ```
 cd feature-sheet-builder
 node server.js            # -> http://localhost:4180
-npm test                  # node --test  (59 tests across this module)
+npm test                  # node --test  (62 tests across this module)
 ```
 
 Or double-click `../Feature Sheet Builder.command` in Finder (starts the server,
@@ -275,6 +275,13 @@ the static host has them. Never commit those directories.
   URL + **publishable** anon key (safe in client code, gated by RLS). The
   `service_role` key, `ADMIN_TOKEN`, and `RESEND_API_KEY` live only in Supabase
   Edge Function Secrets.
+- **A sheet row is created lazily, and only once it holds real content** (`FSB_V2.hasContent`: typed text, a library
+  photo, or a placed photo). Opening the bare root URL and only changing the theme leaves NO row (the top bar says
+  "Not saved yet"); an explicit Save, a headshot/logo upload and Confirm & Submit force creation. This exists because
+  empty drafts kept appearing in Franky's admin list from people just opening the root URL and touching the theme.
+  Each new row records where it came from in `data.createdVia` (`root` / `notfound-card` / `admin-new` / `duplicate`)
+  and, for root visits, `createdRef` (the referrer's hostname) -- so a stray draft can be traced. `createdVia`/`createdRef`
+  are in store.js `DATA_KEYS`, so whole-blob saves keep them.
 - **Last-write-wins** on the whole project document — fine for one client at a
   time; two people on the same link can clobber each other. No optimistic
   concurrency yet.

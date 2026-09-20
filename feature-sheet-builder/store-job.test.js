@@ -116,3 +116,15 @@ test('photoUrls: synced photo -> 1024 thumb for both (never _large); uploaded ph
   const own = store.photoUrls('abc123abc123', { photoId: 'u1', ext: 'jpg', hasThumb: true });
   assert.ok(own.full.endsWith('/abc123abc123/u1.jpg'));
 });
+
+test('legacy sheets: createdVia is stored on create and survives later saves (whole-blob update keeps it)', async () => {
+  const { store, calls } = load({ id: 'abc123abc123', data: {}, created_at: 'c', updated_at: 'u' });
+  await store.createProject({ createdVia: 'root', createdRef: 'mail.example.com' });
+  const ins = calls.from.find((c) => c.op === 'insert');
+  assert.equal(ins.v.data.createdVia, 'root');
+  assert.equal(ins.v.data.createdRef, 'mail.example.com');
+  const p = project(); p.projectId = 'abc123abc123'; p.createdVia = 'root';
+  await store.updateProject('abc123abc123', p);
+  const upd = calls.from.filter((c) => c.op === 'update').pop();
+  assert.equal(upd.v.data.createdVia, 'root');
+});

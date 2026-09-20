@@ -178,7 +178,7 @@
         (function attempt() {
           if (app.projectId) { app._createPromise = null; return resolve(app.projectId); }
           if (app._saving) { setTimeout(attempt, 120); return; }  // a save is already in flight
-          app.save().then(function () {
+          app.save({ force: true }).then(function () {
             app._createPromise = null;
             if (app.projectId) resolve(app.projectId);
             else reject(new Error('could not create the project'));
@@ -241,8 +241,15 @@
     origSchedule();
   };
 
-  app.save = function () {
+  // opts.force: create the row even if the sheet is still empty (an explicit Save,
+  // a photo upload that needs a projectId, or a submit). Without it, a sheet that
+  // has no row yet stays in memory until it holds real content.
+  app.save = function (opts) {
     if (!app.project || app._saving) return Promise.resolve();
+    if (!app.projectId && !(opts && opts.force) && !window.FSB_V2.hasContent(app.project)) {
+      app._dirty = false; app.emit('save-state');
+      return Promise.resolve();
+    }
     app._saving = true; app.emit('save-state');
     // Lazy creation: a bare-URL visit holds an in-memory blank project with
     // no id. The row is only written on the first real save (= first edit),
@@ -291,7 +298,7 @@
     ).then(function (ok) {
       if (!ok) return;
       app.setBusy('Submitting… 提交中…');
-      return app.save()
+      return app.save({ force: true })
         .then(function () {
           // Email + PDF handoff. No-op until FSB.submit is wired (needs the
           // Resend key + edge function); the lock/timestamp still happens.
@@ -395,7 +402,7 @@
       var b = this;
       window.FSB.exportPdf.run(app).catch(function () {}).then(function () { b.disabled = false; });
     });
-    document.getElementById('fsb-btn-save').addEventListener('click', function () { app.save().then(function () { util.toast('Saved 已保存'); }); });
+    document.getElementById('fsb-btn-save').addEventListener('click', function () { app.save({ force: true }).then(function () { util.toast('Saved 已保存'); }); });
     document.getElementById('fsb-btn-confirm').addEventListener('click', function () {
       if (app.isReadOnly()) app.unconfirm(); else app.confirmDesign();
     });
@@ -483,6 +490,7 @@
     if (!n) return;
     if (app._saving) { n.textContent = 'Saving…'; n.className = 'fsb-save-state is-saving'; }
     else if (app._dirty) { n.textContent = 'Unsaved changes'; n.className = 'fsb-save-state is-dirty'; }
+    else if (!app.projectId) { n.textContent = 'Not saved yet — saves once you add content 尚未保存,填写内容后自动保存'; n.className = 'fsb-save-state is-saved'; }
     else { n.textContent = 'All changes saved'; n.className = 'fsb-save-state is-saved'; }
   }
 
@@ -528,6 +536,7 @@
   // ---- boot -------------------------------------------------
   function setUrlProject(id) {
     var u = new URL(window.location.href);
+    u.searchParams.delete('via');
     if (u.searchParams.get('p') !== id) {
       u.searchParams.set('p', id);
       window.history.replaceState({}, '', u.toString());
@@ -544,7 +553,7 @@
     if (withCreate) {
       card.appendChild(el('button', {
         class: 'fsb-btn fsb-btn--primary', text: 'Create a new project',
-        onclick: function () { window.location.search = ''; },
+        onclick: function () { window.location.search = '?via=notfound'; },
       }));
     }
     rootApp.appendChild(card);
@@ -577,7 +586,10 @@
       // first edit triggers save() which creates the row + sets ?p=.
       : Promise.resolve(Object.assign(
           window.FSB_V2.blankProject('navy'),
-          { projectId: null, createdAt: null, updatedAt: null }));
+          { projectId: null, createdAt: null, updatedAt: null },
+          // where this row will have come from, kept so a stray draft can be traced
+          { createdVia: params.get('via') === 'notfound' ? 'notfound-card' : 'root',
+            createdRef: (function () { try { return document.referrer ? new URL(document.referrer).hostname : ''; } catch (e) { return ''; } })() }));
 
     load.then(function (project) {
       app.setProject(project);
