@@ -204,13 +204,36 @@
     };
   }
 
+  // Fill in whatever a project row is MISSING, never overwriting what is there.
+  // A job-linked row is created by the photo-sync-worker with only photos[] /
+  // address / videos / tourUrl -- no pages, agentInfo, colorTheme -- so the FSB
+  // must be able to open (and later save into) a row that has none of its own keys.
+  function withDefaults(p) {
+    var b = blankProject(p.colorTheme);
+    if (!p.colorTheme) p.colorTheme = b.colorTheme;
+    if (p.templateSystem === undefined) p.templateSystem = b.templateSystem;
+    if (p.topPhotoStyle === undefined) p.topPhotoStyle = b.topPhotoStyle;
+    p.propertyInfo = Object.assign({}, b.propertyInfo, p.propertyInfo || {});
+    p.agentInfo = Object.assign({}, b.agentInfo, p.agentInfo || {});
+    if (p.agentInfo2 === undefined) p.agentInfo2 = null;
+    if (!Array.isArray(p.photos)) p.photos = [];
+    if (!p.pages) p.pages = {};
+    ['page1', 'page2'].forEach(function (pg) {
+      if (!p.pages[pg]) p.pages[pg] = { slots: {} };
+      if (!p.pages[pg].slots) p.pages[pg].slots = {};
+    });
+    if (p.confirmed === undefined) p.confirmed = false;
+    if (p.confirmedAt === undefined) p.confirmedAt = null;
+    return p;
+  }
+
   function list() {
     return Object.keys(THEMES).map(function (k) {
       return { id: k, name: THEMES[k].name };
     });
   }
 
-  var API = { list: list, compose: compose, blankProject: blankProject, slotIds: slotIds };
+  var API = { list: list, compose: compose, blankProject: blankProject, slotIds: slotIds, withDefaults: withDefaults };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   if (root) root.FSB_V2 = API;
