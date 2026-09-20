@@ -126,6 +126,7 @@
     function buildImageField(groupKey, f, id, app, inputs) {
       var wrap = el('div', { class: 'fsb-img-field' });
       var preview = el('div', { class: 'fsb-img-prev' });
+      var isLogo = /logo/i.test(f.key);
       var fileInput = el('input', { id: id, type: 'file', accept: 'image/jpeg,image/png', style: { display: 'none' } });
       var pick = el('button', { class: 'fsb-btn fsb-btn--sm', type: 'button', text: 'Choose… 选择' });
       var clear = el('button', { class: 'fsb-btn fsb-btn--sm fsb-btn--ghost', type: 'button', text: 'Clear 清除' });
@@ -146,7 +147,7 @@
         if (!file) return;
         if (app.isReadOnly()) { toast('Project is confirmed.', 'error'); return; }
         preview.classList.add('is-loading');
-        var role = f.key.indexOf('logo') > -1 ? 'logo' : 'headshot';
+        var role = isLogo ? 'logo' : 'headshot';
         (app.ensureCreated ? app.ensureCreated() : Promise.resolve())
           .then(function () { return src.upload(app.projectId, file, role); })
           .then(function (meta) {
@@ -161,7 +162,7 @@
         var pid = grp[f.key];
         preview.innerHTML = '';
         if (pid) preview.appendChild(el('img', { alt: '', src: src.fullUrl(app.project, pid) }));
-        else preview.appendChild(el('span', { class: 'fsb-img-empty', text: f.key.indexOf('logo') > -1 ? 'Logo' : 'Headshot' }));
+        else preview.appendChild(el('span', { class: 'fsb-img-empty', text: isLogo ? 'Logo' : 'Headshot' }));
       }
       wrap._renderPrev = renderPrev;
       inputs[groupKey + '.' + f.key] = wrap;
