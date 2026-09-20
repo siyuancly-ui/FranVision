@@ -6,6 +6,10 @@
  * download the print PDF (the client uploads it to
  * storage: submissions/<projectId>.pdf just before calling this).
  *
+ * Job-linked sheets (projectId = a jobId, FVS-...) upload NO PDF: the print PDF
+ * needs the paid 2048 photos, which only the studio's admin export can fetch.
+ * For those the email has no download button, just how to export it.
+ *
  * Request:  POST { "projectId": "<id>" }   (Authorization: Bearer <anon key>, sent automatically by supabase-js)
  * Response: 200 { ok: true }  |  4xx/5xx { error }
  *
@@ -90,14 +94,17 @@ Deno.serve(async (req: Request) => {
   // Link to the print PDF the client just uploaded (photos bucket,
   // submissions/ prefix). Try a long-lived signed URL first; fall back to
   // the public URL if the bucket is public.
+  const isJob = /^FVS-/.test(projectId);
   let pdfUrl = "";
-  const pdfKey = `submissions/${projectId}.pdf`;
-  const { data: signed } = await admin.storage.from("photos")
-    .createSignedUrl(pdfKey, 60 * 60 * 24 * 30);
-  if (signed?.signedUrl) {
-    pdfUrl = signed.signedUrl;
-  } else {
-    pdfUrl = admin.storage.from("photos").getPublicUrl(pdfKey).data.publicUrl;
+  if (!isJob) {
+    const pdfKey = `submissions/${projectId}.pdf`;
+    const { data: signed } = await admin.storage.from("photos")
+      .createSignedUrl(pdfKey, 60 * 60 * 24 * 30);
+    if (signed?.signedUrl) {
+      pdfUrl = signed.signedUrl;
+    } else {
+      pdfUrl = admin.storage.from("photos").getPublicUrl(pdfKey).data.publicUrl;
+    }
   }
 
   const openUrl = `${APP_BASE_URL}/?p=${encodeURIComponent(projectId)}`;
@@ -109,10 +116,16 @@ Deno.serve(async (req: Request) => {
     <p style="margin:0 0 16px;color:#667">${esc(addr)}</p>
 
     <p style="margin:0 0 16px">
-      <a href="${esc(pdfUrl)}" style="display:inline-block;background:#1f5fd6;color:#fff;text-decoration:none;padding:9px 16px;border-radius:6px;font-weight:600">Download print PDF</a>
-      &nbsp;&nbsp;
+      ${isJob ? "" : `<a href="${esc(pdfUrl)}" style="display:inline-block;background:#1f5fd6;color:#fff;text-decoration:none;padding:9px 16px;border-radius:6px;font-weight:600">Download print PDF</a>
+      &nbsp;&nbsp;`}
       <a href="${esc(openUrl)}" style="display:inline-block;background:#eef3ff;color:#1f5fd6;text-decoration:none;padding:9px 16px;border-radius:6px;font-weight:600">Open project</a>
     </p>
+    ${isJob ? `<p style="margin:0 0 16px;padding:10px 12px;background:#fff8e6;border-radius:6px">
+      <b>No print PDF is attached for this job.</b> Open the project with your admin link
+      (<code>?p=${esc(projectId)}&amp;admin=&lt;token&gt;</code>) and click <b>Export PDF 导出</b> —
+      it pulls the full-resolution photos with your token.<br>
+      <b>没有随附打印 PDF。</b>请用管理员链接打开此项目，点击「Export PDF 导出」生成高清打印文件。
+    </p>` : ""}
 
     <h3 style="margin:18px 0 6px;font-size:14px">Property</h3>
     <table style="border-collapse:collapse">
@@ -136,7 +149,7 @@ Deno.serve(async (req: Request) => {
 
     <p style="margin:20px 0 0;color:#8a94a3;font-size:12px">
       Project ${esc(projectId)} · submitted ${esc(new Date().toISOString())}<br>
-      Download link valid ~30 days. Open the project to re-generate or make changes.
+      ${isJob ? "Open the project to export the print PDF or make changes." : "Download link valid ~30 days. Open the project to re-generate or make changes."}
     </p>
   </div>`;
 
