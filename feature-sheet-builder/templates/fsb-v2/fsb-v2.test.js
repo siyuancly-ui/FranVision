@@ -282,3 +282,21 @@ test('registry: withDefaults never overwrites existing values and is idempotent'
   REG.withDefaults(p); REG.withDefaults(p);
   assert.equal(JSON.stringify(p), before);
 });
+
+test('registry: hasContent is false for every fresh blank project and for theme/layout-only changes', () => {
+  for (const t of REG.list()) assert.equal(REG.hasContent(REG.blankProject(t.id)), false, t.id);
+  const p = REG.blankProject('navy');
+  p.colorTheme = 'estate-emerald'; p.topPhotoStyle = 'paired'; p.imageSizes = { a: 2 };
+  p.pages.page1.slots['p1R-hero'] = { photoId: null, positionX: 0, positionY: 0, scale: 1 };
+  assert.equal(REG.hasContent(p), false);
+  assert.equal(REG.hasContent(null), false);
+});
+
+test('registry: hasContent becomes true for typed text, a library photo, or a placed photo', () => {
+  let p = REG.blankProject('navy'); p.propertyInfo.address = '1 Main St'; assert.equal(REG.hasContent(p), true);
+  p = REG.blankProject('navy'); p.agentInfo.name = '  '; assert.equal(REG.hasContent(p), false);   // whitespace only
+  p = REG.blankProject('navy'); p.agentInfo.email = 'a@b.co'; assert.equal(REG.hasContent(p), true);
+  p = REG.blankProject('navy'); p.agentInfo2 = { name: 'Co-agent' }; assert.equal(REG.hasContent(p), true);
+  p = REG.blankProject('navy'); p.photos.push({ photoId: 'x' }); assert.equal(REG.hasContent(p), true);
+  p = REG.blankProject('navy'); p.pages.page2.slots['p2L-hero'] = { photoId: 'x' }; assert.equal(REG.hasContent(p), true);
+});

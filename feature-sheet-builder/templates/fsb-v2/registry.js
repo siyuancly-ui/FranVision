@@ -227,13 +227,31 @@
     return p;
   }
 
+  // True once the sheet holds something a person actually entered: any text, a
+  // photo in the library, or a photo placed in a slot. A theme / layout change on
+  // its own is NOT content -- app.js only creates the projects row from a bare
+  // URL once this is true, so "just looking" never leaves an empty draft.
+  function hasContent(project) {
+    if (!project) return false;
+    function text(o) {
+      return !!o && Object.keys(o).some(function (k) { return typeof o[k] === 'string' && o[k].trim() !== ''; });
+    }
+    if (text(project.propertyInfo) || text(project.agentInfo) || text(project.agentInfo2)) return true;
+    if (project.photos && project.photos.length) return true;
+    var pages = project.pages || {};
+    return ['page1', 'page2'].some(function (pg) {
+      var slots = (pages[pg] && pages[pg].slots) || {};
+      return Object.keys(slots).some(function (k) { return slots[k] && slots[k].photoId; });
+    });
+  }
+
   function list() {
     return Object.keys(THEMES).map(function (k) {
       return { id: k, name: THEMES[k].name };
     });
   }
 
-  var API = { list: list, compose: compose, blankProject: blankProject, slotIds: slotIds, withDefaults: withDefaults };
+  var API = { list: list, compose: compose, blankProject: blankProject, slotIds: slotIds, hasContent: hasContent, withDefaults: withDefaults };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   if (root) root.FSB_V2 = API;

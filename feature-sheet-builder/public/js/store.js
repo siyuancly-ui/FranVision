@@ -31,7 +31,8 @@
   var MODE = (!FORCE_LOCAL && CFG.supabaseUrl && CFG.supabaseAnonKey) ? 'supabase' : 'local';
 
   var DATA_KEYS = ['templateSystem', 'colorTheme', 'topPhotoStyle', 'imageSizes', 'boxOffsets', 'boxSizes', 'templateId',
-    'propertyInfo', 'agentInfo', 'agentInfo2', 'photos', 'pages', 'confirmed', 'confirmedAt', 'deletedAt'];
+    'propertyInfo', 'agentInfo', 'agentInfo2', 'photos', 'pages', 'confirmed', 'confirmedAt', 'deletedAt',
+    'createdVia', 'createdRef'];   // provenance of the row (root / notfound-card / admin-new / duplicate)
 
   function pickData(p) {
     var d = {};
@@ -276,6 +277,8 @@
         if (seed.agentInfo) data.agentInfo = Object.assign({}, data.agentInfo, seed.agentInfo);
         if (seed.agentInfo2) data.agentInfo2 = Object.assign({}, seed.agentInfo2);
         if (Array.isArray(seed.photos)) data.photos = seed.photos;
+        if (seed.createdVia) data.createdVia = seed.createdVia;
+        if (seed.createdRef) data.createdRef = seed.createdRef;
         var id = newId();
         return sb.from('projects').insert({ id: id, data: data }).select('*').single().then(function (res) {
           if (res.error) throw new Error(res.error.message);
@@ -372,6 +375,7 @@
           var photos = (src.photos || []).filter(function (p) { return keep.indexOf(p.photoId) >= 0; });
           var data = V2.blankProject(src.colorTheme);
           data.topPhotoStyle = src.topPhotoStyle || data.topPhotoStyle;
+          data.createdVia = 'duplicate';
           data.agentInfo = Object.assign({}, a1);
           data.agentInfo2 = a2 ? Object.assign({}, a2) : null;
           data.photos = photos.map(function (p) { return Object.assign({}, p); });

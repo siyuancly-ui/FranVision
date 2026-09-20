@@ -245,7 +245,7 @@
     });
     newBtn.addEventListener('click', function () {
       var btn = this; btn.disabled = true;
-      store.createProject({ templateSystem: 'fsb-v2' }).then(function (project) {
+      store.createProject({ templateSystem: 'fsb-v2', createdVia: 'admin-new' }).then(function (project) {
         window.location.href = adminLinkFor(project.projectId, token);
       }).catch(function (err) {
         btn.disabled = false;
