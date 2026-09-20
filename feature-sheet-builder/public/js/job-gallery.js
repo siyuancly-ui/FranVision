@@ -40,7 +40,7 @@
 
   // Storage object names (relative to <jobId>/). A synced photo has NO
   // original in the bucket, only the 1024 thumb -- and that is deliberately all
-  // the editor/preview ever show. The 2048 (a paid deliverable) is fetched only
+  // the editor/preview ever show. The full-resolution original (a paid deliverable) is fetched only
   // for the PDF export, through the photo-sync-worker's token-gated /render.
   function syncedFiles(meta) {
     var thumb = meta.photoId + '_thumb.jpg';

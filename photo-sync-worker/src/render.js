@@ -1,14 +1,17 @@
-// GET /render/<jobId>/<photoId> -- the 2048 render of ONE synced photo, for the
-// Feature Sheet Builder's PDF export.
+// GET /render/<jobId>/<photoId> -- the TRUE original of ONE synced photo (from
+// its `HDR Photos` / `MLS` Dropbox path), for the Feature Sheet Builder's PDF
+// export.
 //
-// The 2048 set is the PAID deliverable, so it is never published to Supabase
-// Storage; this endpoint hands it out only with the bearer token (RENDER_TOKEN)
-// and only for the handful of photos an export actually places on the sheet.
-// Source, in order: the existing `<job>/MLS for download/<name>.jpg` copy
-// (already a w2048h1536 render -- a plain file download), else a fresh
-// Dropbox thumbnail render of the original (same size).
+// Originals and the 2048 set are the PAID deliverable, so nothing here is ever
+// published to Supabase Storage; the endpoint hands the file out only with the
+// bearer token (RENDER_TOKEN) and only for the few photos an export actually
+// places on the sheet. The file is streamed through (never buffered -- an
+// original can be tens of MB). There is deliberately NO fallback to the small
+// `MLS for download` 2048: if the original can't be read, fail loudly rather
+// than let a soft PDF go to print.
 
 import { timingSafeEqual } from './webhook.js';
+import { imageContentType } from './paths.js';
 
 export const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -50,22 +53,20 @@ export async function handleRender(request, env, deps, ids, log = () => {}) {
   }
   if (!rec) return fail(404, 'photo not found');
 
-  let bytes = null;
-  let source = null;
-  if (rec.downloadDropboxPath) {
-    try { bytes = await deps.dbx.downloadFile(rec.downloadDropboxPath); source = 'download-copy'; } catch { /* fall back below */ }
+  let upstream;
+  try {
+    upstream = await deps.dbx.downloadFileStream(rec.dropboxPath);
+  } catch (err) {
+    log({ evt: 'render_failed', jobId, photoId, error: String((err && err.message) || err) });
+    return fail(502, 'could not read the original');
   }
-  if (!bytes) {
-    try {
-      bytes = await deps.dbx.getThumbnailV2(rec.dropboxPath, env.DOWNLOAD_THUMB_SIZE || 'w2048h1536');
-      source = 'thumbnail-api';
-    } catch (err) {
-      log({ evt: 'render_failed', jobId, photoId, error: String((err && err.message) || err) });
-      return fail(502, 'could not render');
-    }
-  }
-  return new Response(bytes, {
-    status: 200,
-    headers: { ...CORS, 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=3600', 'X-Render-Source': source },
-  });
+  const headers = {
+    ...CORS,
+    'Content-Type': imageContentType(rec.filename || rec.dropboxPath),
+    'Cache-Control': 'private, max-age=3600',
+    'X-Render-Source': 'original',
+  };
+  const len = upstream.headers && upstream.headers.get && upstream.headers.get('Content-Length');
+  if (len) headers['Content-Length'] = len;
+  return new Response(upstream.body, { status: 200, headers });
 }

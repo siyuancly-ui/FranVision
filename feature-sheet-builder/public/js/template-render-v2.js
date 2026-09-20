@@ -29,7 +29,7 @@
   }
   function photoSource() { return window.FSB.photoSource; }
   // Editor + preview always show the on-screen image (a 1024 for job sheets).
-  // Only the PDF export flips printMode on, to get the prepared 2048 blobs.
+  // Only the PDF export flips printMode on, to get the prepared full-res blobs.
   var printMode = false;
   function fullUrl(project, id) {
     var ps = photoSource();

@@ -7,7 +7,7 @@
  * storage: submissions/<projectId>.pdf just before calling this).
  *
  * Job-linked sheets (projectId = a jobId, FVS-...) upload NO PDF: the print PDF
- * needs the paid 2048 photos, which only the studio's admin export can fetch.
+ * needs the paid full-resolution photos, which only the studio's admin export can fetch.
  * For those the email has no download button, just how to export it.
  *
  * Request:  POST { "projectId": "<id>" }   (Authorization: Bearer <anon key>, sent automatically by supabase-js)
