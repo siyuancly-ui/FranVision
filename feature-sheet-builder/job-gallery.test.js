@@ -5,7 +5,22 @@ const G = require('./public/js/job-gallery.js');
 
 const ph = (o) => Object.assign({ photoId: 'p', filename: 'a.jpg', dropboxPath: '/j/HDR Photos/a.jpg', folder: 'HDR Photos', status: 'ok', hasThumb: true }, o);
 
-test('isJobId: only FVS- ids are job-linked', () => {
+test('normalizeJobId: trims / upper-cases valid ids, rejects everything else', () => {
+  assert.equal(G.normalizeJobId(' fvs-20260918-001 '), 'FVS-20260918-001');
+  assert.equal(G.normalizeJobId('FVS-20260918-1234'), 'FVS-20260918-1234');
+  for (const bad of ['', null, undefined, 'FVS-2026-001', 'FVS-20260918-01', 'abc123abc123', 'FVS-20260918-001/../x', 'XYZ-20260918-001']) {
+    assert.equal(G.normalizeJobId(bad), '', String(bad));
+  }
+});
+
+test('jobIdOf: the connected job of a sheet, or empty', () => {
+  assert.equal(G.jobIdOf({ jobId: 'fvs-20260918-001' }), 'FVS-20260918-001');
+  assert.equal(G.jobIdOf({}), '');
+  assert.equal(G.jobIdOf(null), '');
+  assert.equal(G.jobIdOf({ jobId: 'garbage' }), '');
+});
+
+test('isJobId: any FVS- id is a job row (never openable as a sheet)', () => {
   assert.equal(G.isJobId('FVS-20260915-001'), true);
   assert.equal(G.isJobId('a1b2c3d4e5f6'), false);
   assert.equal(G.isJobId(null), false);
@@ -25,21 +40,7 @@ test('galleryPhotos: keeps HDR Photos / MLS synced photos, drops everything else
   assert.deepEqual(G.galleryPhotos(photos).map((p) => p.photoId), ['2', '1']);   // natural order: IMG_2 < IMG_10
 });
 
-test('assetPhotos: only role-tagged entries', () => {
-  const photos = [ph({ photoId: 'a' }), ph({ photoId: 'h', role: 'headshot' }), ph({ photoId: 'l', role: 'logo' })];
-  assert.deepEqual(G.assetPhotos(photos).map((p) => p.photoId), ['h', 'l']);
-});
-
 test('syncedFiles: on-screen full is the 1024 thumb, even when a large render exists', () => {
   assert.deepEqual(G.syncedFiles({ photoId: 'x', hasLarge: true }), { thumb: 'x_thumb.jpg', full: 'x_thumb.jpg' });
   assert.deepEqual(G.syncedFiles({ photoId: 'x' }), { thumb: 'x_thumb.jpg', full: 'x_thumb.jpg' });
-});
-
-test('patchOf: FSB keys only (never photos/videos/address); missing keys become null', () => {
-  const project = { projectId: 'FVS-1', colorTheme: 'navy', agentInfo: { name: 'A' }, photos: [{}], videos: [{}], address: 'x', tourUrl: 'y', confirmed: false };
-  const patch = G.patchOf(project);
-  assert.equal(patch.colorTheme, 'navy');
-  assert.deepEqual(patch.agentInfo, { name: 'A' });
-  assert.equal(patch.deletedAt, null);
-  for (const k of ['photos', 'videos', 'address', 'tourUrl', 'projectId']) assert.ok(!(k in patch), k + ' must not be sent');
 });

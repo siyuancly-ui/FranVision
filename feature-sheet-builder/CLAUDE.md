@@ -30,7 +30,7 @@ confirms, and either exports a print PDF or submits the sheet to the studio.
 ```
 cd feature-sheet-builder
 node server.js            # -> http://localhost:4180
-npm test                  # node --test  (64 tests across this module)
+npm test                  # node --test  (70 tests across this module)
 ```
 
 Or double-click `../Feature Sheet Builder.command` in Finder (starts the server,
@@ -59,8 +59,8 @@ public/                      the entire frontend (no build step; classic <script
     config.js                Supabase URL + anon (publishable) key + bucket name
     store.js                 *** the ONLY client<->backend seam *** — 'supabase' | 'local' impls behind one interface
     photo-source.js          *** the ONLY editor<->"where photos come from" seam *** — v1 = this project's uploads
-    job-gallery.js           pure helpers for JOB-LINKED sheets (project id = FVS-… jobId): which worker-synced photos the picker
-                             shows, synced-photo file names, the save patch. Unit-tested; loaded before store.js
+    job-gallery.js           pure helpers for a sheet CONNECTED to a Job: Job-ID validation, which worker-synced photos the picker
+                             shows, synced-photo file names. Unit-tested; loaded before store.js
     app.js                   controller: in-memory project, debounced autosave, event bus, ?p= contract
     template-render-v2.js    (template spec + project) -> DOM. Used by editor, preview, export. Single geometry gate.
     editor.js                drag/drop into slots, in-slot pan & zoom
@@ -95,7 +95,6 @@ thumbnailer.js               `sips` shell-out for thumbnails/dimensions (local b
 crop-math.js                 "photo always covers its slot" pan/zoom clamping — shared browser + Node
 prepare-static.js            copies /shared/* and /template-assets/* into public/ for the static Cloudflare deploy
 supabase/functions/          two Deno edge functions (see §4)
-supabase/fsb_project_patch.sql  RPC the FSB saves job-linked sheets through (run once in the SQL editor; see §4)
 ```
 
 **Two deliberate seams** — everything else is built so these are the only files
@@ -141,27 +140,30 @@ One Postgres table + one storage bucket + two edge functions. Project ref
   notify-submission`. Until set up, Confirm & Submit still saves + locks the
   design but the email step errors (agent can retry).
 
-**Job-linked sheets (2026-09-19).** A project whose id is a jobId (`FVS-…`, `job-gallery.js#isJobId`) is the *same*
-`projects` row the photo-sync-worker and delivery-page write (`photos[]`, `videos[]`, `address`, `tourUrl`). For those:
-- The picker/library show only the worker-synced `HDR Photos`/`MLS` photos, read-only. **The editor, preview and picker
-  all use the 1024 `_thumb.jpg`** (the preview keeps its watermark). Nothing larger goes in Supabase on purpose: the
-  2048 set and the originals are the paid deliverable.
-- **PDF export** (admin `?admin=<token>` only) fetches the **true HDR original** of each *placed* photo (not the 2048 `MLS for download` copy) from the photo-sync-worker's
-  bearer-gated `GET /render/<jobId>/<photoId>` (`photo-source.js#preparePrint` -> blob URLs -> renderer `setPrintMode`);
-  the worker streams the file from the photo's `HDR Photos`/`MLS` Dropbox path (no fallback to a smaller render). Needs
-  `photoSyncUrl` in `config.js` and the worker secret `RENDER_TOKEN` = the FSB admin token. A failed fetch aborts the
-  export (never a soft PDF). For job sheets the client's **Confirm & Submit no longer builds/uploads a PDF** (it can't
-  fetch the originals); it only notifies the studio, who exports (`notify-submission` omits the PDF button for `FVS-` ids and tells the studio to use the admin link; **redeploy that edge function** after editing it).
-- A job row created by the worker holds only `photos[]`/`address`/`videos`/`tourUrl` — none of the FSB's own keys — so
-  `app.setProject` runs `FSB_V2.withDefaults` (fills what's missing, never overwrites) before anything reads `pages`/`agentInfo`.
-  Without it the FSB crashed on `reading 'page1'` when opening a real job (found 2026-09-19; the local Node backend still
-  can't merge a first save into such a row — dev-only, production saves via the RPC and works).
-- Saving goes through `supabase/fsb_project_patch.sql` (**run once in the SQL editor**, already done 2026-09-19): it merges
-  only the FSB-owned keys + the role-tagged headshot/logo entries of `photos[]`, never the whole blob — the old
-  `update projects set data = <blob>` would wipe the worker's keys. Delete / duplicate / purge / clear-library are refused
-  for job sheets (`store.js`). Headshot/logo uploads still work. Random-id projects are unchanged.
-- Not built yet: a delivery-page entry point that opens `?p=<jobId>`, pre-filling `propertyInfo` from `address`, and the
-  order/payment flow (when it exists, gate `/render` on "paid" instead of / in addition to the token).
+**Connecting a sheet to a Job's Dropbox gallery (2026-09-19).** A sheet keeps its OWN random id/row (its headshot/logo and
+everything the FSB owns live there, and Franky's habit of *Duplicate a sheet* keeps working). To use a Job's photos,
+Franky (admin link only) types the Job ID (`FVS-YYYYMMDD-NNN`) into the **Job photos** box at the top of the form and
+clicks Connect; that stores `jobId` on the sheet (`store.js` `DATA_KEYS`). The Job's own row (id = jobId) belongs to the
+photo-sync-worker / delivery-page (`photos[]`, `videos[]`, `address`, `tourUrl`) and the FSB **only reads it**
+(`store.getJobGallery`, cached in `photo-source.js`); every FSB write path refuses an `FVS-` id (a whole-blob save would
+wipe the worker's keys), and opening `?p=FVS-…` shows an explanatory card instead of a sheet.
+- Once connected the picker/library list that Job's `HDR Photos`/`MLS` photos, read-only, in natural filename order
+  (`job-gallery.js`). **The editor, preview and picker all use the 1024 `_thumb.jpg`** (the preview keeps its watermark),
+  read from the Job's folder in the `photos` bucket; the sheet's own headshot/logo stay under the sheet's folder.
+  Nothing larger goes in Supabase on purpose: the 2048 set and the originals are the paid deliverable. Placed photos are
+  stored only as ids in `pages.*.slots`. The Job's address fills a blank street-address field on connect.
+- Switching to a different Job (or Disconnect) clears the photos placed from the old one (their ids don't exist in the new
+  gallery); the agent info / headshot / logo are untouched.
+- **PDF export** (admin `?admin=<token>` only) fetches the **true HDR original** of each *placed* photo (not the 2048
+  `MLS for download` copy) from the photo-sync-worker's bearer-gated `GET /render/<jobId>/<photoId>`
+  (`photo-source.js#preparePrint` -> blob URLs -> renderer `setPrintMode`); the worker streams the file from the photo's
+  `HDR Photos`/`MLS` Dropbox path (no fallback to a smaller render). Needs `photoSyncUrl` in `config.js` and the worker
+  secret `RENDER_TOKEN` = the FSB admin token. A failed fetch aborts the export (never a soft PDF).
+- A **client's** Confirm & Submit on a connected sheet doesn't build/upload a PDF (no token to fetch the originals); it only
+  notifies the studio, who exports. `notify-submission` shows the "Download print PDF" button only when the PDF file exists,
+  otherwise tells the studio to use the admin link (**redeploy that edge function** after editing it). An admin's submit still
+  builds and uploads the PDF.
+- Not built: the delivery-page entry point, and the order/payment flow (when it exists, gate `/render` on "paid" too).
 
 **Full one-time SQL schema + RLS policies live in `NOTES.md` §7** — run it once
 in the Supabase SQL Editor. That is the authoritative copy; keep it there, not

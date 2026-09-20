@@ -95,13 +95,61 @@
 
   // ---- mutations -------------------------------------------------
   app.setProject = function (project) {
-    project = window.FSB_V2.withDefaults(project);   // a worker-created job row has none of the FSB's own keys
     app.project = project;
     app.projectId = project.projectId;
     app._dirty = false;
     app.emit('project', project);
     app.emit('save-state');
     reflectConfirmed();
+  };
+
+  // ---- connect / disconnect a Job's Dropbox gallery -----------------------------
+  // (the sheet keeps its own row; only `jobId` is stored on it -- see job-gallery.js)
+  function clearSlots(pred) {
+    ['page1', 'page2'].forEach(function (pk) {
+      var slots = app.project.pages[pk].slots;
+      Object.keys(slots).forEach(function (sid) {
+        if (slots[sid] && slots[sid].photoId && pred(slots[sid].photoId)) {
+          slots[sid] = { photoId: null, positionX: 0, positionY: 0, scale: 1 };
+        }
+      });
+    });
+  }
+  function refreshAfterJobChange() {
+    var lib = document.getElementById('fsb-library');
+    if (lib && window.FSB.library) window.FSB.library.mount(lib, app);   // upload controls follow the source
+    app.emit('project', app.project);
+    app.emit('photos');
+    scheduleSave();
+  }
+  // does the sheet already have photos placed from a (different) job's gallery?
+  app.hasPlacedJobPhotos = function () {
+    var own = {}; app.project.photos.forEach(function (p) { own[p.photoId] = true; });
+    var found = false;
+    ['page1', 'page2'].forEach(function (pk) {
+      var slots = app.project.pages[pk].slots;
+      Object.keys(slots).forEach(function (sid) { if (slots[sid] && slots[sid].photoId && !own[slots[sid].photoId]) found = true; });
+    });
+    return found;
+  };
+  // r = { jobId, address } from FSB.photoSource.connect(). Switching to a DIFFERENT job drops the
+  // photos placed from the old one (their ids don't exist in the new gallery).
+  app.applyJob = function (r) {
+    var prev = app.project.jobId || '';
+    if (prev && prev !== r.jobId) {
+      var own = {}; app.project.photos.forEach(function (p) { own[p.photoId] = true; });
+      clearSlots(function (pid) { return !own[pid]; });
+    }
+    app.project.jobId = r.jobId;
+    var pi = app.project.propertyInfo;
+    if (!(pi.address || '').trim() && r.address) pi.address = r.address;   // only fill a blank field
+    refreshAfterJobChange();
+  };
+  app.disconnectJob = function () {
+    var own = {}; app.project.photos.forEach(function (p) { own[p.photoId] = true; });
+    clearSlots(function (pid) { return !own[pid]; });
+    delete app.project.jobId;
+    refreshAfterJobChange();
   };
 
   app.addPhoto = function (meta) {
@@ -577,6 +625,13 @@
 
     var stage = document.getElementById('fsb-stage');
     window.FSB.editor.attach(stage, app);
+
+    // A Job's own row (FVS-...) is not a sheet: opening it as one would let a save wipe the
+    // worker's data. Sheets connect to a Job from inside (Job ID box), they aren't opened by it.
+    if (pid && window.FSB.jobGallery.isJobId(pid)) {
+      showFatal('That link is a Job ID, not a Feature Sheet. Open a sheet, then enter the Job ID inside it to connect its photos. 这是 Job ID,不是 Feature Sheet 链接;请先打开一份 sheet,在里面填 Job ID 连接图库。', false);
+      return;
+    }
 
     var load = pid
       ? store.getProject(pid).catch(function (err) {
