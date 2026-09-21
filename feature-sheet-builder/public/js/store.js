@@ -390,7 +390,9 @@
       listTrash: function (token) {
         return sb.functions.invoke('list-projects', { body: { token: token || '', view: 'trash' } }).then(function (res) {
           if (res.error) throw new Error(res.error.message || 'unauthorized');
-          return (res.data && res.data.projects) || [];
+          // Job rows (FVS-…) belong to the photo-sync worker; the worker flags them deleted when a Dropbox
+          // folder goes away. They are not Feature Sheets, so they never show in (or get purged from) the bin.
+          return ((res.data && res.data.projects) || []).filter(function (r) { return !J.isJobId(r.id); });
         });
       },
 

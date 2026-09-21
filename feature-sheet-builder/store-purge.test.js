@@ -106,3 +106,12 @@ test('Empty bin returns the number purged when all succeed', async () => {
   const { store } = load({ files: { aaaaaa11: names(1), bbbbbb22: names(1) }, trash: [{ id: 'aaaaaa11' }, { id: 'bbbbbb22' }] });
   assert.equal(await store.emptyTrash('tok'), 2);
 });
+
+test('Job rows (FVS-…) never appear in the bin, so Empty bin does not choke on them', async () => {
+  const { store } = load({
+    files: { aaaaaa11: names(1) },
+    trash: [{ id: 'FVS-20260918-001' }, { id: 'aaaaaa11' }, { id: 'FVS-20260918-002' }],
+  });
+  assert.equal(JSON.stringify((await store.listTrash('tok')).map((r) => r.id)), '["aaaaaa11"]');
+  assert.equal(await store.emptyTrash('tok'), 1);
+});
