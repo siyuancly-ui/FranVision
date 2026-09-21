@@ -40,7 +40,12 @@ const crypto = require('crypto');
 const jobBackend = require('./job-backend.js');
 const jobSync = require('./job-sync.js');
 
-const PORT = 4173;
+// Windows can reserve whole port ranges (Hyper-V / WSL / Docker), which makes
+// listen() fail with EACCES on a port nothing is using -- so on EACCES we try
+// the next few ports and report which one we got. JG_PORT overrides the start.
+const BASE_PORT = Number(process.env.JG_PORT) || 4173;
+const PORT_TRIES = 20;
+let PORT = BASE_PORT;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const DEFAULT_ROOT_FOLDER = path.join(__dirname, 'test-output');
 
@@ -1018,7 +1023,32 @@ const server = http.createServer((req, res) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log('FranVision Job Generator running at http://localhost:' + PORT);
-  console.log('Job Root Folder (remembered from ' + configStore.DEFAULT_CONFIG_PATH + '): ' + rootFolder);
-});
+function openBrowser(url) {
+  // Only when the launcher asks (JG_OPEN_BROWSER=1), so the browser opens on
+  // whatever port we actually got.
+  if (!process.env.JG_OPEN_BROWSER) return;
+  if (process.platform === 'win32') execFile('cmd', ['/c', 'start', '', url], () => {});
+  else execFile(process.platform === 'darwin' ? 'open' : 'xdg-open', [url], () => {});
+}
+
+function listenOn(port, triesLeft) {
+  const onError = (err) => {
+    if (err.code === 'EACCES' && triesLeft > 0) return listenOn(port + 1, triesLeft - 1);
+    if (err.code === 'EADDRINUSE') {
+      console.error('Port ' + port + ' is already in use -- is Job Generator already running in another window?');
+      process.exit(1);
+    }
+    throw err;
+  };
+  server.once('error', onError);
+  server.listen(port, () => {
+    server.removeListener('error', onError);
+    PORT = port;
+    const url = 'http://localhost:' + PORT;
+    console.log('FranVision Job Generator running at ' + url);
+    console.log('Job Root Folder (remembered from ' + configStore.DEFAULT_CONFIG_PATH + '): ' + rootFolder);
+    openBrowser(url);
+  });
+}
+
+listenOn(BASE_PORT, PORT_TRIES);
