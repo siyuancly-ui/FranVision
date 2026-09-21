@@ -130,10 +130,23 @@ test('renderTemplate: an unknown {{TOKEN}} is left as-is rather than silently bl
 
 // ---- buildTokens ----
 
-test('buildTokens: All-in-One / Wave stay literal placeholders (no system generates those links yet)', () => {
+test('buildTokens: All-in-One stays a placeholder without a Job ID; Wave is always a placeholder', () => {
   const tokens = buildTokens({ lang: 'en', clientName: 'Cindy', address: '1 Main St', totalCents: 10000, preTaxCents: 8850, linkByKey: {} });
   assert.ok(tokens.ALL_IN_ONE_LINK.toLowerCase().includes('fill in'));
   assert.ok(tokens.WAVE_LINK.toLowerCase().includes('fill in'));
+});
+
+test('buildTokens: All-in-One link is built from address slug + Job ID (both languages)', () => {
+  for (const lang of ['en', 'zh']) {
+    const tokens = buildTokens({ lang, clientName: 'C', address: '1371 Kestell Blvd, Oakville', totalCents: 1, preTaxCents: 1, linkByKey: {}, jobId: 'FVS-20260917-003' });
+    assert.strictEqual(tokens.ALL_IN_ONE_LINK, 'https://realgta.ca/1371-kestell-blvd-oakville/FVS-20260917-003');
+  }
+});
+
+test('buildAllInOneLink: no address slug -> /delivery/<id>; no Job ID -> null', () => {
+  assert.strictEqual(deliveryEmail.buildAllInOneLink('FVS-1', '  ,, '), 'https://realgta.ca/delivery/FVS-1');
+  assert.strictEqual(deliveryEmail.buildAllInOneLink('', '1 Main St'), null);
+  assert.strictEqual(deliveryEmail.buildAllInOneLink(null, '1 Main St'), null);
 });
 
 test('buildTokens: resolved links are used as-is; unresolved ones fall back to a placeholder', () => {
@@ -194,6 +207,8 @@ function withFakeCredentials(fn) {
 
 async function runAsyncTests() {
 
+function en_count(s, sub) { return s.split(sub).length - 1; }
+
 await testAsync('generateDeliveryEmails: writes both language files with links filled in and unordered lines dropped', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fv-delivery-email-test-'));
   const fakeDbx = {
@@ -202,6 +217,7 @@ await testAsync('generateDeliveryEmails: writes both language files with links f
   try {
     await withFakeCredentials(async () => {
       const result = await generateDeliveryEmails({
+        jobId: 'FVS-20260920-001',
         jobFolderPath: dir,
         folderName: 'Job',
         clientName: 'Cindy Lu',
@@ -220,6 +236,11 @@ await testAsync('generateDeliveryEmails: writes both language files with links f
       const en = fs.readFileSync(path.join(dir, OUTPUT_FILENAME_EN), 'utf8');
       assert.ok(zh.includes('Cindy Lu'));
       assert.ok(zh.includes('6-260 Eagle St, Newmarket'));
+      // All-in-One link is generated from address slug + Job ID (both
+      // places it appears in the template), not left as a placeholder.
+      const aio = 'https://realgta.ca/6-260-eagle-st-newmarket/FVS-20260920-001';
+      assert.strictEqual(zh.split(aio).length - 1, 2);
+      assert.strictEqual(en_count(fs.readFileSync(path.join(dir, OUTPUT_FILENAME_EN), 'utf8'), aio), 2);
       // Payment paragraph shows pre-tax + HST, not just the total (2026-09-12);
       // pre-tax drops its decimals here since 15800 cents is a whole dollar.
       assert.ok(zh.includes('$158+HST= $178.54'));

@@ -921,7 +921,7 @@ async function handleApi(req, res, urlPath) {
         try {
           await dropboxSync.ensureMlsForDownloadFolder({ folderName });
           deliveryEmailResult = await deliveryEmail.generateDeliveryEmails({
-            jobFolderPath, folderName, clientName: body.clientName, address: body.address,
+            jobId, jobFolderPath, folderName, clientName: body.clientName, address: body.address,
             order, componentFolders, totalCents: price.totalCents, preTaxCents: price.finalSubtotalCents,
           });
         } catch (err) {

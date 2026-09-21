@@ -55,6 +55,24 @@ const TEMPLATE_EN_PATH = path.join(__dirname, 'delivery-email-template.en.txt');
 const OUTPUT_FILENAME_ZH = 'Delivery Email (中文).txt';
 const OUTPUT_FILENAME_EN = 'Delivery Email (EN).txt';
 
+// The client-facing delivery page ("All in One"), served by delivery-page/
+// (Cloudflare Worker) at the root domain. Path shape mirrors
+// delivery-page/src/render.js#deliveryPath: "/<address-slug>/<jobId>" -- the
+// slug is purely cosmetic there (lookup only uses the jobId), so this can be
+// written before any photos have synced; the page just fills in later.
+const DELIVERY_BASE_URL = (process.env.JG_DELIVERY_BASE_URL || 'https://realgta.ca').replace(/\/+$/, '');
+
+function slugifyAddress(address) {
+  return String(address || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+// null when there is no real Job ID yet (drafts) -> caller keeps the placeholder.
+function buildAllInOneLink(jobId, address) {
+  if (!jobId) return null;
+  const slug = slugifyAddress(address);
+  return DELIVERY_BASE_URL + (slug ? '/' + slug : '/delivery') + '/' + encodeURIComponent(jobId);
+}
+
 const PLACEHOLDERS = {
   zh: {
     ALL_IN_ONE_LINK: '[请手动填入 All-in-One 链接]',
@@ -160,7 +178,7 @@ function formatPreTaxAmount(cents) {
 // ---- Pure: builds the {{TOKEN}} -> value map for one language, given the
 // already-resolved links (linkByKey: {HDR: 'https://...'|null, ...}) and
 // the manual-fill-in fields, which are always the placeholder for now. ----
-function buildTokens({ lang, clientName, address, totalCents, preTaxCents, linkByKey }) {
+function buildTokens({ lang, clientName, address, totalCents, preTaxCents, linkByKey, jobId }) {
   const ph = PLACEHOLDERS[lang];
   const tokens = {
     CLIENT_NAME: clientName || '',
@@ -171,7 +189,7 @@ function buildTokens({ lang, clientName, address, totalCents, preTaxCents, linkB
     // glance instead of a single opaque number.
     PRETAX_AMOUNT: formatPreTaxAmount(preTaxCents || 0),
     TOTAL_AMOUNT: centsToDisplay(totalCents || 0),
-    ALL_IN_ONE_LINK: ph.ALL_IN_ONE_LINK,
+    ALL_IN_ONE_LINK: buildAllInOneLink(jobId, address) || ph.ALL_IN_ONE_LINK,
     WAVE_LINK: ph.WAVE_LINK,
     THREE_D_LINK: ph.THREE_D_LINK,
   };
@@ -192,7 +210,7 @@ function writeDeliveryEmailFiles(jobFolderAbsolutePath, { zhContent, enContent }
 // ---- The one function server.js calls. NEVER throws -- same contract as
 // dropbox-sync.js. `client` is a test-only seam (delivery-email.test.js
 // injects a fake Dropbox client so the suite never hits the real API). ----
-async function generateDeliveryEmails({ jobFolderPath, folderName, clientName, address, order, componentFolders, totalCents, preTaxCents, client }) {
+async function generateDeliveryEmails({ jobId, jobFolderPath, folderName, clientName, address, order, componentFolders, totalCents, preTaxCents, client }) {
   try {
     const lines = getDeliverableLines(order, componentFolders);
     const includedKeys = new Set(lines.filter((l) => l.include).map((l) => l.key));
@@ -212,8 +230,8 @@ async function generateDeliveryEmails({ jobFolderPath, folderName, clientName, a
 
     const zhTemplate = fs.readFileSync(TEMPLATE_ZH_PATH, 'utf8');
     const enTemplate = fs.readFileSync(TEMPLATE_EN_PATH, 'utf8');
-    const zhContent = renderTemplate(zhTemplate, buildTokens({ lang: 'zh', clientName, address, totalCents, preTaxCents, linkByKey }), includedKeys);
-    const enContent = renderTemplate(enTemplate, buildTokens({ lang: 'en', clientName, address, totalCents, preTaxCents, linkByKey }), includedKeys);
+    const zhContent = renderTemplate(zhTemplate, buildTokens({ lang: 'zh', clientName, address, totalCents, preTaxCents, linkByKey, jobId }), includedKeys);
+    const enContent = renderTemplate(enTemplate, buildTokens({ lang: 'en', clientName, address, totalCents, preTaxCents, linkByKey, jobId }), includedKeys);
 
     const written = writeDeliveryEmailFiles(jobFolderPath, { zhContent, enContent });
     return { attempted: true, success: linkErrors.length === 0, ...written, linkByKey, linkErrors };
@@ -228,6 +246,8 @@ module.exports = {
   getDeliverableLines,
   renderTemplate,
   buildTokens,
+  buildAllInOneLink,
+  slugifyAddress,
   formatPreTaxAmount,
   writeDeliveryEmailFiles,
   generateDeliveryEmails,
