@@ -17,7 +17,7 @@
  *   RESEND_API_KEY   (required)  -- secret; never in the repo
  *   SUBMIT_TO        (optional)  -- default frankystudio@mail.com
  *   SUBMIT_FROM      (optional)  -- default onboarding@resend.dev
- *   APP_BASE_URL     (optional)  -- default https://franvision.frankystudio-6f3.workers.dev
+ *   APP_BASE_URL     (optional)  -- default https://fs.realgta.ca
  * SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are injected automatically.
  *
  * Deploy:  supabase functions deploy notify-submission
@@ -33,7 +33,7 @@ const CORS = {
 
 const TO = Deno.env.get("SUBMIT_TO") ?? "frankystudio@mail.com";
 const FROM = Deno.env.get("SUBMIT_FROM") ?? "FranVision <onboarding@resend.dev>";
-const APP_BASE_URL = Deno.env.get("APP_BASE_URL") ?? "https://franvision.frankystudio-6f3.workers.dev";
+const APP_BASE_URL = Deno.env.get("APP_BASE_URL") ?? "https://fs.realgta.ca";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
