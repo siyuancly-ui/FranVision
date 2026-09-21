@@ -20,12 +20,12 @@ if not exist "node_modules" (
   call npm install || (echo npm install failed. & pause & exit /b 1)
 )
 
-REM Open the browser a couple of seconds after the server starts, from a
-REM hidden detached PowerShell so this window stays dedicated to the server.
-start "" powershell -NoProfile -WindowStyle Hidden -Command "Start-Sleep -Seconds 2; Start-Process 'http://localhost:4173'"
+REM The server opens the browser itself, on whichever port it ends up with
+REM (Windows can reserve 4173, in which case it moves to the next free port).
+set JG_OPEN_BROWSER=1
 
 echo.
-echo Job Generator is running at http://localhost:4173
+echo Job Generator is starting -- your browser will open by itself.
 echo Close this window (or press Ctrl+C) to stop it.
 echo.
 node server.js
