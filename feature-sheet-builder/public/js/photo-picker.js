@@ -21,9 +21,19 @@
 
     var grid = el('div', { class: 'fsb-picker-grid' });
     var overlay = el('div', { class: 'fsb-modal fsb-picker' });
+    // Touch screens have no hover, so the in-slot zoom/reset tools are hidden
+    // there (they covered small photos); the same controls live here instead.
+    function zoomBy(f) {
+      if (window.FSB.editor && window.FSB.editor.zoomSlot) window.FSB.editor.zoomSlot(app, ref, f);
+    }
     var bar = el('div', { class: 'fsb-modal-bar' }, [
       el('span', { class: 'fsb-modal-title', text: 'Choose a photo  ·  选择照片' }),
       el('span', { class: 'fsb-modal-spacer' }),
+      current ? el('span', { class: 'fsb-picker-touchtools' }, [
+        el('button', { class: 'fsb-btn fsb-btn--ghost', text: '−', title: 'Zoom out', onclick: function () { zoomBy(1 / 1.15); } }),
+        el('button', { class: 'fsb-btn fsb-btn--ghost', text: '+', title: 'Zoom in', onclick: function () { zoomBy(1.15); } }),
+        el('button', { class: 'fsb-btn fsb-btn--ghost', text: '↺', title: 'Reset framing', onclick: function () { app.mutateSlot(ref, { positionX: 0, positionY: 0, scale: 1 }); } }),
+      ]) : null,
       current ? el('button', { class: 'fsb-btn fsb-btn--ghost', text: 'Clear slot 清空', onclick: function () { app.clearSlot(ref); close(); } }) : null,
       el('button', { class: 'fsb-btn fsb-btn--ghost', text: 'Cancel 取消', onclick: close }),
     ]);

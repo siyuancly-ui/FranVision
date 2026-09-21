@@ -125,14 +125,7 @@
       if (action === 'change') return; // handled above
       if (action === 'clear') { app.clearSlot(ref); return; }
       if (action === 'reset') { app.mutateSlot(ref, { positionX: 0, positionY: 0, scale: 1 }); return; }
-      if (action === 'zoom-in' || action === 'zoom-out') {
-        var st = CROP.clampState(stateOf(app, ref));
-        var dims = slotDims(slotEl), pd = photoDims(app, st.photoId);
-        var next = CROP.zoomAt({ photoId: st.photoId, scale: st.scale, positionX: st.positionX, positionY: st.positionY },
-          { slotW: dims.w, slotH: dims.h, photoW: pd.w, photoH: pd.h },
-          action === 'zoom-in' ? 1.15 : 1 / 1.15);
-        app.mutateSlot(ref, next);
-      }
+      if (action === 'zoom-in' || action === 'zoom-out') zoomSlot(app, ref, action === 'zoom-in' ? 1.15 : 1 / 1.15);
     });
 
     // ---- wheel / pinch zoom -----------------------------------
@@ -190,11 +183,14 @@
     function endPan(e) {
       if (!pan) return;
       var p = pan; pan = null;
+      // pointercancel = the browser took the gesture over (e.g. a touch
+      // scroll on Android/iOS). That is never a tap, so don't open the picker.
+      var cancelled = e.type === 'pointercancel';
       p.slotEl.classList.remove('fsb-slot--panning');
       try { p.slotEl.releasePointerCapture(e.pointerId); } catch (_e) {}
       if (p.moved) {
         app.mutateSlot(p.ref, p.state, { silentRender: true });
-      } else if (window.FSB.photoPicker) {
+      } else if (!cancelled && window.FSB.photoPicker) {
         window.FSB.photoPicker.open(app, p.ref);   // a click, not a drag -> swap the photo
       }
     }
@@ -202,5 +198,15 @@
     stage.addEventListener('pointercancel', endPan);
   }
 
-  window.FSB.editor = { attach: attach, MIME_PHOTO: MIME_PHOTO, MIME_SLOT: MIME_SLOT };
+  // Zoom a filled slot about its centre (toolbar buttons + the picker's touch controls).
+  function zoomSlot(app, ref, factor) {
+    var slotEl = document.querySelector('.fsb-slot--filled[data-page="' + ref.page + '"][data-slot-id="' + ref.slotId + '"]');
+    if (!slotEl) return;
+    var st = CROP.clampState(stateOf(app, ref));
+    var dims = slotDims(slotEl), pd = photoDims(app, st.photoId);
+    app.mutateSlot(ref, CROP.zoomAt({ photoId: st.photoId, scale: st.scale, positionX: st.positionX, positionY: st.positionY },
+      { slotW: dims.w, slotH: dims.h, photoW: pd.w, photoH: pd.h }, factor));
+  }
+
+  window.FSB.editor = { zoomSlot: zoomSlot, attach: attach, MIME_PHOTO: MIME_PHOTO, MIME_SLOT: MIME_SLOT };
 })();
