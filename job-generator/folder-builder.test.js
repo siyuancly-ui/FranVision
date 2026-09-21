@@ -28,9 +28,9 @@ function sortedSet(arr) {
 
 // ---- pure logic ----
 
-test('Standard photography, no add-ons: baseline four folders only', () => {
+test('Standard photography, no add-ons: baseline five folders only (incl. HDR Photos/Callout)', () => {
   const order = { propertyType: 'condo', photography: 'standard', addons: {} };
-  assert.deepStrictEqual(sortedSet(getComponentFolders(order)), sortedSet(['0 RAW/1 Raws', 'Revisions', 'Local Report', 'HDR Photos']));
+  assert.deepStrictEqual(sortedSet(getComponentFolders(order)), sortedSet(['0 RAW/1 Raws', 'Revisions', 'Local Report', 'HDR Photos', 'HDR Photos/Callout']));
 });
 
 test('Luxury photography: adds Raw HDR, no dedicated Twilight folder (removed 2026-09-06)', () => {
@@ -80,11 +80,11 @@ test('Site Plan selected (without floor_plan flag): still produces Floorplan, no
   assert.ok(!folders.some((f) => /site plan/i.test(f)));
 });
 
-test('3D Virtual Tour selected: no dedicated folder (removed 2026-09-06) -- still just the baseline four', () => {
+test('3D Virtual Tour selected: no dedicated folder (removed 2026-09-06) -- still just the baseline', () => {
   const order = { propertyType: 'condo', photography: 'standard', addons: { three_d_tour: true } };
   const folders = getComponentFolders(order);
   assert.ok(!folders.some((f) => /3d/i.test(f)));
-  assert.deepStrictEqual(sortedSet(folders), sortedSet(['0 RAW/1 Raws', 'Revisions', 'Local Report', 'HDR Photos']));
+  assert.deepStrictEqual(sortedSet(folders), sortedSet(['0 RAW/1 Raws', 'Revisions', 'Local Report', 'HDR Photos', 'HDR Photos/Callout']));
 });
 
 test('Virtual Staging: checkbox alone with qty 0 still creates the folder (photo count often unknown yet -- intentional)', () => {
@@ -102,10 +102,15 @@ test('Feature Sheets selected: Feature Sheets folder', () => {
   assert.ok(getComponentFolders(order).includes('Feature Sheets'));
 });
 
+test('HDR Photos/Callout is always created, nested under HDR Photos', () => {
+  const folders = getComponentFolders({ propertyType: 'condo', photography: 'standard', addons: {} });
+  assert.ok(folders.includes('HDR Photos/Callout'));
+});
+
 test('Drone Photos selected: no dedicated folder at all', () => {
   const order = { propertyType: 'condo', photography: 'standard', addons: { drone_photos: true } };
   const folders = getComponentFolders(order);
-  assert.deepStrictEqual(sortedSet(folders), sortedSet(['0 RAW/1 Raws', 'Revisions', 'Local Report', 'HDR Photos']));
+  assert.deepStrictEqual(sortedSet(folders), sortedSet(['0 RAW/1 Raws', 'Revisions', 'Local Report', 'HDR Photos', 'HDR Photos/Callout']));
 });
 
 test('Everything selected at once: full folder set, each exactly once', () => {
@@ -127,7 +132,7 @@ test('Everything selected at once: full folder set, each exactly once', () => {
   const folders = getComponentFolders(order);
   const expected = [
     '0 RAW/1 Raws', '0 RAW/4 Raw HDR', '0 RAW/2 Video', '0 RAW/3 Image',
-    'Revisions', 'Local Report', 'HDR Photos', 'Floorplan',
+    'Revisions', 'Local Report', 'HDR Photos', 'HDR Photos/Callout', 'Floorplan',
     'Virtual Staging', 'Feature Sheets', 'Video', 'VLOG',
   ];
   assert.deepStrictEqual(sortedSet(folders), sortedSet(expected));

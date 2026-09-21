@@ -31,7 +31,8 @@
   var MODE = (!FORCE_LOCAL && CFG.supabaseUrl && CFG.supabaseAnonKey) ? 'supabase' : 'local';
 
   var DATA_KEYS = ['templateSystem', 'colorTheme', 'topPhotoStyle', 'imageSizes', 'boxOffsets', 'boxSizes', 'templateId',
-    'propertyInfo', 'agentInfo', 'agentInfo2', 'photos', 'pages', 'confirmed', 'confirmedAt', 'deletedAt'];
+    'propertyInfo', 'agentInfo', 'agentInfo2', 'photos', 'pages', 'confirmed', 'confirmedAt', 'deletedAt',
+    'jobId', 'createdVia', 'createdRef'];   // provenance of the row (root / notfound-card / admin-new / duplicate)
 
   function pickData(p) {
     var d = {};
@@ -146,6 +147,7 @@
           agentInfo2: project.agentInfo2,
           pages: project.pages,
           photos: project.photos,
+          jobId: project.jobId || null,
         };
         return jsonFetch('/api/projects/' + encodeURIComponent(id), {
           method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
@@ -199,6 +201,11 @@
         return jsonFetch('/api/projects/' + encodeURIComponent(id) + '/photos', { method: 'DELETE' })
           .then(function (b) { return b.project; });
       },
+      getJobGallery: function (jobId) {
+        return jsonFetch('/api/projects/' + encodeURIComponent(jobId)).then(function (b) {
+          return { photos: b.project.photos || [], address: b.project.address || '' };
+        });
+      },
       photoUrls: function (id, meta) {
         return {
           full: '/photos/' + id + '/' + meta.photoId,
@@ -234,6 +241,19 @@
     function pubUrl(path) {
       return sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
     }
+    // every object under <id>/ -- storage.list returns at most 100 per call, so page through it
+    function listAllFiles(id) {
+      var out = [];
+      function page(offset) {
+        return sb.storage.from(BUCKET).list(id, { limit: 100, offset: offset }).then(function (res) {
+          if (res.error) throw new Error(res.error.message);
+          var batch = res.data || [];
+          batch.forEach(function (f) { out.push(id + '/' + f.name); });
+          return batch.length === 100 ? page(offset + 100) : out;
+        });
+      }
+      return page(0);
+    }
     function origPath(id, meta) { return id + '/' + meta.photoId + '.' + (meta.ext || 'jpg'); }
     function thumbPath(id, meta) { return id + '/' + meta.photoId + '_thumb.jpg'; }
 
@@ -249,6 +269,14 @@
       });
     }
 
+    // A job's projects row (id = jobId, FVS-...) belongs to the photo-sync-worker /
+    // delivery-page. The FSB only READS it (getJobGallery); every write path below
+    // refuses such an id, because a whole-blob save would wipe the worker's keys.
+    var J = window.FSB.jobGallery;
+    function jobRowRefuses(what) {
+      return Promise.reject(new Error(what + ' is not available for a Job row -- open a Feature Sheet and connect the Job from inside it'));
+    }
+
     return {
       mode: 'supabase',
 
@@ -260,6 +288,8 @@
         if (seed.agentInfo) data.agentInfo = Object.assign({}, data.agentInfo, seed.agentInfo);
         if (seed.agentInfo2) data.agentInfo2 = Object.assign({}, seed.agentInfo2);
         if (Array.isArray(seed.photos)) data.photos = seed.photos;
+        if (seed.createdVia) data.createdVia = seed.createdVia;
+        if (seed.createdRef) data.createdRef = seed.createdRef;
         var id = newId();
         return sb.from('projects').insert({ id: id, data: data }).select('*').single().then(function (res) {
           if (res.error) throw new Error(res.error.message);
@@ -270,6 +300,7 @@
       getProject: fetchProject,
 
       updateProject: function (id, project) {
+        if (J.isJobId(id)) return jobRowRefuses('Saving');
         return sb.from('projects')
           .update({ data: pickData(project), updated_at: nowIso() })
           .eq('id', id).select('*').single()
@@ -281,6 +312,7 @@
 
       confirmProject: function (id, confirmed) {
         confirmed = confirmed === undefined ? true : !!confirmed;
+        if (J.isJobId(id)) return jobRowRefuses('Confirming');
         return fetchProject(id).then(function (p) {
           p.confirmed = confirmed;
           p.confirmedAt = confirmed ? (p.confirmedAt || nowIso()) : null;
@@ -293,6 +325,7 @@
       },
 
       deleteProject: function (id) {   // -> recycle bin (soft)
+        if (J.isJobId(id)) return jobRowRefuses('Deleting');
         return fetchProject(id).then(function (p) {
           p.deletedAt = nowIso();
           return sb.from('projects').update({ data: pickData(p), updated_at: nowIso() })
@@ -303,6 +336,7 @@
         });
       },
       restoreProject: function (id) {
+        if (J.isJobId(id)) return jobRowRefuses('Restoring');
         return fetchProject(id).then(function (p) {
           delete p.deletedAt;
           return sb.from('projects').update({ data: pickData(p), updated_at: nowIso() })
@@ -313,32 +347,57 @@
         });
       },
       purgeProject: function (id) {
-        return sb.storage.from(BUCKET).list(id).then(function (res) {
-          var files = ((res && res.data) || []).map(function (f) { return id + '/' + f.name; });
-          return files.length ? sb.storage.from(BUCKET).remove(files) : Promise.resolve({});
+        if (J.isJobId(id)) return jobRowRefuses('Purging');
+        return listAllFiles(id).then(function (files) {
+          var chunks = [];
+          for (var i = 0; i < files.length; i += 100) chunks.push(files.slice(i, i + 100));
+          return chunks.reduce(function (p, chunk) {
+            return p.then(function () {
+              return sb.storage.from(BUCKET).remove(chunk).then(function (res) {
+                if (res && res.error) throw new Error(res.error.message);
+              });
+            });
+          }, Promise.resolve());
         }).then(function () {
-          return sb.from('projects').delete().eq('id', id);
+          return sb.from('projects').delete().eq('id', id).select('id');
         }).then(function (res) {
-          if (res && res.error) throw new Error(res.error.message);
-          return true;
+          if (res.error) throw new Error(res.error.message);
+          if (res.data && res.data.length) return true;
+          // 0 rows deleted: fine if it was already gone, an error if something (RLS) stopped us
+          return sb.from('projects').select('id').eq('id', id).maybeSingle().then(function (chk) {
+            if (chk.data) throw new Error('The sheet was not removed (blocked by the database).');
+            return true;
+          });
         });
       },
-      emptyTrash: function (token) {
+      // Purges every sheet in the bin, one by one. One failure does not stop the rest; if any failed
+      // the promise rejects AFTER trying them all, saying how many.  onProgress(doneSoFar, total)
+      emptyTrash: function (token, onProgress) {
         var self = this;
         return this.listTrash(token).then(function (list) {
+          var done = 0, failed = [];
           return list.reduce(function (chain, r) {
-            return chain.then(function (n) { return self.purgeProject(r.id).then(function () { return n + 1; }); });
-          }, Promise.resolve(0));
+            return chain.then(function () {
+              return self.purgeProject(r.id).then(function () { done++; }, function (e) { failed.push(r.id + ': ' + e.message); })
+                .then(function () { if (onProgress) onProgress(done + failed.length, list.length); });
+            });
+          }, Promise.resolve()).then(function () {
+            if (failed.length) throw new Error(failed.length + ' of ' + list.length + ' could not be deleted (' + failed[0] + ')');
+            return done;
+          });
         });
       },
       listTrash: function (token) {
         return sb.functions.invoke('list-projects', { body: { token: token || '', view: 'trash' } }).then(function (res) {
           if (res.error) throw new Error(res.error.message || 'unauthorized');
-          return (res.data && res.data.projects) || [];
+          // Job rows (FVS-…) belong to the photo-sync worker; the worker flags them deleted when a Dropbox
+          // folder goes away. They are not Feature Sheets, so they never show in (or get purged from) the bin.
+          return ((res.data && res.data.projects) || []).filter(function (r) { return !J.isJobId(r.id); });
         });
       },
 
       duplicateProject: function (id) {
+        if (J.isJobId(id)) return jobRowRefuses('Duplicating');
         return fetchProject(id).then(function (src) {
           var a1 = src.agentInfo || {};
           var a2 = src.agentInfo2 || null;
@@ -346,6 +405,7 @@
           var photos = (src.photos || []).filter(function (p) { return keep.indexOf(p.photoId) >= 0; });
           var data = V2.blankProject(src.colorTheme);
           data.topPhotoStyle = src.topPhotoStyle || data.topPhotoStyle;
+          data.createdVia = 'duplicate';
           data.agentInfo = Object.assign({}, a1);
           data.agentInfo2 = a2 ? Object.assign({}, a2) : null;
           data.photos = photos.map(function (p) { return Object.assign({}, p); });
@@ -416,6 +476,7 @@
       },
 
       clearPhotos: function (id) {
+        if (J.isJobId(id)) return jobRowRefuses('Clearing the library');
         return fetchProject(id).then(function (project) {
           var photos = (project.photos || []).filter(function (p) { return !p.role; });
           var paths = [];
@@ -436,7 +497,21 @@
         });
       },
 
+      // Read-only: the photo list (+ folder-derived address) the photo-sync-worker keeps on a job's row.
+      getJobGallery: function (jobId) {
+        return sb.from('projects').select('photos:data->photos,address:data->address').eq('id', jobId).maybeSingle()
+          .then(function (res) {
+            if (res.error) throw new Error(res.error.message);
+            if (!res.data) throw new Error('Job not found');
+            return { photos: res.data.photos || [], address: res.data.address || '' };
+          });
+      },
+
       photoUrls: function (id, meta) {
+        if (J.isSynced(meta)) {   // worker-synced (id passed = the JOB's id): no original in the bucket, only the 1024 thumb
+          var f = J.syncedFiles(meta);
+          return { full: pubUrl(id + '/' + f.full), thumb: pubUrl(id + '/' + f.thumb) };
+        }
         return {
           full: pubUrl(origPath(id, meta)),
           thumb: meta.hasThumb ? pubUrl(thumbPath(id, meta)) : pubUrl(origPath(id, meta)),

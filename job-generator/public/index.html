@@ -209,7 +209,7 @@
 
 <div class="section-divider" style="border-top:none;">
   <h2 class="section-title">Job Drafts</h2>
-  <p class="field-hint">For a shoot that isn't locked in yet -- date confirmed but time/package/who's shooting it may still change before the shoot. <strong>Save as Draft</strong> creates the real job folder, job.json, and Dropbox mirror right away (so it's ready to update at any point before the shoot) -- the only thing it withholds is the Job ID. Click a draft below to reopen it; click Create Job when the shoot is done to assign its ID.</p>
+  <p class="field-hint">For a shoot that isn't locked in yet -- date confirmed but time/package/who's shooting it may still change before the shoot. <strong>Save as Draft</strong> creates <strong>no folder</strong> (neither local nor Dropbox): the draft is stored on the job server (so it opens on any of your computers) and, if a Shoot Time is set, a calendar file is dropped into the Job Root Folder. Click a draft below to reopen it; click Create Job to create the folders and assign the Job ID.</p>
 </div>
 <div class="layout" style="grid-template-columns: 1fr;">
   <div class="panel">
@@ -317,7 +317,7 @@
 
     <div class="panel">
       <h2><span class="step-num">5</span>Shoot Notes (optional)</h2>
-      <div class="field-hint" style="margin-bottom:8px;">Feeds an auto-generated calendar file (.ics) for this shoot -- saved locally in this job's folder only, never uploaded to Dropbox or written into job.json/Job Info.txt. Requires a Shoot Time above; nothing is saved if that's left blank.</div>
+      <div class="field-hint" style="margin-bottom:8px;">Feeds the calendar file (.ics) that <strong>Save as Draft</strong> drops into the Job Root Folder (named like <code>S+V_Jane_F 2026.9.25 12 Cozens.ics</code>) -- never uploaded to Dropbox or written into job.json/Job Info.txt, and Create Job does not generate one. Requires a Shoot Time above; no file is made if that's left blank.</div>
       <div class="field-row">
         <label class="field-label" for="shoot-notes-text">Notes for the shoot</label>
         <textarea id="shoot-notes-text" rows="4" placeholder="Lockbox/gate code, access instructions, anything the photographer needs on-site..."></textarea>
@@ -358,7 +358,7 @@
         <label for="identity-unlock-checkbox">🔓 Unlock Shoot Date / Address / Client Name (only to fix a typo) -- renames the existing folder in place, local + Dropbox, keeping the same Job ID. Does NOT create a new job.</label>
       </div>
 
-      <div class="field-hint" style="margin-bottom:12px;"><strong>Save as Draft</strong> creates/updates the real folder, job.json, and Dropbox mirror but withholds the Job ID -- for a shoot that isn't locked in yet. <strong>Create Job</strong> assigns the Job ID (finalizing a Draft, or minting a brand-new job) -- or, if a job for this same Shoot Date + Address + Client already has an ID, <strong>updates</strong> it in place instead.</div>
+      <div class="field-hint" style="margin-bottom:12px;"><strong>Save as Draft</strong> creates <strong>no folders</strong> -- it saves the draft on the job server and (with a Shoot Time) writes one calendar file into the Job Root Folder, for a shoot that isn't locked in yet. <strong>Create Job</strong> creates the local + Dropbox folders and assigns the Job ID (finalizing a Draft, or minting a brand-new job) -- or, if a job for this same Shoot Date + Address + Client already has an ID, <strong>updates</strong> it in place instead.</div>
 
       <div class="field-row">
         <label class="field-label" for="rootFolder">Job Root Folder</label>
@@ -820,7 +820,7 @@
       identityUnlocked = false;
       updateDraftBanner();
       updateIdentityLockUI();
-      el('save-draft-result').textContent = 'Draft saved' + (result.calendar ? ' (calendar file updated)' : '') + '.';
+      el('save-draft-result').textContent = 'Draft saved on the job server (no folder created)' + (result.calendar ? ' -- calendar file: ' + result.calendar.icsFilename : ' -- no Shoot Time, so no calendar file') + '.';
       refreshDraftsList();
       refreshFolderPreview();
     } catch (err) {
@@ -962,7 +962,9 @@
     updateCreateButtonLabel();
 
     let head;
-    if (plan.existingFolderUnreadable) {
+    if (plan.jobConflict) {
+      head = '<div style="color:#7a1f1f;">⚠ This job exists under two different IDs -- here as <code>' + plan.jobConflict.local + '</code>, on the job server as <code>' + plan.jobConflict.remote + '</code>. Create Job will refuse until it\'s resolved by hand.</div>';
+    } else if (plan.existingFolderUnreadable) {
       head = '<div style="color:#7a1f1f;">⚠ A folder named <code>' + plan.folderName + '</code> already exists but its job.json can\'t be read. Create Job will refuse until it\'s fixed by hand.</div>';
     } else if (matchesExistingJob) {
       head = '<div style="color:#6b510f;">↻ Matches existing job <code>' + matchesExistingJob + '</code> — Create Job will <strong>update</strong> it (same Job ID). Save as Draft is unavailable here (a real job can\'t go back to being a draft).</div>';
@@ -975,6 +977,9 @@
       head = '<div style="color:#6b510f;">↻ Matches an existing Draft (no Job ID yet) — Save as Draft updates it in place; Create Job assigns it <code>' + plan.jobIdPreview + '</code> and finalizes it.</div>';
     } else {
       head = '<div>Job ID (preview): <code>' + plan.jobIdPreview + '</code></div>';
+    }
+    if (plan.serverUnreachable) {
+      head += '<div style="color:#7a1f1f;">⚠ Can\'t reach the job server -- Create Job / Save as Draft need an internet connection and will be refused until it\'s back.</div>';
     }
     el('folder-preview').innerHTML =
       head +
@@ -1222,9 +1227,7 @@
           result.pendingConfirmation.map((msg) => '<li>' + msg + '</li>').join('') + '</ul></div>'
         : '';
 
-      const calendarHtml = result.calendar
-        ? '<div>Calendar file saved: Shoot Schedule.ics' + (result.calendar.imageCount ? ' (' + result.calendar.imageCount + ' image(s) embedded as attachments)' : '') + '.</div>'
-        : (result.mode === 'updated' ? '<div>No Shoot Time — calendar file not generated.</div>' : '');
+      const calendarHtml = ''; // Create Job no longer generates a calendar file -- see Save as Draft
 
       // Delivery Email .txt files (see delivery-email.js) -- generated
       // automatically alongside Job Info.txt/job.json. linkErrors is
@@ -1261,6 +1264,14 @@
       }
 
       const jobStatusLabel = result.finalizedFromDraft ? 'finalized from Draft' : (isUpdate ? 'updated' : 'created');
+      const tl = result.tourLink;
+      const tourLinkHtml = tl && tl.success && tl.created
+        ? '<div>3D Tour selected: empty <code>Tour Link.txt</code> created on Dropbox (job folder root) -- paste the tour URL into it there.</div>'
+        : (tl && tl.success && tl.removed ? '<div>3D Tour unchecked: <code>Tour Link.txt</code> removed from Dropbox.</div>'
+        : (tl && tl.attempted && !tl.success ? '<div style="color:#7a1f1f;">Tour Link.txt on Dropbox could not be updated: ' + tl.error + '</div>' : ''));
+      const coverClosingHtml = result.coverClosing && result.coverClosing.success
+        ? '<div>Dropbox <code>Cover&amp;Closing</code> folder ready (put the hand-picked cover/closing photo(s) there).</div>'
+        : '';
       const renameHtml = result.renamedFrom
         ? '<div>Folder renamed from <code>' + result.renamedFrom + '</code> to <code>' + result.folderName + '</code> (same Job ID)'
           + (result.dropboxRename && result.dropboxRename.success === false ? ', but the Dropbox-side rename failed -- see below' : ', including on Dropbox') + '.</div>'
@@ -1271,6 +1282,8 @@
         '<div class="path">' + result.jobFolderPath + '</div>' +
         '<div>Job Info.txt and job.json ' + (isUpdate ? 'rewritten' : 'written') + '.</div>' +
         renameHtml +
+        tourLinkHtml +
+        coverClosingHtml +
         updateHtml +
         calendarHtml +
         deliveryEmailHtml +

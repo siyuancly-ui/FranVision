@@ -1,0 +1,54 @@
+/**
+ * FranVision Delivery Page Worker.
+ *
+ * A standalone Worker -- NOT the repo-root `wrangler.jsonc` (that one ships
+ * the Feature Sheet Builder). This one is deployed from inside
+ * `delivery-page/`:
+ *
+ *   cd delivery-page
+ *   wrangler secret put SUPABASE_URL          # + SERVICE_ROLE_KEY, ADMIN_TOKEN
+ *   wrangler deploy
+ *
+ * Reads (never writes) the `projects` table that photo-sync-worker fills in
+ * the same Supabase project -- see ../photo-sync-worker/CLAUDE.md for the
+ * data shape. Free plan is fine (no Queues, no cron).
+ */
+{
+  "name": "franvision-delivery-page",
+  "main": "src/index.js",
+  "compatibility_date": "2025-06-01",
+
+  "vars": {
+    // Dropbox sub-folder (case-insensitive) treated as the main photo set
+    // for the hero/gallery/closing photo -- matches photo-sync-worker's
+    // SYNC_FOLDERS naming (both names kept for pre-rename jobs).
+    "GALLERY_FOLDERS": "HDR Photos,MLS",
+
+    // Dropbox sub-folder the neighborhood-report screenshot lives in --
+    // see franvision-delivery-page-design-spec.md item 7 (HoodQ screenshot).
+    "LOCAL_REPORT_FOLDER": "Local Report",
+
+    // Dropbox sub-folders (case-insensitive) treated as the video teaser.
+    "VIDEO_FOLDERS": "Video,VLOG",
+
+    // Manual-override folders -- a human drops photo(s) in, no data entry
+    // needed. Falls back to the automatic 3rd/5th-of-GALLERY_FOLDERS pick
+    // (Cover&Closing) or hides the section entirely (Callout) when empty.
+    // "Callout" is expected to usually be nested under HDR Photos
+    // (photo-sync-worker finds it at any depth); "Cover&Closing" is
+    // top-level. Job Generator doesn't create these by default yet -- see
+    // delivery-page/CLAUDE.md.
+    //
+    // Cover&Closing (2026-09-17, merges what were the separate "Cover" and
+    // "Closing" folders 2026-09-15/16) -- one folder, up to two photos: the
+    // lowest-numbered filename becomes the cover/hero override, the
+    // highest-numbered becomes the closing override (see render.js#buildDeliveryModel).
+    "COVER_CLOSING_FOLDER": "Cover&Closing",
+    "DRONE_CALLOUT_FOLDER": "Callout",
+
+    // Floor Plan / Site Plan (2026-09-18) -- same "drop file(s) in, no data
+    // entry" shape, positioned right above the neighborhood report. Can be
+    // more than one page (main floor, second floor, basement).
+    "FLOORPLAN_FOLDER": "Floorplan"
+  }
+}

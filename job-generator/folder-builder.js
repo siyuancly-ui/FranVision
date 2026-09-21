@@ -17,6 +17,7 @@
 //   Revisions           <- always, empty
 //   Local Report        <- always, empty (added 2026-09-07)
 //   HDR Photos          <- always (renamed from "MLS" 2026-09-12 -- see below)
+//     Callout          <- always, empty (added 2026-09-18, delivery page's Callout photos)
 //   Floorplan           <- Floor Plan OR Site Plan selected (Site Plan merges in, no separate folder)
 //   Virtual Staging     <- Virtual Staging selected
 //   Feature Sheets      <- Feature Sheets selected
@@ -79,7 +80,12 @@ function getComponentFolders(order) {
   const stagingQty = Number(addons.virtual_staging_qty) || 0;
   const wantsVirtualStaging = !!addons.virtual_staging || stagingQty > 0;
 
-  const folders = ['0 RAW/1 Raws', 'Revisions', 'Local Report', 'HDR Photos'];
+  // 'HDR Photos/Callout' (added 2026-09-18): where the photos for the
+  // delivery page's Callout section go (drone/aerial or any highlight
+  // shots) -- delivery-page/photo-sync-worker read it as a nested folder
+  // under HDR Photos. A normal synced component folder, unlike the
+  // Dropbox-only 'Cover&Closing' (see dropbox-sync.js).
+  const folders = ['0 RAW/1 Raws', 'Revisions', 'Local Report', 'HDR Photos', 'HDR Photos/Callout'];
 
   if (isLuxury) {
     folders.push('0 RAW/4 Raw HDR');

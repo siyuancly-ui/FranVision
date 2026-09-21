@@ -410,5 +410,63 @@ test('mergeImages: tolerates null/undefined on either side', () => {
   assert.deepStrictEqual(mergeImages(null, null), []);
 });
 
+// ---- draft calendar file (Save as Draft, 2026-09-19) ----
+
+const cal = require('./calendar-file.js');
+
+test('shortAddress: house number + street NAME only (street type and trailing direction dropped, city dropped)', () => {
+  assert.strictEqual(cal.shortAddress('12 Cozens Dr, Markham'), '12 Cozens');
+  assert.strictEqual(cal.shortAddress('394 Centre St E, Richmond Hill'), '394 Centre');
+  assert.strictEqual(cal.shortAddress('4633 Glen Erin Dr, Mississauga'), '4633 Glen Erin');
+  assert.strictEqual(cal.shortAddress('5 Lake Shore Blvd W'), '5 Lake Shore');
+});
+
+test('shortAddress: never strips the last remaining word; blank stays blank', () => {
+  assert.strictEqual(cal.shortAddress('12 Park St'), '12 Park');
+  assert.strictEqual(cal.shortAddress('Main'), 'Main');
+  assert.strictEqual(cal.shortAddress(''), '');
+  assert.strictEqual(cal.shortAddress(undefined), '');
+});
+
+test('buildDraftCalendarFilename: <event title> <date, no leading zeros> <short address>.ics', () => {
+  const name = cal.buildDraftCalendarFilename({
+    order: { photography: 'standard', addons: {} }, clientName: 'Jane', photographerName: 'Franky',
+    shootDate: '2026/09/25', address: '12 Cozens Dr, Markham',
+  });
+  assert.ok(/^.+_Jane_.+ 2026\.9\.25 12 Cozens\.ics$/.test(name), name);
+});
+
+test('buildDraftCalendarFilename: same client/package on another date or address gets a different name', () => {
+  const base = { order: { photography: 'standard', addons: {} }, clientName: 'Jane', photographerName: 'Franky', shootDate: '2026/09/25', address: '12 Cozens Dr' };
+  const a = cal.buildDraftCalendarFilename(base);
+  assert.notStrictEqual(a, cal.buildDraftCalendarFilename({ ...base, shootDate: '2026/09/26' }));
+  assert.notStrictEqual(a, cal.buildDraftCalendarFilename({ ...base, address: '14 Cozens Dr' }));
+});
+
+test('buildDraftCalendarFilename: characters illegal in a filename are sanitized', () => {
+  const name = cal.buildDraftCalendarFilename({ order: {}, clientName: 'A/B: C', photographerName: '', shootDate: '2026/09/25', address: '1 X St' });
+  assert.ok(!/[\\/:*?"<>|]/.test(name.replace('？', '')), name);
+});
+
+test('writeCalendarFile: writeOpts.filename writes that name (not Shoot Schedule.ics) and reports it', () => {
+  const dir = makeTmpDir();
+  try {
+    const r = cal.writeCalendarFile(dir, { jobId: 'draft-abc', clientName: 'J', address: '1 X', shootDate: '2026/09/25', shootTime: '10:00', notes: '', images: [], order: {} }, { filename: 'My Draft.ics' });
+    assert.strictEqual(r.icsFilename, 'My Draft.ics');
+    assert.ok(fs.existsSync(path.join(dir, 'My Draft.ics')));
+    assert.ok(!fs.existsSync(path.join(dir, 'Shoot Schedule.ics')));
+    assert.ok(fs.readFileSync(path.join(dir, 'My Draft.ics'), 'utf8').includes('UID:draft-abc@franvision.local'));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('readImagesFromIcsFile: reads the ATTACH images of one named .ics file; [] when it does not exist', () => {
+  const dir = makeTmpDir();
+  try {
+    cal.writeCalendarFile(dir, { jobId: 'd', clientName: 'J', address: '1 X', shootDate: '2026/09/25', shootTime: '10:00', notes: '', images: [fakeImage('gate.jpg')], order: {} }, { filename: 'D.ics' });
+    assert.deepStrictEqual(cal.readImagesFromIcsFile(path.join(dir, 'D.ics')).map((i) => i.filename), ['gate.jpg']);
+    assert.deepStrictEqual(cal.readImagesFromIcsFile(path.join(dir, 'nope.ics')), []);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 if (failed > 0) process.exit(1);

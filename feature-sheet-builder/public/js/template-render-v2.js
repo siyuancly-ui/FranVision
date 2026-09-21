@@ -28,9 +28,13 @@
     node.style.width = b.width + 'px'; node.style.height = b.height + 'px';
   }
   function photoSource() { return window.FSB.photoSource; }
+  // Editor + preview always show the on-screen image (a 1024 for job sheets).
+  // Only the PDF export flips printMode on, to get the prepared full-res blobs.
+  var printMode = false;
   function fullUrl(project, id) {
     var ps = photoSource();
-    return ps && id ? ps.fullUrl(project, id) : '';
+    if (!ps || !id) return '';
+    return printMode && ps.printUrl ? ps.printUrl(project, id) : ps.fullUrl(project, id);
   }
   function famFor(theme, which) {
     if (which === 'script') return (theme.fonts.script || theme.fonts.serif).family;
@@ -822,5 +826,6 @@
 
   window.FSB.render = {
     renderPage: renderPage, updateSlot: updateSlot, updateDynamic: updateDynamic, fitTexts: fitTexts,
+    setPrintMode: function (on) { printMode = !!on; },
   };
 })();

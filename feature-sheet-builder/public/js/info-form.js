@@ -71,10 +71,70 @@
     return !!(t && t.layout === 'jason');
   }
 
+  // Admin only: connect this sheet to a Job so its photo library is that Job's Dropbox HDR photos.
+  function buildJobSection(app) {
+    var util = window.FSB.util;
+    var src = window.FSB.photoSource;
+    var input = el('input', { type: 'text', id: 'f-job-id', placeholder: 'FVS-20260918-001', autocomplete: 'off', spellcheck: 'false' });
+    var connectBtn = el('button', { class: 'fsb-btn fsb-btn--sm', type: 'button', text: 'Connect 连接' });
+    var discBtn = el('button', { class: 'fsb-btn fsb-btn--sm fsb-btn--ghost', type: 'button', text: 'Disconnect 断开' });
+    var status = el('div', { class: 'fsb-job-status' });
+    var sec = el('div', { class: 'fsb-form-sec' }, [
+      el('h3', { text: 'Job photos 图库 (Dropbox)' }),
+      el('div', { class: 'fsb-form-row' }, [
+        el('label', { for: 'f-job-id', text: 'Job ID' }),
+        el('div', { class: 'fsb-job-row' }, [input, connectBtn, discBtn]),
+        status,
+        el('span', { class: 'fsb-form-hint', text: '连接后，图库 = 该 Job 的 Dropbox HDR 照片（只读）；头像和 Logo 仍在本 sheet 上传。' }),
+      ]),
+    ]);
+
+    function show() {
+      var st = src.jobStatus(app.project);
+      var locked = app.isReadOnly();
+      connectBtn.disabled = locked; discBtn.disabled = locked; input.disabled = locked;
+      discBtn.style.display = st ? '' : 'none';
+      if (st) input.value = st.jobId;
+      status.className = 'fsb-job-status' + (st && st.error ? ' is-error' : st ? ' is-ok' : '');
+      status.textContent = !st ? 'Not connected 未连接 — the library is this sheet\'s own uploads.'
+        : st.error ? ('Could not load ' + st.jobId + ': ' + st.error)
+        : ('Connected 已连接: ' + (st.address || st.jobId) + ' — ' + st.count + ' HDR photos');
+    }
+
+    connectBtn.addEventListener('click', function () {
+      var before = app.project.jobId || '';
+      connectBtn.disabled = true; status.className = 'fsb-job-status'; status.textContent = 'Connecting… 连接中…';
+      src.connect(app.project, input.value).then(function (r) {
+        var switching = before && before !== r.jobId && app.hasPlacedJobPhotos();
+        if (!switching) return r;
+        return util.confirmDialog(
+          ['Switch to ' + r.jobId + '?\nPhotos already placed from ' + before + ' will be removed from the layout.',
+           '切换到 ' + r.jobId + '?\n版式里来自 ' + before + ' 的照片会被清空。'],
+          { okText: 'Switch 切换', cancelText: 'Cancel 取消' }
+        ).then(function (ok) { return ok ? r : null; });
+      }).then(function (r) {
+        if (r) { app.applyJob(r); toast('Connected ' + r.jobId + ' — ' + r.count + ' photos'); }
+      }).catch(function (err) { toast(err.message, 'error'); })
+        .then(show);
+    });
+    discBtn.addEventListener('click', function () {
+      util.confirmDialog(
+        ['Disconnect this Job?\nPhotos placed from its gallery will be removed from the layout.',
+         '断开该 Job?\n版式里来自其图库的照片会被清空。'],
+        { okText: 'Disconnect 断开', cancelText: 'Cancel 取消' }
+      ).then(function (ok) { if (ok) { app.disconnectJob(); show(); } });
+    });
+    app.on('project', show);
+    show();
+    return sec;
+  }
+
   function mount(root, app) {
     root.innerHTML = '';
     var inputs = {};
     var jason = isJason(app);   // Estate layout = single agent, no co-listing
+
+    if (app.adminToken) root.appendChild(buildJobSection(app));
 
     Object.keys(SCHEMA).forEach(function (groupKey) {
       if (groupKey === 'agentInfo2' && jason) return;
@@ -126,6 +186,7 @@
     function buildImageField(groupKey, f, id, app, inputs) {
       var wrap = el('div', { class: 'fsb-img-field' });
       var preview = el('div', { class: 'fsb-img-prev' });
+      var isLogo = /logo/i.test(f.key);
       var fileInput = el('input', { id: id, type: 'file', accept: 'image/jpeg,image/png', style: { display: 'none' } });
       var pick = el('button', { class: 'fsb-btn fsb-btn--sm', type: 'button', text: 'Choose… 选择' });
       var clear = el('button', { class: 'fsb-btn fsb-btn--sm fsb-btn--ghost', type: 'button', text: 'Clear 清除' });
@@ -146,7 +207,7 @@
         if (!file) return;
         if (app.isReadOnly()) { toast('Project is confirmed.', 'error'); return; }
         preview.classList.add('is-loading');
-        var role = f.key.indexOf('logo') > -1 ? 'logo' : 'headshot';
+        var role = isLogo ? 'logo' : 'headshot';
         (app.ensureCreated ? app.ensureCreated() : Promise.resolve())
           .then(function () { return src.upload(app.projectId, file, role); })
           .then(function (meta) {
@@ -161,13 +222,13 @@
         var pid = grp[f.key];
         preview.innerHTML = '';
         if (pid) preview.appendChild(el('img', { alt: '', src: src.fullUrl(app.project, pid) }));
-        else preview.appendChild(el('span', { class: 'fsb-img-empty', text: f.key.indexOf('logo') > -1 ? 'Logo' : 'Headshot' }));
+        else preview.appendChild(el('span', { class: 'fsb-img-empty', text: isLogo ? 'Logo' : 'Headshot' }));
       }
       wrap._renderPrev = renderPrev;
       inputs[groupKey + '.' + f.key] = wrap;
       wrap.appendChild(fileInput);        // must be IN the DOM for the picker + change event
       wrap.appendChild(preview);
-      if (src.supportsUpload && src.supportsUpload()) wrap.appendChild(pick);
+      if (src.supportsAssetUpload ? src.supportsAssetUpload() : (src.supportsUpload && src.supportsUpload(app.project))) wrap.appendChild(pick);
       wrap.appendChild(clear);
       renderPrev();
       return wrap;

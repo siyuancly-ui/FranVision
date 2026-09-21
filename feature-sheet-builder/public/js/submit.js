@@ -25,6 +25,14 @@
       return Promise.resolve();
     }
 
+    // A sheet connected to a Job: the print PDF needs the paid full-resolution originals, which only
+    // the admin token can fetch. So a CLIENT just notifies the studio (who exports); the admin
+    // (who has the token) still builds and uploads the PDF like any other sheet.
+    if (window.FSB.jobGallery.jobIdOf(app.project) && !app.adminToken) {
+      app.setBusy('Notifying the studio… 通知工作室…');
+      return store.invokeFunction('notify-submission', { projectId: app.projectId });
+    }
+
     app.setBusy('Preparing the print file… 正在生成打印文件…');
     return window.FSB.exportPdf.buildBlob(app)
       .then(function (blob) {

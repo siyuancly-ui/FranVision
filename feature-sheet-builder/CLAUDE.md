@@ -30,7 +30,7 @@ confirms, and either exports a print PDF or submits the sheet to the studio.
 ```
 cd feature-sheet-builder
 node server.js            # -> http://localhost:4180
-npm test                  # node --test  (48 tests across this module)
+npm test                  # node --test  (78 tests across this module)
 ```
 
 Or double-click `../Feature Sheet Builder.command` in Finder (starts the server,
@@ -59,6 +59,8 @@ public/                      the entire frontend (no build step; classic <script
     config.js                Supabase URL + anon (publishable) key + bucket name
     store.js                 *** the ONLY client<->backend seam *** — 'supabase' | 'local' impls behind one interface
     photo-source.js          *** the ONLY editor<->"where photos come from" seam *** — v1 = this project's uploads
+    job-gallery.js           pure helpers for a sheet CONNECTED to a Job: Job-ID validation, which worker-synced photos the picker
+                             shows, synced-photo file names. Unit-tested; loaded before store.js
     app.js                   controller: in-memory project, debounced autosave, event bus, ?p= contract
     template-render-v2.js    (template spec + project) -> DOM. Used by editor, preview, export. Single geometry gate.
     editor.js                drag/drop into slots, in-slot pan & zoom
@@ -137,6 +139,31 @@ One Postgres table + one storage bucket + two edge functions. Project ref
   `APP_BASE_URL`). Redeploy on change: `supabase functions deploy
   notify-submission`. Until set up, Confirm & Submit still saves + locks the
   design but the email step errors (agent can retry).
+
+**Connecting a sheet to a Job's Dropbox gallery (2026-09-19).** A sheet keeps its OWN random id/row (its headshot/logo and
+everything the FSB owns live there, and Franky's habit of *Duplicate a sheet* keeps working). To use a Job's photos,
+Franky (admin link only) types the Job ID (`FVS-YYYYMMDD-NNN`) into the **Job photos** box at the top of the form and
+clicks Connect; that stores `jobId` on the sheet (`store.js` `DATA_KEYS`). The Job's own row (id = jobId) belongs to the
+photo-sync-worker / delivery-page (`photos[]`, `videos[]`, `address`, `tourUrl`) and the FSB **only reads it**
+(`store.getJobGallery`, cached in `photo-source.js`); every FSB write path refuses an `FVS-` id (a whole-blob save would
+wipe the worker's keys), and opening `?p=FVS-…` shows an explanatory card instead of a sheet.
+- Once connected the picker/library list that Job's `HDR Photos`/`MLS` photos, read-only, in natural filename order
+  (`job-gallery.js`). **The editor, preview and picker all use the 1024 `_thumb.jpg`** (the preview keeps its watermark),
+  read from the Job's folder in the `photos` bucket; the sheet's own headshot/logo stay under the sheet's folder.
+  Nothing larger goes in Supabase on purpose: the 2048 set and the originals are the paid deliverable. Placed photos are
+  stored only as ids in `pages.*.slots`. The Job's address fills a blank street-address field on connect.
+- Switching to a different Job (or Disconnect) clears the photos placed from the old one (their ids don't exist in the new
+  gallery); the agent info / headshot / logo are untouched.
+- **PDF export** (admin `?admin=<token>` only) fetches the **true HDR original** of each *placed* photo (not the 2048
+  `MLS for download` copy) from the photo-sync-worker's bearer-gated `GET /render/<jobId>/<photoId>`
+  (`photo-source.js#preparePrint` -> blob URLs -> renderer `setPrintMode`); the worker streams the file from the photo's
+  `HDR Photos`/`MLS` Dropbox path (no fallback to a smaller render). Needs `photoSyncUrl` in `config.js` and the worker
+  secret `RENDER_TOKEN` = the FSB admin token. A failed fetch aborts the export (never a soft PDF).
+- A **client's** Confirm & Submit on a connected sheet doesn't build/upload a PDF (no token to fetch the originals); it only
+  notifies the studio, who exports. `notify-submission` shows the "Download print PDF" button only when the PDF file exists,
+  otherwise tells the studio to use the admin link (**redeploy that edge function** after editing it). An admin's submit still
+  builds and uploads the PDF.
+- Not built: the delivery-page entry point, and the order/payment flow (when it exists, gate `/render` on "paid" too).
 
 **Full one-time SQL schema + RLS policies live in `NOTES.md` §7** — run it once
 in the Supabase SQL Editor. That is the authoritative copy; keep it there, not
@@ -254,9 +281,21 @@ the static host has them. Never commit those directories.
   URL + **publishable** anon key (safe in client code, gated by RLS). The
   `service_role` key, `ADMIN_TOKEN`, and `RESEND_API_KEY` live only in Supabase
   Edge Function Secrets.
+- **A sheet row is created lazily, and only once it holds real content** (`FSB_V2.hasContent`: typed text, a library
+  photo, or a placed photo). Opening the bare root URL and only changing the theme leaves NO row (the top bar says
+  "Not saved yet"); an explicit Save, a headshot/logo upload and Confirm & Submit force creation. This exists because
+  empty drafts kept appearing in Franky's admin list from people just opening the root URL and touching the theme.
+  Each new row records where it came from in `data.createdVia` (`root` / `notfound-card` / `admin-new` / `duplicate`)
+  and, for root visits, `createdRef` (the referrer's hostname) -- so a stray draft can be traced. `createdVia`/`createdRef`
+  are in store.js `DATA_KEYS`, so whole-blob saves keep them.
 - **Last-write-wins** on the whole project document — fine for one client at a
   time; two people on the same link can clobber each other. No optimistic
   concurrency yet.
+- **The admin page's recycle bin** (`admin.js`): "Delete forever" / "Empty bin" ask for confirmation in an in-app dialog, and
+  `store.purgeProject` removes EVERY file under `<id>/` (storage.list caps at 100 per call, so it pages) before deleting the row,
+  and refuses to say "done" if the row survived. `util.toast` creates its own container, because the admin page has none --
+  before that every admin-page message (errors included) was silently dropped, which made a failed delete look like "nothing
+  happened". `emptyTrash` tries every sheet and reports how many failed.
 - **Delete is soft** → recycle bin (`deletedAt` in `data`). Permanent purge needs
   the `delete` grant/policy from the `NOTES.md` schema block.
 - Confirming a sheet (`confirmed: true`) makes the editor **read-only**; an admin

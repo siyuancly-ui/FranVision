@@ -76,6 +76,9 @@ const formState = require('./form-state.js');
 const KNOWN_COMPONENT_FOLDER_NAMES = new Set([
   '0 RAW', 'Revisions', 'Home Report', 'Local Report', 'MLS', 'HDR Photos',
   'Floorplan', 'Virtual Staging', 'Feature Sheets', 'Video', 'VLOG',
+  // Nested under 'HDR Photos' (added 2026-09-18) but still a job-own
+  // subfolder someone could mis-pick as the job folder.
+  'Callout',
 ]);
 
 function looksLikeAComponentFolderNotAJobFolder(jobFolderPath) {
@@ -105,15 +108,21 @@ const LOCAL_ONLY_FILENAMES = new Set([
 const LOCAL_ONLY_FOLDER_NAMES = new Set(['Shoot Info']);
 
 // The mirror image of LOCAL_ONLY_FOLDER_NAMES: a folder that lives on
-// DROPBOX ONLY and must never be touched by Push or Pull. Currently just
-// dropbox-sync.js's 'MLS for download' -- Photo Sync Worker's derived MLS
+// DROPBOX ONLY and must never be touched by Push or Pull. Currently
+// dropbox-sync.js's 'MLS for download' and 'Cover&Closing' (2026-09-18:
+// staff hand-pick the delivery page's cover/closing photos straight in
+// Dropbox, never locally). 'MLS for download' is Photo Sync Worker's derived MLS
 // delivery renders (see its own comment there), pure derivatives of
 // what's already in 'HDR Photos' (or 'MLS', for jobs from before the
 // 2026-09-12 rename), regenerable, and never meant to exist on local
 // disk. Push must never upload into it (nothing ever will locally); Pull
 // must never download it (it would just be a redundant second copy of
 // every photo, at Dropbox's expense too).
-const DROPBOX_ONLY_FOLDER_NAMES = new Set([dropboxSync.MLS_FOR_DOWNLOAD_SUBFOLDER]);
+// Dropbox-only FILES (2026-09-18): Tour Link.txt -- created/removed on
+// Dropbox by dropbox-sync.js, edited there, never present locally. Skipped
+// by Push (nothing local) and Pull (would otherwise download it).
+const DROPBOX_ONLY_FILENAMES = new Set([dropboxSync.TOUR_LINK_FILENAME]);
+const DROPBOX_ONLY_FOLDER_NAMES = new Set([dropboxSync.MLS_FOR_DOWNLOAD_SUBFOLDER, dropboxSync.COVER_CLOSING_SUBFOLDER]);
 
 // Dropbox limits: a single files/upload call must be under 150 MiB; above
 // that, an upload session (start/append/finish) is required, and each
@@ -127,7 +136,7 @@ const DEFAULT_CHUNK_SIZE = 8 * 1024 * 1024; // multiple of 4 MiB
 function isExcludedName(name) {
   return name === '.DS_Store' || name === MANIFEST_FILENAME || name.startsWith('~$') ||
     LOCAL_ONLY_FILENAMES.has(name) || LOCAL_ONLY_FOLDER_NAMES.has(name) ||
-    DROPBOX_ONLY_FOLDER_NAMES.has(name);
+    DROPBOX_ONLY_FOLDER_NAMES.has(name) || DROPBOX_ONLY_FILENAMES.has(name);
 }
 
 // listDropboxFiles() below deals in relative FILE paths (e.g. 'MLS for
@@ -565,6 +574,7 @@ module.exports = {
   LOCAL_ONLY_FILENAMES,
   LOCAL_ONLY_FOLDER_NAMES,
   DROPBOX_ONLY_FOLDER_NAMES,
+  DROPBOX_ONLY_FILENAMES,
   KNOWN_COMPONENT_FOLDER_NAMES,
   DEFAULT_SINGLE_SHOT_MAX_BYTES,
   DEFAULT_CHUNK_SIZE,

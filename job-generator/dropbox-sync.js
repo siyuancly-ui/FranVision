@@ -52,6 +52,30 @@ const TEMPLATE_NAME = 'FranVision Job';
 // immediately, instead of waiting for the first photo to sync.
 const MLS_FOR_DOWNLOAD_SUBFOLDER = 'MLS for download';
 
+// The second Dropbox-only folder (added 2026-09-18): where staff drop the
+// 1-2 photos hand-picked (from the All-in-One gallery) as the delivery
+// page's cover + closing shots -- delivery-page/CLAUDE.md's "Manual photo
+// overrides are Dropbox folders" decision (lowest filename = cover, highest
+// = closing). Same shape as 'MLS for download': top-level, sibling to
+// 'HDR Photos', never created on local disk (the picking happens in
+// Dropbox, nothing ever populates it locally), excluded from Push/Pull
+// via file-sync.js's DROPBOX_ONLY_FOLDER_NAMES. The name must match
+// photo-sync-worker's SYNC_FOLDERS/LARGE_THUMB_FOLDERS entry exactly.
+// (Its sibling override, 'Callout', is NOT Dropbox-only -- it's a normal
+// component folder nested under 'HDR Photos', see folder-builder.js.)
+const COVER_CLOSING_SUBFOLDER = 'Cover&Closing';
+
+// The one well-known file at a job folder's root that photo-sync-worker's
+// tour-link-sync.js reads (its TOUR_LINK_FILENAME) -- its trimmed text
+// becomes the delivery page's tourUrl. DROPBOX-ONLY like the two folders
+// above (2026-09-18): created empty on Dropbox when 3D Virtual Tour is
+// ordered, removed when 3D is unchecked, never present locally, excluded
+// from Push/Pull (file-sync.js's DROPBOX_ONLY_FILENAMES). Staff paste the
+// link straight into it on Dropbox. Created EMPTY on purpose -- an empty
+// file just means "no tour yet", a placeholder sentence would be published
+// as the URL.
+const TOUR_LINK_FILENAME = 'Tour Link.txt';
+
 function isConfigured() {
   return !!(
     process.env.DROPBOX_APP_KEY &&
@@ -340,11 +364,11 @@ async function updateJobFoldersOnDropbox({ folderName, foldersToCreate, foldersT
 // "already exists" response is success, not an error. Deliberately
 // separate from syncJobFolderToDropbox/folder-builder.js -- this folder is
 // Dropbox-only and not part of the job's normal component-folder list.
-async function ensureMlsForDownloadFolder({ folderName, client }) {
+async function ensureDropboxOnlyFolder({ folderName, subfolder, client }) {
   if (!isConfigured()) {
     return { attempted: false, success: false, skipped: true, error: 'Dropbox is not configured -- local job creation is unaffected.' };
   }
-  const dropboxPath = '/' + folderName + '/' + MLS_FOR_DOWNLOAD_SUBFOLDER;
+  const dropboxPath = '/' + folderName + '/' + subfolder;
   try {
     const dbx = client || getClient();
     await dbx.filesCreateFolderV2({ path: dropboxPath });
@@ -357,18 +381,58 @@ async function ensureMlsForDownloadFolder({ folderName, client }) {
   }
 }
 
-// Dropbox shared-link URLs default to a trailing `dl=0`, which opens
-// Dropbox's own preview page (client has to find and click a Download
-// button there); swapping it to `dl=1` makes the link start downloading
-// immediately when opened -- one fewer click for a client who just wants
-// the files (2026-09-16, user request). Only ever touches a `dl=0` query
-// param specifically -- a URL without one (e.g. a test fixture, or some
-// future Dropbox link shape without it) is returned unchanged rather than
-// having a param invented for it.
-function toDirectDownloadUrl(url) {
-  if (typeof url !== 'string') return url;
-  return url.replace(/([?&]dl=)0(?=&|$)/, '$11');
+async function ensureMlsForDownloadFolder({ folderName, client }) {
+  return ensureDropboxOnlyFolder({ folderName, subfolder: MLS_FOR_DOWNLOAD_SUBFOLDER, client });
 }
+
+// Pre-creates the empty top-level 'Cover&Closing' folder -- see
+// COVER_CLOSING_SUBFOLDER above. Same never-throw / idempotent contract.
+async function ensureCoverClosingFolder({ folderName, client }) {
+  return ensureDropboxOnlyFolder({ folderName, subfolder: COVER_CLOSING_SUBFOLDER, client });
+}
+
+// Creates the empty Tour Link.txt at the job root -- ONLY if it doesn't
+// exist yet (mode:add, no autorename: an existing file, e.g. a link already
+// pasted in, comes back as a conflict = success, never overwritten).
+// Returns { success, created }. Never throws.
+async function ensureTourLinkFile({ folderName, client }) {
+  if (!isConfigured()) {
+    return { attempted: false, success: false, skipped: true, error: 'Dropbox is not configured -- local job creation is unaffected.' };
+  }
+  const dropboxPath = '/' + folderName + '/' + TOUR_LINK_FILENAME;
+  try {
+    const dbx = client || getClient();
+    await dbx.filesUpload({ path: dropboxPath, contents: Buffer.alloc(0), mode: { '.tag': 'add' }, autorename: false });
+    return { attempted: true, success: true, created: true, dropboxPath };
+  } catch (err) {
+    if (isFolderAlreadyExistsError(err)) {
+      return { attempted: true, success: true, created: false, dropboxPath }; // already there -- leave its content alone
+    }
+    return { attempted: true, success: false, dropboxPath, error: extractDropboxErrorMessage(err) };
+  }
+}
+
+// Deletes Tour Link.txt (3D Virtual Tour was unchecked) -- takes any
+// pasted link with it, per the explicit request. Not-found is success.
+async function removeTourLinkFile({ folderName, client }) {
+  if (!isConfigured()) {
+    return { attempted: false, success: false, skipped: true, error: 'Dropbox is not configured -- local update is unaffected.' };
+  }
+  const dropboxPath = '/' + folderName + '/' + TOUR_LINK_FILENAME;
+  try {
+    const dbx = client || getClient();
+    await dbx.filesDeleteV2({ path: dropboxPath });
+    return { attempted: true, success: true, removed: true, dropboxPath };
+  } catch (err) {
+    if (isPathNotFoundError(err)) return { attempted: true, success: true, removed: false, dropboxPath };
+    return { attempted: true, success: false, dropboxPath, error: extractDropboxErrorMessage(err) };
+  }
+}
+
+// NOTE on `dl=`: the URL is returned exactly as Dropbox gives it, i.e. with a
+// trailing `dl=0` (opens Dropbox's preview page). From 2026-09-16 to
+// 2026-09-19 it was rewritten to `dl=1` (start the download immediately);
+// reverted at Franky's request -- do not re-add a rewrite without asking.
 
 // Best-effort: returns a public "anyone with the link can view" Dropbox
 // shared link for dropboxPath, creating one if none exists yet, or
@@ -385,12 +449,12 @@ async function createSharedLink({ dropboxPath, client }) {
     const dbx = client || getClient();
     try {
       const result = await dbx.sharingCreateSharedLinkWithSettings({ path: dropboxPath });
-      return { success: true, url: toDirectDownloadUrl(result.result.url) };
+      return { success: true, url: result.result.url };
     } catch (err) {
       if (!isSharedLinkAlreadyExistsError(err)) throw err;
       const listed = await dbx.sharingListSharedLinks({ path: dropboxPath, direct_only: true });
       const existing = listed.result && listed.result.links && listed.result.links[0];
-      if (existing && existing.url) return { success: true, url: toDirectDownloadUrl(existing.url) };
+      if (existing && existing.url) return { success: true, url: existing.url };
       return { success: false, error: 'Shared link already exists but could not be retrieved.' };
     }
   } catch (err) {
@@ -503,6 +567,8 @@ async function jobIdExistsOnDropbox(jobId, { client } = {}) {
 module.exports = {
   TEMPLATE_NAME,
   MLS_FOR_DOWNLOAD_SUBFOLDER,
+  COVER_CLOSING_SUBFOLDER,
+  TOUR_LINK_FILENAME,
   isConfigured,
   getClient,
   expandFolderPaths,
@@ -511,10 +577,12 @@ module.exports = {
   isPropertyGroupAlreadyExistsError,
   isSharedLinkAlreadyExistsError,
   isPathNotFoundError,
-  toDirectDownloadUrl,
   syncJobFolderToDropbox,
   updateJobFoldersOnDropbox,
   ensureMlsForDownloadFolder,
+  ensureCoverClosingFolder,
+  ensureTourLinkFile,
+  removeTourLinkFile,
   createSharedLink,
   deleteJobFolderFromDropbox,
   renameJobFolderOnDropbox,

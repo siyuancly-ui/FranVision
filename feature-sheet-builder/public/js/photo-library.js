@@ -23,7 +23,7 @@
     // The library adapts to the photo source: an upload source shows the
     // upload button + dropzone + per-photo delete; a read-only source
     // (e.g. a Wix gallery) shows just the scrollable grid.
-    var canUpload = !!(src.supportsUpload && src.supportsUpload());
+    var canUpload = !!(src.supportsUpload && src.supportsUpload(app.project));
 
     var head = el('div', { class: 'fsb-lib-head' }, [
       el('div', { class: 'fsb-lib-title' }, [

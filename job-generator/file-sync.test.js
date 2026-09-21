@@ -96,6 +96,15 @@ test('isExcludedName: the legacy "Shoot Info" folder is still excluded', () => {
   assert.strictEqual(isExcludedName('Shoot Info'), true);
 });
 
+test('Dropbox-only "Cover&Closing" (hand-picked delivery-page cover/closing photos) is excluded from Push/Pull like MLS for download', () => {
+  assert.strictEqual(isExcludedName('Cover&Closing'), true);
+  assert.strictEqual(isUnderExcludedTopFolder('Cover&Closing/DSC_0001.jpg'), true);
+});
+
+test('Dropbox-only Tour Link.txt is excluded from Push/Pull (never synced to local)', () => {
+  assert.strictEqual(isExcludedName('Tour Link.txt'), true);
+});
+
 test('isExcludedName: the Dropbox-only "MLS for download" folder is excluded', () => {
   assert.strictEqual(isExcludedName('MLS for download'), true);
 });

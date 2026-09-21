@@ -196,15 +196,21 @@
     }
 
     if (candidates.length === 0) {
-      const blockedMessages = [...M]
-        .map((id) => services[id])
-        .filter((svc) => svc && svc.standaloneAllowed === false)
-        .map((svc) => svc.restrictionMessage || svc.displayName + ' is not available standalone.');
+      const blockedIds = [...M].filter((id) => services[id] && services[id].standaloneAllowed === false);
+      const blockedMessages = blockedIds.map((id) => {
+        const svc = services[id];
+        return svc.restrictionMessage || svc.displayName + ' is not available standalone.';
+      });
       return {
         status: 'invalid',
         reason: blockedMessages.length
           ? blockedMessages.join(' ')
           : 'No valid pricing combination found for the selected services.',
+        // Which service ids the reason text above is actually about -- lets a caller
+        // (e.g. the pricing advisor) tell "genuinely new problem" apart from "this
+        // service was always standalone-disallowed and just happened to be on this
+        // particular order too", which the joined English sentence alone can't do.
+        blockedIds,
         notes,
       };
     }

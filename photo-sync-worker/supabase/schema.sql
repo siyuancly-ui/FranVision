@@ -267,3 +267,36 @@ revoke all on function public.videos_upsert(text, jsonb)      from public, anon,
 revoke all on function public.videos_mark_pending(text, text) from public, anon, authenticated;
 grant execute on function public.videos_upsert(text, jsonb)      to service_role;
 grant execute on function public.videos_mark_pending(text, text) to service_role;
+
+-- ===========================================================================
+-- Photo render retry (delivery-copy / large-render auto-retry)
+-- ===========================================================================
+-- 2026-09-16: processPhotoBatch's delivery-copy pass ("MLS for download") and
+-- large-render pass (Cover/Closing/Callout/Local Report) are both
+-- best-effort -- a failure is logged and the photo's small thumbnail/Gallery
+-- record is still saved, but nothing used to retry the failed render. Found
+-- in real use twice (186 Test Dr, then 48 Red Ash Dr): a handful of MLS
+-- deliverables silently never regenerated. This table + the 2-min cron's
+-- new render-retry-poll message close that gap, the same shape as
+-- video_sync_pending/processVideoPoll above.
+
+-- ---------------------------------------------------------------------------
+-- 7. photo_render_pending -- one row per failed delivery-copy/large render
+-- ---------------------------------------------------------------------------
+create table if not exists public.photo_render_pending (
+  id           bigserial primary key,
+  project_id   text not null,
+  kind         text not null check (kind in ('download_copy', 'large')),
+  source_path  text not null,   -- Dropbox path of the already-synced source photo
+  dest_path    text,            -- download_copy only: Dropbox path to (re)write the render to
+  photo_id     text,            -- large only: photoId to upload the render under + upsert hasLarge
+  filename     text,            -- kept for logging/debugging only
+  attempts     integer not null default 0,
+  last_error   text,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now(),
+  unique (project_id, kind, source_path)
+);
+
+alter table public.photo_render_pending enable row level security;
+-- No policies => anon/authenticated get nothing. service_role bypasses RLS.

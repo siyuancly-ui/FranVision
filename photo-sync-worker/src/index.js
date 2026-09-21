@@ -10,8 +10,10 @@ import { verifyDropboxSignature, timingSafeEqual } from './webhook.js';
 import { createDropbox } from './dropbox.js';
 import { createSupabase } from './supabase.js';
 import { createStream } from './stream.js';
-import { runDelta, processPhotoBatch, runBackfill } from './sync.js';
+import { runDelta, processPhotoBatch, runBackfill, processRenderRetryPoll } from './sync.js';
 import { processVideoBatch, processVideoPoll } from './video-sync.js';
+import { processTourLinkBatch } from './tour-link-sync.js';
+import { CORS, parseRenderPath, handleRender } from './render.js';
 
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } });
@@ -72,6 +74,15 @@ export default {
       return new Response('', { status: 200 });
     }
 
+    // 2048 render of one synced photo for the Feature Sheet Builder's PDF
+    // export (token-gated; see render.js)
+    if (pathname.startsWith('/render/')) {
+      if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
+      const ids = parseRenderPath(pathname);
+      if (request.method !== 'GET' || !ids) return json({ error: 'not found' }, 404);
+      return handleRender(request, env, makeDeps(env), ids, log);
+    }
+
     // Manual backfill (cursor-independent)
     if (request.method === 'POST' && pathname === '/admin/backfill') {
       if (!adminAuthed(request, env)) return json({ error: 'unauthorized' }, 401);
@@ -115,8 +126,12 @@ export default {
           await processVideoBatch(env, deps, body);
         } else if (body.type === 'video-poll') {
           await processVideoPoll(env, deps);
+        } else if (body.type === 'tour-link-batch') {
+          await processTourLinkBatch(env, deps, body);
         } else if (body.type === 'backfill') {
           await runBackfill(env, deps, { jobId: body.jobId || null });
+        } else if (body.type === 'render-retry-poll') {
+          await processRenderRetryPoll(env, deps);
         } else {
           log({ evt: 'queue_unknown_type', body });
         }
@@ -138,6 +153,11 @@ export default {
     ctx.waitUntil(
       env.SYNC_QUEUE.send({ type: 'video-poll' }).catch((err) =>
         log({ evt: 'cron_video_poll_enqueue_failed', error: String(err && err.message || err) }),
+      ),
+    );
+    ctx.waitUntil(
+      env.SYNC_QUEUE.send({ type: 'render-retry-poll' }).catch((err) =>
+        log({ evt: 'cron_render_retry_poll_enqueue_failed', error: String(err && err.message || err) }),
       ),
     );
     void event;

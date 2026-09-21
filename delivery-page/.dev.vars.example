@@ -1,0 +1,9 @@
+# Copy to .dev.vars (gitignored) and fill in for local `wrangler dev` runs.
+# Production uses `wrangler secret put` for each of these -- never a file.
+
+# Same Supabase project photo-sync-worker writes to.
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+
+# Guards POST /admin/jobs/<jobId> (sets address/tourUrl/tourType).
+ADMIN_TOKEN=

@@ -222,6 +222,45 @@ function buildEventTitle({ order, clientName, photographerName }) {
   return buildPackageCode(order) + '_' + (clientName || '') + '_' + photographerCode(photographerName);
 }
 
+// ---- Draft calendar file name (2026-09-19) ---------------------------------
+// Save as Draft no longer creates a job folder -- it drops ONE .ics into the
+// Job Root Folder itself, so the file needs a name that tells drafts apart:
+//   <event title> <shoot date> <short address>.ics
+//   e.g.  S+V_Jane_F 2026.9.25 12 Cozens.ics
+// The event title is buildEventTitle()'s existing package_client_photographer
+// rule; the date uses the folder-name style (no leading zeros); the short
+// address is house number + street NAME only (street type / trailing
+// direction dropped) so it stays short. The date + address are what keep two
+// drafts for the same client + package apart.
+const STREET_TYPES = new Set([
+  'st', 'street', 'ave', 'avenue', 'av', 'rd', 'road', 'dr', 'drive', 'blvd', 'boulevard', 'ct', 'crt', 'court',
+  'cres', 'crescent', 'ln', 'lane', 'way', 'pl', 'place', 'terr', 'terrace', 'cir', 'circle', 'hwy', 'pkwy',
+  'parkway', 'trl', 'trail', 'gate', 'gt', 'sq', 'square', 'common', 'cmn', 'grv', 'grove', 'hts', 'heights',
+  'path', 'walk', 'line', 'row', 'mews', 'gdns', 'gardens', 'crossing', 'xing',
+]);
+const DIRECTIONS = new Set(['n', 'e', 's', 'w', 'ne', 'nw', 'se', 'sw']);
+
+// "12 Cozens Dr, Markham" -> "12 Cozens"; "394 Centre St E, Richmond Hill" ->
+// "394 Centre". Never strips the last remaining word (so "12 Park St" keeps
+// "Park", and a bare "Main" stays "Main").
+function shortAddress(address) {
+  const firstPart = String(address || '').split(',')[0].trim();
+  const tokens = firstPart.split(/\s+/).filter(Boolean);
+  const bare = (t) => t.replace(/\./g, '').toLowerCase();
+  while (tokens.length > 2 && DIRECTIONS.has(bare(tokens[tokens.length - 1]))) tokens.pop();
+  if (tokens.length > 2 && STREET_TYPES.has(bare(tokens[tokens.length - 1]))) tokens.pop();
+  return tokens.join(' ');
+}
+
+function buildDraftCalendarFilename({ order, clientName, photographerName, shootDate, address }) {
+  const parts = [
+    buildEventTitle({ order, clientName, photographerName }),
+    sanitize.formatDateForFolderName(shootDate),
+    shortAddress(address),
+  ].filter((x) => x && String(x).trim());
+  return sanitize.sanitizeSegment(parts.join(' '), 'Shoot Schedule') + '.ics';
+}
+
 // `images` is [{ filename, dataBase64 }] -- each becomes a base64 ATTACH
 // on the VEVENT. DESCRIPTION carries just the notes text.
 function buildIcs({ jobId, clientName, address, shootDate, shootTime, notes, images, durationMinutes, order, photographerName }) {
@@ -267,7 +306,12 @@ function buildIcs({ jobId, clientName, address, shootDate, shootTime, notes, ima
 // Date (needed for DTSTART -- a caller like draft-store.js may keep Shoot
 // Date blank on purpose but can't ask for a calendar file without one),
 // or invalid image(s). Also removes any legacy "Shoot Info" subfolder.
-function writeCalendarFile(jobFolderAbsolutePath, { jobId, clientName, address, shootDate, shootTime, notes, images, durationMinutes, order, photographerName }) {
+//
+// `writeOpts.filename` (default 'Shoot Schedule.ics') lets a caller write a
+// differently-named file into the folder -- used for the draft calendar file
+// dropped straight into the Job Root Folder (see buildDraftCalendarFilename).
+function writeCalendarFile(jobFolderAbsolutePath, { jobId, clientName, address, shootDate, shootTime, notes, images, durationMinutes, order, photographerName }, writeOpts) {
+  const filename = (writeOpts && writeOpts.filename) || ICS_FILENAME;
   if (!shootTime || !String(shootTime).trim()) return null;
   if (!validate.isValidShootTime(shootTime)) {
     throw new Error('Shoot Time must be in HH:MM 24-hour format.');
@@ -301,12 +345,14 @@ function writeCalendarFile(jobFolderAbsolutePath, { jobId, clientName, address, 
   });
 
   const icsContent = buildIcs({ jobId, clientName, address, shootDate, shootTime, notes, images: normImages, durationMinutes, order, photographerName });
-  const icsPath = path.join(jobFolderAbsolutePath, ICS_FILENAME);
+  const icsPath = path.join(jobFolderAbsolutePath, filename);
   fs.writeFileSync(icsPath, icsContent, 'utf8');
 
-  fs.rmSync(path.join(jobFolderAbsolutePath, LEGACY_FOLDER_NAME), { recursive: true, force: true });
+  if (filename === ICS_FILENAME) {
+    fs.rmSync(path.join(jobFolderAbsolutePath, LEGACY_FOLDER_NAME), { recursive: true, force: true });
+  }
 
-  return { icsPath, icsFilename: ICS_FILENAME, attachedImages };
+  return { icsPath, icsFilename: filename, attachedImages };
 }
 
 // Reads a job's already-attached images back as [{ filename, dataBase64 }]
@@ -315,11 +361,12 @@ function writeCalendarFile(jobFolderAbsolutePath, { jobId, clientName, address, 
 // folder. Used to re-show a draft's images (draft-store.js) and to
 // PRESERVE a job's images across an update (server.js), since the update
 // form has no "load existing job" step.
-function readExistingImages(jobFolderAbsolutePath) {
+// The ATTACH images of ONE .ics file as [{ filename, dataBase64 }]; [] if the
+// file doesn't exist. (readExistingImages() below adds the legacy folder.)
+function readImagesFromIcsFile(icsPath) {
   const byName = new Map();
-
   try {
-    const unfolded = unfoldIcs(fs.readFileSync(path.join(jobFolderAbsolutePath, ICS_FILENAME), 'utf8'));
+    const unfolded = unfoldIcs(fs.readFileSync(icsPath, 'utf8'));
     for (const line of unfolded.split(/\r?\n/)) {
       if (!/^ATTACH[;:]/.test(line)) continue;
       const colon = line.indexOf(':');
@@ -331,6 +378,12 @@ function readExistingImages(jobFolderAbsolutePath) {
       byName.set(filename, { filename, dataBase64: data });
     }
   } catch (err) { /* no .ics yet */ }
+  return Array.from(byName.values());
+}
+
+function readExistingImages(jobFolderAbsolutePath) {
+  const byName = new Map();
+  for (const img of readImagesFromIcsFile(path.join(jobFolderAbsolutePath, ICS_FILENAME))) byName.set(img.filename, img);
 
   try {
     const dir = path.join(jobFolderAbsolutePath, LEGACY_FOLDER_NAME);
@@ -365,6 +418,9 @@ module.exports = {
   buildIcs,
   writeCalendarFile,
   readExistingImages,
+  readImagesFromIcsFile,
+  shortAddress,
+  buildDraftCalendarFilename,
   mergeImages,
   buildEventTitle,
   buildPackageCode,

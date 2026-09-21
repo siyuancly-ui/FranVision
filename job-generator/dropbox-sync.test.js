@@ -413,6 +413,68 @@ await testAsync('ensureMlsForDownloadFolder: never throws -- a real failure come
   });
 });
 
+await testAsync('ensureCoverClosingFolder: creates the top-level Cover&Closing folder (Dropbox-only)', async () => {
+  const created = [];
+  const fakeDbx = { filesCreateFolderV2: async ({ path }) => { created.push(path); return { result: {} }; } };
+  await withFakeCredentials(async () => {
+    const result = await dropboxSync.ensureCoverClosingFolder({ folderName: 'Job', client: fakeDbx });
+    assert.strictEqual(result.success, true);
+    assert.deepStrictEqual(created, ['/Job/Cover&Closing']);
+  });
+});
+
+await testAsync('ensureCoverClosingFolder: already-exists is success; skips cleanly when not configured', async () => {
+  const fakeDbx = { filesCreateFolderV2: async () => { const e = new Error('c'); e.error = { error_summary: 'path/conflict/folder/..' }; throw e; } };
+  await withFakeCredentials(async () => {
+    assert.strictEqual((await dropboxSync.ensureCoverClosingFolder({ folderName: 'Job', client: fakeDbx })).success, true);
+  });
+  const saved = process.env.DROPBOX_APP_KEY;
+  delete process.env.DROPBOX_APP_KEY;
+  try {
+    assert.strictEqual((await dropboxSync.ensureCoverClosingFolder({ folderName: 'Job' })).skipped, true);
+  } finally { if (saved !== undefined) process.env.DROPBOX_APP_KEY = saved; }
+});
+
+await testAsync('ensureTourLinkFile: uploads an EMPTY Tour Link.txt at the job root, add-mode (never overwrite)', async () => {
+  const uploads = [];
+  const fakeDbx = { filesUpload: async (arg) => { uploads.push(arg); return { result: {} }; } };
+  await withFakeCredentials(async () => {
+    const r = await dropboxSync.ensureTourLinkFile({ folderName: 'Job', client: fakeDbx });
+    assert.strictEqual(r.created, true);
+    assert.strictEqual(uploads[0].path, '/Job/Tour Link.txt');
+    assert.strictEqual(uploads[0].contents.length, 0);
+    assert.deepStrictEqual(uploads[0].mode, { '.tag': 'add' });
+    assert.strictEqual(uploads[0].autorename, false);
+  });
+});
+
+await testAsync('ensureTourLinkFile: an existing file (conflict) is success, created:false; skips when unconfigured; failure never throws', async () => {
+  await withFakeCredentials(async () => {
+    const conflict = { filesUpload: async () => { const e = new Error('c'); e.error = { error_summary: 'path/conflict/file/..' }; throw e; } };
+    const r = await dropboxSync.ensureTourLinkFile({ folderName: 'Job', client: conflict });
+    assert.strictEqual(r.success, true); assert.strictEqual(r.created, false);
+    const boom = { filesUpload: async () => { const e = new Error('b'); e.error = { error_summary: 'internal_error/..' }; throw e; } };
+    assert.strictEqual((await dropboxSync.ensureTourLinkFile({ folderName: 'Job', client: boom })).success, false);
+  });
+  const saved = process.env.DROPBOX_APP_KEY; delete process.env.DROPBOX_APP_KEY;
+  try { assert.strictEqual((await dropboxSync.ensureTourLinkFile({ folderName: 'Job' })).skipped, true); }
+  finally { if (saved !== undefined) process.env.DROPBOX_APP_KEY = saved; }
+});
+
+await testAsync('removeTourLinkFile: deletes /<job>/Tour Link.txt; not-found is success; real failure is success:false', async () => {
+  const deleted = [];
+  await withFakeCredentials(async () => {
+    const ok = { filesDeleteV2: async ({ path }) => { deleted.push(path); return { result: {} }; } };
+    assert.strictEqual((await dropboxSync.removeTourLinkFile({ folderName: 'Job', client: ok })).removed, true);
+    assert.deepStrictEqual(deleted, ['/Job/Tour Link.txt']);
+    const gone = { filesDeleteV2: async () => { const e = new Error('n'); e.error = { error_summary: 'path_lookup/not_found/..' }; throw e; } };
+    const r = await dropboxSync.removeTourLinkFile({ folderName: 'Job', client: gone });
+    assert.strictEqual(r.success, true); assert.strictEqual(r.removed, false);
+    const boom = { filesDeleteV2: async () => { const e = new Error('b'); e.error = { error_summary: 'internal_error/..' }; throw e; } };
+    assert.strictEqual((await dropboxSync.removeTourLinkFile({ folderName: 'Job', client: boom })).success, false);
+  });
+});
+
 // ---- createSharedLink (delivery-email.js's per-line link resolver) ----
 
 await testAsync('createSharedLink: fails cleanly when not configured', async () => {
@@ -460,42 +522,21 @@ await testAsync('createSharedLink: never throws -- a real failure comes back as 
   });
 });
 
-// ---- toDirectDownloadUrl / createSharedLink's dl=0 -> dl=1 rewrite
-// (2026-09-16: opening the link should start the download immediately
-// instead of landing on Dropbox's own preview page) ----
+// ---- createSharedLink leaves Dropbox's URL untouched (dl=0). It was
+// rewritten to dl=1 from 2026-09-16 to 2026-09-19; reverted at Franky's request.
 
-test('toDirectDownloadUrl: rewrites a trailing dl=0', () => {
-  assert.strictEqual(
-    dropboxSync.toDirectDownloadUrl('https://www.dropbox.com/scl/fo/abc123/xyz?rlkey=xyz&dl=0'),
-    'https://www.dropbox.com/scl/fo/abc123/xyz?rlkey=xyz&dl=1',
-  );
-});
-
-test('toDirectDownloadUrl: rewrites dl=0 as the only query param', () => {
-  assert.strictEqual(dropboxSync.toDirectDownloadUrl('https://www.dropbox.com/s/abc?dl=0'), 'https://www.dropbox.com/s/abc?dl=1');
-});
-
-test('toDirectDownloadUrl: leaves a URL with no dl param alone rather than inventing one', () => {
-  assert.strictEqual(dropboxSync.toDirectDownloadUrl('https://dropbox.com/fake/Job/HDR Photos'), 'https://dropbox.com/fake/Job/HDR Photos');
-});
-
-test('toDirectDownloadUrl: non-string input is returned as-is rather than throwing', () => {
-  assert.strictEqual(dropboxSync.toDirectDownloadUrl(null), null);
-  assert.strictEqual(dropboxSync.toDirectDownloadUrl(undefined), undefined);
-});
-
-await testAsync('createSharedLink: a fresh link\'s dl=0 is rewritten to dl=1', async () => {
+await testAsync('createSharedLink: a fresh link keeps Dropbox\'s trailing dl=0 (no rewrite)', async () => {
   const fakeDbx = {
     sharingCreateSharedLinkWithSettings: async ({ path }) => ({ result: { url: 'https://dropbox.com/scl' + path + '?rlkey=abc&dl=0' } }),
   };
   await withFakeCredentials(async () => {
     const result = await dropboxSync.createSharedLink({ dropboxPath: '/Job/HDR Photos', client: fakeDbx });
     assert.strictEqual(result.success, true);
-    assert.strictEqual(result.url, 'https://dropbox.com/scl/Job/HDR Photos?rlkey=abc&dl=1');
+    assert.strictEqual(result.url, 'https://dropbox.com/scl/Job/HDR Photos?rlkey=abc&dl=0');
   });
 });
 
-await testAsync('createSharedLink: a reused existing link\'s dl=0 is rewritten to dl=1 too', async () => {
+await testAsync('createSharedLink: a reused existing link keeps its dl=0 too', async () => {
   const fakeDbx = {
     sharingCreateSharedLinkWithSettings: async () => { const e = new Error('x'); e.error = { error_summary: 'shared_link_already_exists/..' }; throw e; },
     sharingListSharedLinks: async () => ({ result: { links: [{ url: 'https://dropbox.com/existing?dl=0' }] } }),
@@ -503,7 +544,7 @@ await testAsync('createSharedLink: a reused existing link\'s dl=0 is rewritten t
   await withFakeCredentials(async () => {
     const result = await dropboxSync.createSharedLink({ dropboxPath: '/Job/HDR Photos', client: fakeDbx });
     assert.strictEqual(result.success, true);
-    assert.strictEqual(result.url, 'https://dropbox.com/existing?dl=1');
+    assert.strictEqual(result.url, 'https://dropbox.com/existing?dl=0');
   });
 });
 

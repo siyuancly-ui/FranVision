@@ -53,17 +53,37 @@
 
     // Sub-folders (directly under a job folder) whose images get mirrored.
     // Comma-separated, case-insensitive, surrounding spaces trimmed.
-    // "MLS" was job-generator's folder name for this content until
-    // 2026-09-12, when it was renamed to "HDR Photos" (pure naming
-    // change there -- see job-generator/CLAUDE.md's "MLS renamed to HDR
-    // Photos" decision). Both names are listed here so jobs created
-    // before and after that rename keep syncing -- do not drop "MLS"
-    // until no job with the old folder name is still in active use.
-    "SYNC_FOLDERS": "MLS,HDR Photos,Virtual Staging,Floorplan,Local Report",
+    // "MLS" was renamed to "HDR Photos" by Job Generator on 2026-09-12 --
+    // both names stay listed so pre-rename jobs (still named "MLS" on
+    // Dropbox) keep syncing alongside new "HDR Photos" jobs.
+    //
+    // "Cover&Closing" / "Callout" are delivery-page's manual-override
+    // folders (see delivery-page/CLAUDE.md and
+    // franvision-delivery-page-design-spec.md) -- Job Generator doesn't
+    // create these by default yet (deferred), but syncing them here means a
+    // manually-created Dropbox folder with the same name works immediately,
+    // no photo-sync-worker deploy needed once job-generator catches up.
+    // "Callout" is expected to usually be nested under "HDR Photos"
+    // (matchAncestorFolder finds it at any depth) -- "Cover&Closing" is
+    // top-level, a sibling of the other folders.
+    //
+    // "Cover&Closing" (2026-09-17, merges the former separate "Cover" and
+    // "Closing" folders from 2026-09-15/16) holds up to two photos: the
+    // lowest-numbered filename becomes delivery-page's cover/hero override,
+    // the highest-numbered becomes its closing override (see
+    // delivery-page/src/render.js#buildDeliveryModel).
+    "SYNC_FOLDERS": "MLS,HDR Photos,Virtual Staging,Floorplan,Local Report,Cover&Closing,Callout",
 
     // Sub-folders whose videos get copied into Cloudflare Stream. Same
     // comma-separated/case-insensitive parsing as SYNC_FOLDERS.
     "VIDEO_SYNC_FOLDERS": "Video,VLOG",
+
+    // The one well-known text file, directly at a job folder's root (not
+    // nested in any sub-folder), whose content is the Floor Tour or 3D Tour
+    // URL for delivery-page (see tour-link-sync.js). One file, one link --
+    // both providers render identically, so there's no per-provider name/
+    // type to configure here, just this single filename.
+    "TOUR_LINK_FILENAME": "Tour Link.txt",
 
     // Cloudflare account id that owns the Stream product used for video
     // hosting. Not sensitive -- the API token (a secret) is what's guarded.
@@ -90,6 +110,27 @@
     // it is NOT part of the job-generator rename and stays as-is.
     "DOWNLOAD_SET_FOLDERS": "MLS,HDR Photos",
     "DOWNLOAD_SUBFOLDER": "MLS for download",
+
+    // Sub-folders that ALSO get a large (DOWNLOAD_THUMB_SIZE) render
+    // uploaded to Supabase Storage as <photoId>_large.jpg, for delivery-
+    // page's full-bleed sections (hero/closing/aerial/neighborhood-report/
+    // floor-plan). "Floorplan" added 2026-09-18 alongside delivery-page's
+    // new Floor Plan section -- a floor plan is a technical diagram (room
+    // labels, measurements), so legibility benefits from the large render
+    // even more than a regular photo does. Deliberately NOT the main
+    // gallery (MLS/HDR Photos) -- those stay small-only; see
+    // photo-sync-worker/CLAUDE.md for why.
+    "LARGE_THUMB_FOLDERS": "Cover&Closing,Callout,Local Report,Floorplan",
+
+    // Subset of LARGE_THUMB_FOLDERS that gets the TRUE original file bytes
+    // instead of a Dropbox-thumbnail-API render (2026-09-18). Floorplan
+    // exports are already small (a diagram/screenshot, not a DSLR photo),
+    // so a w2048h1536 derivative just adds JPEG re-compression -- and if
+    // the source isn't already a JPEG, re-encoding it as one too -- for no
+    // real size benefit. Every other LARGE_THUMB_FOLDERS folder is left off
+    // this list on purpose (a real estate photo's original can be tens of
+    // MB, which is exactly what the w2048h1536 cap exists to avoid).
+    "ORIGINAL_RENDER_FOLDERS": "Floorplan",
 
     // Safety cap: max delta entries pulled per queue message before the
     // cursor is saved and processing continues in a fresh message.

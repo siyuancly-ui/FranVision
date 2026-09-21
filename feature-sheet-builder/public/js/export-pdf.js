@@ -78,7 +78,11 @@
     var pdf = new JsPDF({ unit: 'pt', format: [TRIM_W, TRIM_H], orientation: 'landscape', compress: true });
     var n = pageCount();
 
-    var chain = Promise.resolve();
+    // job-linked sheets: pull the HDR original of every placed photo first (needs
+    // the admin link) and render in print mode; always undo both afterwards.
+    var ps = window.FSB.photoSource;
+    var chain = Promise.resolve(ps.preparePrint ? ps.preparePrint(app.project, app.adminToken) : null)
+      .then(function () { render.setPrintMode(true); });
     for (var p = 1; p <= n; p++) {
       (function (pageNum) {
         chain = chain
@@ -89,7 +93,8 @@
           });
       })(p);
     }
-    return chain.then(function () { return pdf; });
+    function done() { render.setPrintMode(false); if (ps.releasePrint) ps.releasePrint(); }
+    return chain.then(function () { done(); return pdf; }, function (err) { done(); throw err; });
   }
 
   function buildBlob(app) {
@@ -102,22 +107,27 @@
     return (a ? base + ' - ' : '') + 'Feature Sheet.pdf';
   }
 
-  // Let the user pick a folder + name (Chrome), else a normal download.
-  function saveBlob(blob, name) {
-    if (window.showSaveFilePicker) {
-      return window.showSaveFilePicker({
-        suggestedName: name,
-        types: [{ description: 'PDF', accept: { 'application/pdf': ['.pdf'] } }],
-      }).then(function (handle) {
-        return handle.createWritable();
-      }).then(function (w) {
-        return w.write(blob).then(function () { return w.close(); });
-      }).then(function () { return 'saved'; })
-        .catch(function (err) {
-          if (err && err.name === 'AbortError') return 'cancelled';
-          throw err;
-        });
-    }
+  // Chrome only allows the save dialog within ~5s of the click, and building the PDF takes longer
+  // (that made the first click fail). So open the dialog FIRST, inside the click, build while it
+  // is open, then write into the chosen file. Resolves { write(blob), cancelled } or null (no picker).
+  function openSaveTarget(name) {
+    if (!window.showSaveFilePicker) return Promise.resolve(null);
+    return window.showSaveFilePicker({
+      suggestedName: name,
+      types: [{ description: 'PDF', accept: { 'application/pdf': ['.pdf'] } }],
+    }).then(function (handle) { return { handle: handle }; }, function (err) {
+      if (err && err.name === 'AbortError') return { cancelled: true };
+      return null;   // picker unavailable here -> plain download instead
+    });
+  }
+
+  function writeTarget(t, blob) {
+    return t.handle.createWritable().then(function (w) {
+      return w.write(blob).then(function () { return w.close(); });
+    });
+  }
+
+  function download(blob, name) {
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = name;
@@ -125,14 +135,19 @@
     a.click();
     a.remove();
     setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
-    return Promise.resolve('saved');
   }
 
   function run(app) {
     var setBusy = window.FSB.app && window.FSB.app.setBusy;
-    if (setBusy) setBusy('Building the PDF… 正在生成 PDF…');
-    return buildPdf(app).then(function (pdf) {
-      return saveBlob(pdf.output('blob'), fileName(app.project));
+    var name = fileName(app.project);
+    return openSaveTarget(name).then(function (target) {
+      if (target && target.cancelled) return 'cancelled';
+      if (setBusy) setBusy('Building the PDF… 正在生成 PDF…');
+      return buildPdf(app).then(function (pdf) {
+        var blob = pdf.output('blob');
+        if (target) return writeTarget(target, blob);
+        download(blob, name);
+      }).then(function () { return 'saved'; });
     }).then(function (how) {
       if (setBusy) setBusy(null);
       if (how === 'saved') toast('PDF exported 已导出');

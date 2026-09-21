@@ -29,6 +29,28 @@ export function createSupabase(env) {
       return readJson(res);
     },
 
+    // photos/<jobId>/<photoId>_large.jpg -- the w2048h1536 render for
+    // delivery-page's full-bleed slots (Cover&Closing/Drone Callout/Local
+    // Report/Floorplan), or (2026-09-18, ORIGINAL_RENDER_FOLDERS) the TRUE
+    // original file bytes for a folder like Floorplan where the source is
+    // already small. `contentType` defaults to image/jpeg (every Dropbox-
+    // thumbnail-API render is JPEG) but a true-original upload passes the
+    // source file's real type (e.g. image/png) -- the Storage object key
+    // still ends in `_large.jpg` regardless (delivery-page's URL builder
+    // assumes that suffix universally), only the Content-Type header and
+    // actual bytes reflect the real format; browsers render from the
+    // Content-Type + sniffed bytes, not the URL's extension, so this is
+    // harmless. Same upsert semantics as uploadThumb.
+    async uploadLarge(jobId, photoId, bytes, contentType = 'image/jpeg') {
+      const path = `photos/${encodeURIComponent(jobId)}/${photoId}_large.jpg`;
+      const res = await fetch(`${BASE}/storage/v1/object/${path}`, {
+        method: 'POST',
+        headers: { ...authHeaders, 'Content-Type': contentType, 'x-upsert': 'true', 'cache-control': '3600' },
+        body: bytes,
+      });
+      return readJson(res);
+    },
+
     async rpc(fn, args) {
       const res = await fetch(`${BASE}/rest/v1/rpc/${fn}`, {
         method: 'POST',
@@ -104,6 +126,21 @@ export function createSupabase(env) {
       return readJson(res);
     },
 
+    // The full projects.data.photos[] array for one Job, or [] if the row
+    // doesn't exist yet. Used by the gallery hero/closing large-render pass
+    // (see sync.js#pickGalleryFallbackTargets) -- it needs the CURRENT full
+    // gallery, not just the items in the batch being processed, since which
+    // photo is "3rd/5th by filename" can shift as photos are added/removed
+    // in earlier batches too.
+    async getProjectPhotos(jobId) {
+      const res = await fetch(`${BASE}/rest/v1/projects?id=eq.${encodeURIComponent(jobId)}&select=data`, {
+        headers: authHeaders,
+      });
+      const rows = await readJson(res);
+      const row = Array.isArray(rows) ? rows[0] : rows;
+      return (row && row.data && row.data.photos) || [];
+    },
+
     // One video's current record from projects.data.videos[], or null. Used
     // before a Dropbox-side delete to find the streamUid to free in Stream.
     async getProjectVideo(projectId, videoId) {
@@ -114,6 +151,53 @@ export function createSupabase(env) {
       const row = Array.isArray(rows) ? rows[0] : rows;
       const videos = (row && row.data && row.data.videos) || [];
       return videos.find((v) => v.videoId === videoId) || null;
+    },
+
+    // One row per delivery-copy/large-render that failed and needs periodic
+    // retry (see photo_render_pending in schema.sql). merge-duplicates on the
+    // (project_id, kind, source_path) unique key -- a photo that fails twice
+    // before the next poll just keeps one row rather than piling up.
+    async insertPendingRender({ projectId, kind, sourcePath, destPath, photoId: pid, filename, error }) {
+      const res = await fetch(`${BASE}/rest/v1/photo_render_pending`, {
+        method: 'POST',
+        headers: {
+          ...authHeaders,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal,resolution=merge-duplicates',
+        },
+        body: JSON.stringify({
+          project_id: projectId,
+          kind,
+          source_path: sourcePath,
+          dest_path: destPath || null,
+          photo_id: pid || null,
+          filename: filename || null,
+          last_error: error || null,
+        }),
+      });
+      return readJson(res);
+    },
+
+    async listPendingRenders() {
+      const res = await fetch(`${BASE}/rest/v1/photo_render_pending?select=*`, { headers: authHeaders });
+      return (await readJson(res)) || [];
+    },
+
+    async updatePendingRender(id, fields) {
+      const res = await fetch(`${BASE}/rest/v1/photo_render_pending?id=eq.${id}`, {
+        method: 'PATCH',
+        headers: { ...authHeaders, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ ...fields, updated_at: new Date().toISOString() }),
+      });
+      return readJson(res);
+    },
+
+    async deletePendingRender(id) {
+      const res = await fetch(`${BASE}/rest/v1/photo_render_pending?id=eq.${id}`, {
+        method: 'DELETE',
+        headers: { ...authHeaders, Prefer: 'return=minimal' },
+      });
+      return readJson(res);
     },
   };
 }

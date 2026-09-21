@@ -97,6 +97,63 @@ export function createDropbox(env) {
       return rpc(env, API, 'files/get_temporary_link', { path });
     },
 
+    // Raw text content of a small file (the Tour Link .txt file -- see
+    // tour-link-sync.js). Dropbox's content-download endpoint: the response
+    // BODY is the file bytes, metadata is in a header (ignored here).
+    async downloadText(path) {
+      const doCall = async (token) =>
+        fetch(`${CONTENT}/files/download`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Dropbox-API-Arg': JSON.stringify({ path }) },
+        });
+      let res = await doCall(await getToken(env));
+      if (res.status === 401) res = await doCall(await getToken(env, true));
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`dropbox files/download ${res.status}: ${text}`);
+      }
+      return res.text();
+    },
+
+    // The TRUE original file bytes, no Dropbox thumbnail-API resizing/
+    // re-encoding at all -- for ORIGINAL_RENDER_FOLDERS (small files like a
+    // Floor Plan export, where the source is already small enough that a
+    // derived thumbnail would just add JPEG re-compression for no size
+    // benefit). Same content-download endpoint as downloadText, but reads
+    // the body as bytes, not text.
+    async downloadFile(path) {
+      const doCall = async (token) =>
+        fetch(`${CONTENT}/files/download`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Dropbox-API-Arg': JSON.stringify({ path }) },
+        });
+      let res = await doCall(await getToken(env));
+      if (res.status === 401) res = await doCall(await getToken(env, true));
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`dropbox files/download ${res.status}: ${text}`);
+      }
+      return new Uint8Array(await res.arrayBuffer());
+    },
+
+    // Same download, but returns the fetch Response so a big original (tens of
+    // MB) can be streamed straight through the Worker without buffering it in
+    // memory -- for GET /render (render.js).
+    async downloadFileStream(path) {
+      const doCall = async (token) =>
+        fetch(`${CONTENT}/files/download`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Dropbox-API-Arg': JSON.stringify({ path }) },
+        });
+      let res = await doCall(await getToken(env));
+      if (res.status === 401) res = await doCall(await getToken(env, true));
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`dropbox files/download ${res.status}: ${text}`);
+      }
+      return res;
+    },
+
     async getMetadata(path, { withPropertyGroups = false, includeMediaInfo = false } = {}) {
       const arg = { path };
       if (withPropertyGroups && TEMPLATE_ID) {
