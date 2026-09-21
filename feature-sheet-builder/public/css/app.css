@@ -385,6 +385,18 @@ body.fsb-modal-open { overflow: hidden; }
 .fsb-toast.show { opacity: 1; transform: none; }
 .fsb-toast.error { background: #7a2626; }
 
+/* ---- Touch screens (no hover) ----------------------------------
+   The hover-only slot tools + move handle stick "on" after a tap and cover
+   small photos, so a tap hit a tiny button instead of opening the picker.
+   Hide them; zoom/reset/clear live in the picker bar instead. */
+.fsb-picker-touchtools { display: none; gap: 6px; }
+@media (hover: none) {
+  .fsb-slot-tools, .fsb-slot-move { display: none !important; }
+  .fsb-picker-touchtools { display: inline-flex; }
+  .fsb-slot--filled { cursor: pointer; touch-action: pan-y; }
+  .fsb-thumb-del { opacity: 1; width: 26px; height: 26px; line-height: 26px; font-size: 12px; }
+}
+
 /* ---- Responsive ------------------------------------------- */
 .fsb-panel--form { transition: margin-right .2s; }
 @media (max-width: 1100px) {
