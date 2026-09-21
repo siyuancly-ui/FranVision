@@ -1098,14 +1098,18 @@ function listenOn(port, triesLeft) {
     throw err;
   };
   server.once('error', onError);
-  server.listen(port, HOST, () => {
-    server.removeListener('error', onError);
-    PORT = server.address().port;
-    const url = 'http://localhost:' + PORT;
-    console.log('FranVision Job Generator running at ' + url);
-    console.log('Job Root Folder (remembered from ' + configStore.DEFAULT_CONFIG_PATH + '): ' + rootFolder);
-    openBrowser(url);
-  });
+  // No callback here: every failed listen() would leave its callback queued
+  // and they'd all fire on the one that finally succeeds (once per retry --
+  // that opened ~20 browser tabs on Windows). 'listening' is handled once below.
+  server.listen(port, HOST);
 }
+
+server.on('listening', () => {
+  PORT = server.address().port;
+  const url = 'http://localhost:' + PORT;
+  console.log('FranVision Job Generator running at ' + url);
+  console.log('Job Root Folder (remembered from ' + configStore.DEFAULT_CONFIG_PATH + '): ' + rootFolder);
+  openBrowser(url);
+});
 
 listenOn(BASE_PORT, PORT_TRIES);
