@@ -125,7 +125,7 @@
       if (action === 'change') return; // handled above
       if (action === 'clear') { app.clearSlot(ref); return; }
       if (action === 'reset') { app.mutateSlot(ref, { positionX: 0, positionY: 0, scale: 1 }); return; }
-      if (action === 'zoom-in' || action === 'zoom-out') zoomSlot(app, ref, action === 'zoom-in' ? 1.15 : 1 / 1.15);
+      if (action === 'zoom-in' || action === 'zoom-out') zoomSlot(app, ref, action === 'zoom-in' ? 1.15 : 1 / 1.15, slotEl);
     });
 
     // ---- wheel / pinch zoom -----------------------------------
@@ -199,8 +199,8 @@
   }
 
   // Zoom a filled slot about its centre (toolbar buttons + the picker's touch controls).
-  function zoomSlot(app, ref, factor) {
-    var slotEl = document.querySelector('.fsb-slot--filled[data-page="' + ref.page + '"][data-slot-id="' + ref.slotId + '"]');
+  function zoomSlot(app, ref, factor, slotEl) {
+    slotEl = slotEl || document.querySelector('.fsb-slot--filled[data-page="' + ref.page + '"][data-slot-id="' + ref.slotId + '"]');
     if (!slotEl) return;
     var st = CROP.clampState(stateOf(app, ref));
     var dims = slotDims(slotEl), pd = photoDims(app, st.photoId);
