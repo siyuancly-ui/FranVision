@@ -1077,9 +1077,20 @@ function openBrowser(url) {
   else execFile(process.platform === 'darwin' ? 'open' : 'xdg-open', [url], () => {});
 }
 
+// Bound to 127.0.0.1 only: this tool can create jobs and touch Dropbox, so it
+// must not be reachable from other machines on the LAN (and Windows policies
+// that block "listen on all interfaces" don't apply to loopback).
+const HOST = '127.0.0.1';
+
 function listenOn(port, triesLeft) {
   const onError = (err) => {
-    if (err.code === 'EACCES' && triesLeft > 0) return listenOn(port + 1, triesLeft - 1);
+    server.removeListener('error', onError);
+    if (err.code === 'EACCES' || (err.code === 'EADDRINUSE' && port === 0)) {
+      // Reserved range: try the next port; after PORT_TRIES, let the OS pick
+      // any free one (port 0), which Windows never reserves.
+      if (triesLeft > 0) return listenOn(port + 1, triesLeft - 1);
+      if (port !== 0) return listenOn(0, 0);
+    }
     if (err.code === 'EADDRINUSE') {
       console.error('Port ' + port + ' is already in use -- is Job Generator already running in another window?');
       process.exit(1);
@@ -1087,9 +1098,9 @@ function listenOn(port, triesLeft) {
     throw err;
   };
   server.once('error', onError);
-  server.listen(port, () => {
+  server.listen(port, HOST, () => {
     server.removeListener('error', onError);
-    PORT = port;
+    PORT = server.address().port;
     const url = 'http://localhost:' + PORT;
     console.log('FranVision Job Generator running at ' + url);
     console.log('Job Root Folder (remembered from ' + configStore.DEFAULT_CONFIG_PATH + '): ' + rootFolder);
