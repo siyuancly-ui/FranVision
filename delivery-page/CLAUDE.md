@@ -46,7 +46,7 @@ npx wrangler deploy
 
 Bound as the **root domain**, no subdomain prefix (Cloudflare dashboard → `franvision-delivery-page` Worker → Domains → Add Domain → `realgta.ca`, subdomain field left blank). **Live at `https://realgta.ca`**, both URL shapes work (see Architecture below for the pretty-URL format, added 2026-09-17).
 
-**Feature Sheet Builder is NOT a usable template for domain setups in this repo** — checked directly (2026-09-16): the `franvision` Worker (FSB) has no Cloudflare Custom Domain bound at all; it's only reachable via `franvision.frankystudio-6f3.workers.dev`.
+**Feature Sheet Builder is NOT a usable template for domain setups in this repo** — checked directly (2026-09-16): the `franvision` Worker (FSB) had no Cloudflare Custom Domain bound at that time (it has since been bound to `fs.realgta.ca`, 2026-09-21).
 
 **Deployed to production 2026-09-17**: `wrangler secret put` for `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`/`ADMIN_TOKEN` (reused the same values already in local `.dev.vars` — same Supabase project, no new token minted) + `wrangler deploy`. Version ID `350e5fba-0607-4dbe-a9b1-bfc3e97256d8` at deploy time (a later push may have superseded it — check the dashboard for current). Verified against production immediately after deploy: `/delivery/FVS-20260915-001` returns 200 with real Supabase-hosted photo URLs rendered in the page (a 404 on the very first request right after deploy was a one-off cold-start blip — retried clean).
 
