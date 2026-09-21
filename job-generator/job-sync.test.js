@@ -34,6 +34,13 @@ const fake = (over) => Object.assign({ isConfigured: () => true, getJob: async (
     assert.deepStrictEqual(d.commission, { checkedItemIds: ['photography'], travelCents: 500 });
   });
 
+  await test('detailFromRow: screenshots come back as links from the row (any machine); [] when none saved', () => {
+    const imgs = [{ filename: 'gate.png', url: 'https://x/public/a.png' }];
+    const row = ROW({}); row.data.form.images = imgs;
+    assert.deepStrictEqual(sync.detailFromRow(row).images, imgs);
+    assert.deepStrictEqual(sync.detailFromRow(ROW({})).images, []);
+  });
+
   await test('buildRow: identity columns + { job, form } blob; a draft has job_id null', () => {
     const job = { jobId: null, createdAt: 'c', client: { name: 'Jane' }, property: { address: '1 Main' }, shootDate: '2026/09/20' };
     const r = sync.buildRow({ folderName: 'F', previousFolderName: 'Old', job, form: { shootTime: '' } });

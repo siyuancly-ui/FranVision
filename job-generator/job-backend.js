@@ -72,6 +72,45 @@ async function rpc(name, args, deps) {
   return body;
 }
 
+const IMAGE_BUCKET = 'jg-shoot-notes';
+
+function publicImageUrl(objectPath, deps) {
+  return config(deps && deps.env).url + '/storage/v1/object/public/' + IMAGE_BUCKET + '/' + objectPath;
+}
+
+// Uploads one shoot-notes image (see supabase/storage.sql) and returns the
+// PUBLIC link. `objectPath` must already be unguessable (server.js builds it
+// from crypto.randomBytes). The machine token rides in `x-jg-token`, which the
+// bucket's INSERT policy checks. Same error contract as rpc().
+async function uploadImage({ objectPath, contentType, buffer }, deps) {
+  deps = deps || {};
+  const c = config(deps.env);
+  if (!(c.url && c.anonKey && c.token)) throw new BackendError('Job server is not configured (JG_SUPABASE_URL / JG_SUPABASE_ANON_KEY / JG_TOKEN).');
+  const fetchImpl = deps.fetchImpl || fetch;
+  let res;
+  try {
+    res = await fetchImpl(c.url + '/storage/v1/object/' + IMAGE_BUCKET + '/' + objectPath, {
+      method: 'POST',
+      headers: {
+        apikey: c.anonKey, Authorization: 'Bearer ' + c.anonKey,
+        'x-jg-token': c.token, 'Content-Type': contentType || 'application/octet-stream',
+        'x-upsert': 'false',
+      },
+      body: buffer,
+      signal: AbortSignal.timeout(deps.timeoutMs || 60000),
+    });
+  } catch (err) {
+    throw new BackendError('Could not reach the job server: ' + (err && err.message || err), { unreachable: true });
+  }
+  if (!res.ok) {
+    const text = await res.text();
+    let msg = text;
+    try { const b = JSON.parse(text); msg = b.message || b.error || text; } catch (e) { /* keep text */ }
+    throw new BackendError('Image upload failed (' + res.status + '): ' + msg, { status: res.status });
+  }
+  return publicImageUrl(objectPath, deps);
+}
+
 const dayStamp = (date) => {
   const d = date || new Date();
   return String(d.getFullYear()) + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
@@ -90,6 +129,7 @@ async function listRecentJobs(sinceIso, deps) { return rpc('jg_list_jobs', { p_k
 async function deleteDraft(folderName, deps) { return rpc('jg_delete_draft', { p_folder_name: folderName }, deps); }
 
 module.exports = {
+  uploadImage, publicImageUrl, IMAGE_BUCKET,
   BackendError, isConfigured, rpc, dayStamp,
   allocateJobId, peekJobId, upsertJob, getJob, listDrafts, listRecentJobs, deleteDraft,
 };

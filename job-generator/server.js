@@ -172,6 +172,28 @@ async function renameFolderWithRetry(oldPath, newPath, { attempts = 5, delayMs =
 // job/draft metadata once configured. Creating/updating a job while it can't
 // be reached is REFUSED rather than worked around with a local/temporary ID
 // (explicit decision 2026-09-19) -- Dropbox needs the network anyway.
+// Save as Draft: turn the request's images into links. Entries that already
+// carry a `url` (re-saved draft) are kept as-is; fresh / legacy base64 ones are
+// uploaded to the job server's public bucket under an unguessable path (random
+// 128-bit hex -- the link IS the access control, see supabase/storage.sql).
+// Throws BackendError on failure so the caller can refuse the save: a calendar
+// event that silently lost its screenshots would be worse than an error.
+async function uploadDraftImages(images) {
+  const out = [];
+  for (const img of images || []) {
+    if (img && img.url) { out.push({ filename: img.filename, url: img.url }); continue; }
+    const ext = String(img.filename || '').toLowerCase().match(/\.([a-z0-9]+)$/);
+    const objectPath = crypto.randomBytes(16).toString('hex') + '.' + (ext ? ext[1] : 'jpg');
+    const url = await jobBackend.uploadImage({
+      objectPath,
+      contentType: calendarFile.EXT_MIME[ext ? ext[1] : 'jpg'] || 'application/octet-stream',
+      buffer: Buffer.from(img.dataBase64 || '', 'base64'),
+    });
+    out.push({ filename: img.filename, url });
+  }
+  return out;
+}
+
 function sendBackendError(res, err) {
   const offline = !!(err && err.unreachable);
   return sendJson(res, offline ? 503 : 502, {
@@ -376,10 +398,10 @@ async function handleApi(req, res, urlPath) {
           const row = await jobBackend.getJob(body.folderName || '');
           if (row) {
             const detail = jobSync.detailFromRow(row);
-            detail.images = fs.existsSync(jobFolderPath) ? calendarFile.readExistingImages(jobFolderPath) : [];
-            // A new-style draft has no folder -- its images are in the calendar
-            // file it dropped into the Job Root Folder (on this machine only;
-            // cross-machine images are a later stage).
+            // New-style drafts keep their screenshots as LINKS in the row
+            // (detail.images from detailFromRow) -- works on any machine.
+            // Older ones: base64 in this machine's folder / calendar file.
+            if (!detail.images.length) detail.images = fs.existsSync(jobFolderPath) ? calendarFile.readExistingImages(jobFolderPath) : [];
             if (!detail.images.length && detail.calendarFile) {
               detail.images = calendarFile.readImagesFromIcsFile(path.join(effectiveRootFolder, detail.calendarFile));
             }
@@ -721,6 +743,9 @@ async function handleApi(req, res, urlPath) {
           folderName, componentFolders: draftComponentFolders, commission,
         };
         try {
+          // Upload the screenshots first: their links go into the draft row
+          // (so any machine can re-show them) and into the calendar file.
+          draftForm.images = await uploadDraftImages(body.images);
           await jobBackend.upsertJob(jobSync.buildRow({ folderName, job: jobFiles.buildJobJson(draftJobData), form: draftForm }));
         } catch (err) {
           return sendBackendError(res, err); // nothing has been written anywhere yet
@@ -733,7 +758,7 @@ async function handleApi(req, res, urlPath) {
             jobId: 'draft-' + crypto.createHash('sha1').update(folderName).digest('hex').slice(0, 16),
             clientName: body.clientName, address: body.address,
             shootDate: body.shootDate, shootTime: body.shootTime,
-            notes: body.notes, images: body.images || [],
+            notes: body.notes, images: draftForm.images,
             order: body.order, photographerName: body.photographerName,
           }, { filename: calendarFilename });
           draftCalendar = { icsPath: written.icsPath, icsFilename: written.icsFilename, imageCount: written.attachedImages.length };

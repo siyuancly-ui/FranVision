@@ -325,7 +325,7 @@
       <div class="field-row">
         <label class="field-label" for="shoot-notes-images">Screenshots / access info images (optional)</label>
         <input type="file" id="shoot-notes-images" accept="image/jpeg,image/png,image/heic,image/heif,image/webp,image/gif" multiple>
-        <div class="field-hint">Up to 10 images, 15MB each -- e.g. a screenshot of the agent's instructions, a photo of the lockbox. Embedded into the calendar file as attachments (they show up on the event in Apple Calendar; Google Calendar / Outlook ignore them).</div>
+        <div class="field-hint">Up to 10 images, 15MB each -- e.g. a screenshot of the agent's instructions, a photo of the lockbox. Uploaded to the job server when you Save as Draft, and put in the calendar event's details as links (works in Apple / Google / Outlook calendars). Anyone with a link can open that image, so don't add anything you wouldn't send by email.</div>
         <div id="shoot-notes-preview" class="image-chip-list"></div>
         <div id="shoot-notes-error" class="field-hint" style="color:#7a1f1f;"></div>
       </div>
@@ -500,7 +500,8 @@
   let shootNotesImages = [];
 
   function imageEntryName(entry) { return entry.kind === 'file' ? entry.file.name : entry.filename; }
-  function imageEntrySize(entry) { return entry.kind === 'file' ? entry.file.size : Math.floor(entry.dataBase64.length * 3 / 4); }
+  // An already-uploaded (url) entry has no local bytes and was size-checked at upload.
+  function imageEntrySize(entry) { return entry.kind === 'file' ? entry.file.size : (entry.url ? 0 : Math.floor(entry.dataBase64.length * 3 / 4)); }
 
   function renderShootNotesImages() {
     const list = el('shoot-notes-preview');
@@ -560,7 +561,7 @@
   function resolveImagesForSubmit() {
     return Promise.all(shootNotesImages.map(async (entry) => entry.kind === 'file'
       ? { filename: entry.file.name, dataBase64: await fileToBase64(entry.file) }
-      : { filename: entry.filename, dataBase64: entry.dataBase64 }));
+      : (entry.url ? { filename: entry.filename, url: entry.url } : { filename: entry.filename, dataBase64: entry.dataBase64 })));
   }
 
   el('shoot-notes-images').addEventListener('change', function () {
@@ -768,7 +769,7 @@
     applyOrderToForm(data.order);
     selectedCandidateIndex = Number.isInteger(data.chosenCandidateIndex) ? data.chosenCandidateIndex : 0;
 
-    shootNotesImages = (data.images || []).map((img) => ({ kind: 'saved', filename: img.filename, dataBase64: img.dataBase64 }));
+    shootNotesImages = (data.images || []).map((img) => ({ kind: 'saved', filename: img.filename, dataBase64: img.dataBase64, url: img.url }));
     renderShootNotesImages();
     el('shoot-notes-error').textContent = '';
     el('save-draft-result').textContent = '';

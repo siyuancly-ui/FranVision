@@ -14,6 +14,29 @@ const okFetch = (payload, calls) => async (url, opts) => {
 };
 
 (async () => {
+  await test('uploadImage: POSTs the bytes to the bucket with the machine token header and returns the PUBLIC link', async () => {
+    const calls = [];
+    const url = await backend.uploadImage(
+      { objectPath: 'ab12.jpg', contentType: 'image/jpeg', buffer: Buffer.from('bytes') },
+      { env: ENV, fetchImpl: async (u, o) => { calls.push({ u, o }); return { ok: true, status: 200, text: async () => '{}' }; } });
+    assert.strictEqual(url, 'https://x.supabase.co/storage/v1/object/public/jg-shoot-notes/ab12.jpg');
+    assert.strictEqual(calls[0].u, 'https://x.supabase.co/storage/v1/object/jg-shoot-notes/ab12.jpg');
+    assert.strictEqual(calls[0].o.method, 'POST');
+    assert.strictEqual(calls[0].o.headers['x-jg-token'], 'secret-token');
+    assert.strictEqual(calls[0].o.headers['Content-Type'], 'image/jpeg');
+    assert.strictEqual(calls[0].o.headers['x-upsert'], 'false');
+    assert.ok(Buffer.from('bytes').equals(calls[0].o.body));
+  });
+
+  await test('uploadImage: rejected upload -> BackendError with status + message; network failure -> unreachable', async () => {
+    await assert.rejects(
+      backend.uploadImage({ objectPath: 'a.jpg', buffer: Buffer.alloc(1) }, { env: ENV, fetchImpl: async () => ({ ok: false, status: 403, text: async () => JSON.stringify({ message: 'violates row-level security' }) }) }),
+      (e) => e.name === 'BackendError' && e.status === 403 && /row-level security/.test(e.message) && e.unreachable === false);
+    await assert.rejects(
+      backend.uploadImage({ objectPath: 'a.jpg', buffer: Buffer.alloc(1) }, { env: ENV, fetchImpl: async () => { throw new Error('ENOTFOUND'); } }),
+      (e) => e.unreachable === true);
+  });
+
   await test('isConfigured: needs all three of url / anon key / token', () => {
     assert.strictEqual(backend.isConfigured(ENV), true);
     assert.strictEqual(backend.isConfigured({ ...ENV, JG_TOKEN: '' }), false);

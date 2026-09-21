@@ -76,6 +76,8 @@ function detailFromRow(row) {
     chosenCandidateIndex: Number.isInteger(form.chosenCandidateIndex) ? form.chosenCandidateIndex : null,
     commission: form.commission || { checkedItemIds: [], travelCents: 0 },
     calendarFile: form.calendarFile || null,
+    // Screenshots as links ({filename, url}) -- see server.js#uploadDraftImages.
+    images: Array.isArray(form.images) ? form.images : [],
   };
 }
 

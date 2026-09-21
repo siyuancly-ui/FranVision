@@ -38,12 +38,28 @@ const call = {
     return { deleted: true };
   },
 };
+const objects = new Map(); // storage stand-in for supabase/storage.sql's bucket
 http.createServer((req, res) => {
-  let b = '';
-  req.on('data', (c) => { b += c; });
+  const chunks = [];
+  req.on('data', (c) => { chunks.push(c); });
   req.on('end', () => {
+    const buf = Buffer.concat(chunks);
+    const PUB = '/storage/v1/object/public/jg-shoot-notes/', UP = '/storage/v1/object/jg-shoot-notes/';
+    if (req.method === 'GET' && req.url.startsWith(PUB)) {
+      const o = objects.get(req.url.slice(PUB.length));
+      if (!o) { res.writeHead(404); return res.end(); }
+      res.writeHead(200, { 'Content-Type': o.type }); return res.end(o.buf);
+    }
+    if (req.method === 'POST' && req.url.startsWith(UP)) {
+      const send = (code, o) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
+      if (req.headers['x-jg-token'] !== TOKEN) return send(403, { message: 'new row violates row-level security policy' });
+      const p = req.url.slice(UP.length);
+      if (objects.has(p)) return send(409, { message: 'The resource already exists' });
+      objects.set(p, { buf, type: req.headers['content-type'] });
+      return send(200, { Key: 'jg-shoot-notes/' + p });
+    }
     const name = req.url.split('/').pop();
-    const a = JSON.parse(b || '{}');
+    const a = JSON.parse(buf.toString('utf8') || '{}');
     const send = (code, o) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
     if (a.p_token !== TOKEN) return send(400, { message: 'jg: invalid token' });
     try { send(200, call[name](a)); } catch (e) { send(400, { message: e.message }); }
