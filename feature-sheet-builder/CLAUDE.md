@@ -249,9 +249,11 @@ Cloudflare merged Pages into Workers, so this ships as an **assets-only Worker**
 `wrangler.jsonc` MUST match the dashboard or deploys silently hit the wrong
 worker). `assets.directory` = `feature-sheet-builder/public`.
 
-Live URL: **`https://franvision.frankystudio-6f3.workers.dev/`** (Cloudflare's
-default subdomain; a custom `featuresheet.franvision.ca`-style domain is a
-pure-config step for later).
+Live URL: **`https://fs.realgta.ca/`** (Cloudflare Custom Domain bound to the
+`franvision` Worker in the dashboard, 2026-09-21 — deliberately NOT in `wrangler.jsonc`, the
+auto-build's credentials may not be allowed to edit domains). The old
+`franvision.frankystudio-6f3.workers.dev` still works, but is a shared domain Chrome flagged as
+unsafe, so give out `fs.realgta.ca` links only.
 
 Two ways to ship:
 
