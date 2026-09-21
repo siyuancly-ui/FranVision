@@ -142,7 +142,13 @@
     }
     app.project.jobId = r.jobId;
     var pi = app.project.propertyInfo;
-    if (!(pi.address || '').trim() && r.address) pi.address = r.address;   // only fill a blank field
+    // only fill blank fields; street on line 1, city onward on line 2, no separating comma
+    if (!(pi.address || '').trim() && r.address) {
+      var parts = (window.FSB_V2_TEXT && window.FSB_V2_TEXT.splitAddress)
+        ? window.FSB_V2_TEXT.splitAddress(r.address) : [r.address];
+      pi.address = parts[0] || r.address;
+      if (parts[1] && !(pi.city || '').trim()) pi.city = parts[1];
+    }
     refreshAfterJobChange();
   };
   app.disconnectJob = function () {
