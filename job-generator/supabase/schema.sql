@@ -182,13 +182,18 @@ end $$;
 -- job-generator/job-list.js's markJobCompleted for the LOCAL half of this).
 create or replace function public.jg_complete_job(p_token text, p_folder_name text)
 returns jsonb language plpgsql security definer set search_path = public, extensions as $$
-declare v_row public.jg_jobs;
+declare v_row public.jg_jobs; v_completed_at text;
 begin
   perform public.jg_check_token(p_token);
+  -- Match JS's `new Date().toISOString()` format exactly (UTC, 3-digit ms, trailing Z) -- the LOCAL
+  -- half of this feature (job-list.js#markJobCompleted) writes that format, and job-sync.js just
+  -- passes completedAt through as an opaque string, so the two sides should look identical rather
+  -- than one being Postgres's native "2026-09-22 22:25:11.517-04" text.
+  v_completed_at := to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"');
   update public.jg_jobs
   set data = jsonb_set(
         coalesce(data, '{}'::jsonb), '{job}',
-        coalesce(data->'job', '{}'::jsonb) || jsonb_build_object('completedAt', to_jsonb(now()::text))
+        coalesce(data->'job', '{}'::jsonb) || jsonb_build_object('completedAt', to_jsonb(v_completed_at))
       ),
       updated_at = now()
   where folder_name = p_folder_name and job_id is not null
