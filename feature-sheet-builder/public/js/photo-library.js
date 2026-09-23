@@ -45,7 +45,7 @@
 
       head.querySelector('.fsb-lib-clear').addEventListener('click', function () {
         var btn = this;
-        var n = src.list(app.project).length;
+        var n = src.list(app.project).filter(function (p) { return p.own !== false; }).length;
         if (!n) { toast('Library is already empty 图库已空'); return; }
         if (app.isReadOnly()) { toast('This project is confirmed. Un-confirm to edit.', 'error'); return; }
         window.FSB.util.confirmDialog(
@@ -158,7 +158,7 @@
         }, [
           img,
           used ? el('span', { class: 'fsb-thumb-badge', text: '×' + used }) : null,
-          canUpload ? el('button', { class: 'fsb-thumb-del', 'data-del': p.id, title: 'Delete photo', text: '✕' }) : null,
+          canUpload && p.own !== false ? el('button', { class: 'fsb-thumb-del', 'data-del': p.id, title: 'Delete photo', text: '✕' }) : null,
         ]);
         tile.addEventListener('dragstart', function (e) {
           if (app.isReadOnly()) { e.preventDefault(); return; }

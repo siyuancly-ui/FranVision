@@ -75,9 +75,30 @@ test('URLs: a job photo lives under the JOB folder, the sheet\'s own headshot un
   assert.equal(ps.getMeta(p, 'nope'), null);
 });
 
-test('library is read-only once connected (headshot/logo uploads stay allowed); a plain sheet is unchanged', async () => {
+test('connected sheet: upload stays available; own uploads are listed after the Dropbox gallery and flagged own', async () => {
   const { ps } = load();
-  assert.equal(ps.supportsUpload(sheet({ jobId: JOB })), false);
+  const p = sheet({ jobId: JOB });
+  p.photos.push({ photoId: 'u1', filename: 'extra.jpg', ext: 'jpg', width: 800, height: 600 });
+  await ps.ready(p);
+  assert.equal(ps.supportsUpload(p), true);
+  const list = ps.list(p);
+  assert.equal(JSON.stringify(list.map((x) => [x.filename, x.own])), '[["IMG_2.jpg",false],["IMG_10.jpg",false],["extra.jpg",true]]');
+  assert.equal(ps.thumbUrl(p, 'u1'), '/thumbs/abc123abc123/u1');       // own upload lives under the sheet's folder
+  assert.equal(ps.jobStatus(p).count, 2);                              // the count is still the Dropbox photos only
+});
+
+test('a Callout under HDR Photos joins the connected gallery', async () => {
+  const callout = { photoId: 'co', filename: 'callout.jpg', width: 6000, height: 4000, dropboxPath: '/j/HDR Photos/Callout/callout.jpg', folder: 'Callout', status: 'ok', hasThumb: true };
+  const { ps } = load({ jobs: { [JOB]: { photos: [...jobPhotos, callout], address: '' } } });
+  const p = sheet({ jobId: JOB });
+  await ps.ready(p);
+  assert.equal(ps.list(p).some((x) => x.id === 'co'), true);
+  assert.equal(ps.jobStatus(p).count, 3);
+});
+
+test('library upload controls stay on once connected (headshot/logo uploads stay allowed); a plain sheet is unchanged', async () => {
+  const { ps } = load();
+  assert.equal(ps.supportsUpload(sheet({ jobId: JOB })), true);
   assert.equal(ps.supportsUpload(sheet()), true);
   assert.equal(ps.supportsAssetUpload(), true);
   const plain = sheet({ photos: [{ photoId: 'u1', filename: 'x.jpg', ext: 'jpg', width: 10, height: 10 }] });
