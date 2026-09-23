@@ -935,7 +935,7 @@ test('processPhotoBatch: HDR Photos/Callout photo -> download copy in MLS for do
     jobId: 'FV-1', jobFolderPath: '/JobA',
     items: [
       upsertItem({ ...callout, id: 'id:9', rev: 'r9', dims: { width: 100, height: 50 } }),
-      // a job-level Callout (delivery page's own folder) gets no download copy
+      // a Callout directly under the job folder (not a layout Job Generator creates) gets no download copy
       upsertItem({ path: '/JobA/Callout/d.jpg', subFolder: 'Callout', relPathFromJob: 'Callout/d.jpg', filename: 'd.jpg', id: 'id:10', rev: 'r10', dims: { width: 100, height: 50 } }),
     ],
   });

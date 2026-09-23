@@ -176,8 +176,9 @@ export function downloadCopyPath(jobFolderPath, downloadSubfolder, filename, sub
 // in the download folder -- HDR Photos/MLS files) or a folder name (a nested
 // folder such as HDR Photos/Callout/x.jpg -> "MLS for download/Callout/x.jpg",
 // mirroring the source structure). A nested folder only counts when it sits
-// UNDER a download-set folder: a job-level Callout folder (the delivery
-// page's aerial curation) is left alone.
+// UNDER a download-set folder: a Callout folder sitting directly under the
+// job folder is not a layout Job Generator creates (it only makes
+// HDR Photos/Callout), so it is deliberately left alone.
 export function downloadSubdirFor(item, { downloadSetFolders, downloadNestedFolders }) {
   if (folderMatches(item.subFolder, downloadSetFolders)) return '';
   if (!folderMatches(item.subFolder, downloadNestedFolders || [])) return null;

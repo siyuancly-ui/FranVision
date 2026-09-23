@@ -14,8 +14,8 @@
   var GALLERY_FOLDERS = ['HDR Photos', 'MLS'];
   // The worker records the INNERMOST recognised folder as `folder`, so a file in
   // HDR Photos/Callout/ shows up as folder 'Callout'. A Callout is only pickable
-  // when it sits under HDR Photos / MLS -- a job-level Callout folder is the
-  // delivery page's aerial curation, not sheet material.
+  // when it sits under HDR Photos / MLS -- a Callout directly under the job
+  // folder isn't a layout Job Generator creates, so it is not picked up.
   var CALLOUT_FOLDER = 'Callout';
 
   var JOB_ID_RE = /^FVS-\d{8}-\d{3,}$/;

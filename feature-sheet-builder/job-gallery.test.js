@@ -44,7 +44,7 @@ test('galleryPhotos: a Callout is pickable only when it sits under HDR Photos / 
   const photos = [
     ph({ photoId: 'c1', filename: 'callout.jpg', folder: 'Callout', dropboxPath: '/j/HDR Photos/Callout/callout.jpg' }),
     ph({ photoId: 'c2', filename: 'callout2.jpg', folder: 'callout', dropboxPath: '/j/mls/Callout/callout2.jpg' }),
-    ph({ photoId: 'c3', filename: 'aerial.jpg', folder: 'Callout', dropboxPath: '/j/Callout/aerial.jpg' }),   // job-level: delivery page only
+    ph({ photoId: 'c3', filename: 'aerial.jpg', folder: 'Callout', dropboxPath: '/j/Callout/aerial.jpg' }),   // directly under the job folder: not gallery
     ph({ photoId: 'c4', filename: 'HDR Photos', folder: 'Callout', dropboxPath: '/j/Callout/HDR Photos' }),    // filename must not count
     ph({ photoId: 'c5', folder: 'Callout', dropboxPath: '/j/HDR Photos/Callout/x.jpg', status: 'pending_review' }),
   ];

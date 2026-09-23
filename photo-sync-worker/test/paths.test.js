@@ -192,7 +192,7 @@ test('downloadCopyPath: optional sub-directory mirrors a nested source folder', 
   assert.equal(downloadCopyPath('/JobA', 'MLS for download', 'c.png', 'Callout'), '/JobA/MLS for download/Callout/c.jpg');
 });
 
-test('downloadSubdirFor: HDR Photos/MLS files -> flat; Callout nested under them -> Callout; job-level Callout -> none', () => {
+test('downloadSubdirFor: HDR Photos/MLS files -> flat; Callout nested under them -> Callout; Callout directly under the job folder -> none', () => {
   const cfg = { downloadSetFolders: ['MLS', 'HDR Photos'], downloadNestedFolders: ['Callout'] };
   const it = (subFolder, relPathFromJob) => ({ subFolder, relPathFromJob });
   assert.equal(downloadSubdirFor(it('HDR Photos', 'HDR Photos/a.jpg'), cfg), '');
