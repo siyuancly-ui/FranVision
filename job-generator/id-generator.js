@@ -174,6 +174,7 @@ function findExistingJob(jobRootFolder, folderName) {
     order: data.services || {},
     wave: data.wave && typeof data.wave === 'object' ? data.wave : null,
     waveCustomerId: data.waveCustomerId || null,
+    waveCustomerName: data.waveCustomerName || '',
     customItems: Array.isArray(data.customItems) ? data.customItems : [],
   };
 }

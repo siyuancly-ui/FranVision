@@ -35,6 +35,7 @@ function existingFromRow(row, rootFolder) {
     order: job.services || {},
     wave: job.wave && typeof job.wave === 'object' ? job.wave : null,
     waveCustomerId: job.waveCustomerId || null,
+    waveCustomerName: job.waveCustomerName || '',
     customItems: Array.isArray(job.customItems) ? job.customItems : [],
     source: 'server',
   };
@@ -85,6 +86,7 @@ function detailFromRow(row) {
     images: Array.isArray(form.images) ? form.images : [],
     // Wave invoicing (2026-09-23) -- see job-files.js#buildJobJson's comment.
     waveCustomerId: job.waveCustomerId || null,
+    waveCustomerName: job.waveCustomerName || '',
     customItems: Array.isArray(job.customItems) ? job.customItems : [],
     wave: job.wave && typeof job.wave === 'object' ? job.wave : null,
   };

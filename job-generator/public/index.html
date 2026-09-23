@@ -251,6 +251,27 @@
   }
   .datepicker-pill:hover { border-color: var(--accent); }
   .datepicker-pill.is-selected { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  /* ---- Wave customer picker (2026-09-23) ---- */
+  .wave-picker { position: relative; }
+  .wave-dropdown {
+    position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.12); max-height: 260px; overflow-y: auto;
+  }
+  .wave-dropdown-item { padding: 8px 10px; cursor: pointer; font-size: 13.5px; }
+  .wave-dropdown-item:hover { background: var(--bg); }
+  .wave-dropdown-item .name { font-weight: 600; }
+  .wave-dropdown-item .email { color: var(--muted); font-size: 12px; }
+  .wave-dropdown-empty { padding: 8px 10px; font-size: 13px; color: var(--muted); }
+
+  /* ---- Custom Items (2026-09-23) ---- */
+  .custom-item-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .custom-item-row input[type="text"] { flex: 2; }
+  .custom-item-row .custom-item-amount-wrap { flex: 1; display: flex; align-items: center; gap: 4px; }
+  .custom-item-row input[type="number"] { width: 100%; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; }
+  .custom-item-remove { background: none; border: none; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px; }
+  .custom-item-remove:hover { color: #7a1f1f; }
 </style>
 </head>
 <body>
@@ -294,6 +315,19 @@
       <div class="field-row">
         <label class="field-label" for="photographerName">Photographer Name</label>
         <input type="text" id="photographerName" placeholder="e.g. Franky Chen">
+      </div>
+      <!-- Wave customer picker (2026-09-23) -- hidden entirely unless the server has Wave configured
+           (see refreshWaveCustomerRow()); optional either way, Create Job works without a pick. -->
+      <div class="field-row" id="wave-customer-row" style="display:none;">
+        <label class="field-label" for="wave-customer-search">Bill To (Wave Customer, optional)</label>
+        <div class="wave-picker">
+          <div class="stub-row">
+            <input type="text" id="wave-customer-search" placeholder="Type to search Wave customers…" autocomplete="off">
+            <button class="browse-btn" type="button" id="wave-customer-clear-btn" style="display:none;">Clear</button>
+          </div>
+          <div id="wave-customer-dropdown" class="wave-dropdown" style="display:none;"></div>
+        </div>
+        <div class="field-hint" id="wave-customer-hint">No Wave customer selected -- no invoice will be created for this job.</div>
       </div>
     </div>
 
@@ -365,6 +399,12 @@
           <input type="number" step="0.01" id="adjustment-override" placeholder="e.g. 500.00">
         </div>
         <div class="field-hint">Or set the exact pre-tax package price directly (e.g. rounding off a number without figuring out how much to subtract) -- fills in the adjustment above for you. Using this clears the field above; using the field above clears this.</div>
+      </fieldset>
+      <fieldset>
+        <legend>Custom Items (optional)</legend>
+        <div id="custom-items-list"></div>
+        <button class="browse-btn" type="button" id="add-custom-item-btn">+ Add Item</button>
+        <div class="field-hint">Free-form one-off charges not in the price list (e.g. Road Fee) -- each gets its own line on the Wave invoice (name in the description; positive amounts as "Other", negative as "Discount" -- see Wave invoicing). Added on TOP of the Manual Adjustment above, into the same Pricing Breakdown total.</div>
       </fieldset>
     </div>
 
@@ -533,9 +573,148 @@
       const adjustmentDollars = parseFloat(el('manual-adjustment').value);
       manualAdjustmentCents = isNaN(adjustmentDollars) ? 0 : Math.round(adjustmentDollars * 100);
     }
+    // Custom Items (2026-09-23) are added ON TOP of whichever adjustment mode above produced --
+    // the engine only ever sees one manualAdjustmentCents number, so this is what makes the
+    // Pricing Breakdown total already include them without engine.js knowing custom items exist.
+    // applyOrderToForm() does the inverse (subtracts the loaded customItems' sum back out) so
+    // reopening a job separates the two components again instead of double-counting.
+    manualAdjustmentCents += customItemsTotalCents();
 
     return { propertyType, photography, addons, manualAdjustmentCents };
   }
+
+  // ---- Custom Items (2026-09-23) -- free-form one-off invoice lines, e.g. Road Fee. See
+  // readOrder()'s comment above for how their total folds into manualAdjustmentCents, and
+  // wave-invoicing/invoice-request.js for how each becomes its own Wave invoice line. Incomplete
+  // rows (blank name, or a zero/unparseable amount -- e.g. one the user hasn't finished typing) are
+  // silently skipped everywhere they're read, never sent to the server or counted in the total.
+  function customItemRowEls() {
+    return Array.from(document.querySelectorAll('#custom-items-list .custom-item-row'));
+  }
+  function readCustomItems() {
+    return customItemRowEls()
+      .map((row) => ({
+        name: row.querySelector('.custom-item-name').value.trim(),
+        amountCents: Math.round((parseFloat(row.querySelector('.custom-item-amount').value) || 0) * 100),
+      }))
+      .filter((c) => c.name && c.amountCents !== 0);
+  }
+  function customItemsTotalCents() {
+    return readCustomItems().reduce((sum, c) => sum + c.amountCents, 0);
+  }
+  function onCustomItemRowChanged() {
+    updateCreateButtonState();
+    refreshFolderPreview();
+    refreshPricing();
+    refreshCommission();
+  }
+  function addCustomItemRow(item) {
+    item = item || { name: '', amountCents: 0 };
+    const row = document.createElement('div');
+    row.className = 'custom-item-row';
+    row.innerHTML =
+      '<input type="text" class="custom-item-name" placeholder="e.g. Road Fee">' +
+      '<div class="custom-item-amount-wrap"><span>$</span><input type="number" step="0.01" class="custom-item-amount" placeholder="0.00"></div>' +
+      '<button type="button" class="custom-item-remove" title="Remove">✕</button>';
+    row.querySelector('.custom-item-name').value = item.name || '';
+    row.querySelector('.custom-item-amount').value = item.amountCents ? (item.amountCents / 100).toFixed(2) : '';
+    row.querySelector('.custom-item-name').addEventListener('input', onCustomItemRowChanged);
+    row.querySelector('.custom-item-amount').addEventListener('input', onCustomItemRowChanged);
+    row.querySelector('.custom-item-remove').addEventListener('click', () => { row.remove(); onCustomItemRowChanged(); });
+    el('custom-items-list').appendChild(row);
+    return row;
+  }
+  // Rebuilds the whole list from a loaded job/draft's saved customItems -- used by
+  // applyOrderToForm()/resetForm(), never called with a partial list otherwise.
+  function renderCustomItemRows(items) {
+    el('custom-items-list').innerHTML = '';
+    (items || []).forEach((item) => addCustomItemRow(item));
+  }
+  el('add-custom-item-btn').addEventListener('click', () => addCustomItemRow());
+
+  // ---- Wave customer picker (2026-09-23) -- optional, entirely hidden when the server has no
+  // WAVE_TOKEN/WAVE_BUSINESS_ID configured (see refreshWaveCustomerRow(), called once at startup).
+  // Wave has no server-side name search (see wave-backend.js), so every keystroke re-queries the
+  // small cached list server-side and filters there -- this is NOT a live-typing race like
+  // refreshFolderPreview() guards against elsewhere, since a stale dropdown just shows slightly
+  // outdated suggestions, never gets submitted (only a genuine CLICK on a suggestion sets the
+  // selection), so no request-sequence guard is needed here.
+  let selectedWaveCustomer = null; // { id, name } | null
+  let waveSearchTimer = null;
+
+  async function refreshWaveCustomerRow() {
+    try {
+      const res = await fetch('/api/wave-customers');
+      const data = await res.json();
+      el('wave-customer-row').style.display = data.configured ? '' : 'none';
+    } catch (err) {
+      el('wave-customer-row').style.display = 'none';
+    }
+  }
+
+  function updateWaveCustomerHint() {
+    el('wave-customer-hint').textContent = selectedWaveCustomer
+      ? 'Invoicing to: ' + selectedWaveCustomer.name
+      : 'No Wave customer selected -- no invoice will be created for this job.';
+    el('wave-customer-clear-btn').style.display = selectedWaveCustomer ? '' : 'none';
+  }
+
+  function selectWaveCustomer(customer) {
+    selectedWaveCustomer = { id: customer.id, name: customer.name };
+    el('wave-customer-search').value = customer.name;
+    hideWaveDropdown();
+    updateWaveCustomerHint();
+  }
+  function clearWaveCustomer() {
+    selectedWaveCustomer = null;
+    el('wave-customer-search').value = '';
+    updateWaveCustomerHint();
+  }
+  function hideWaveDropdown() {
+    el('wave-customer-dropdown').style.display = 'none';
+    el('wave-customer-dropdown').innerHTML = '';
+  }
+  function renderWaveDropdown(customers) {
+    const box = el('wave-customer-dropdown');
+    box.innerHTML = '';
+    if (!customers.length) {
+      box.innerHTML = '<div class="wave-dropdown-empty">No matching Wave customers.</div>';
+    } else {
+      customers.forEach((c) => {
+        const item = document.createElement('div');
+        item.className = 'wave-dropdown-item';
+        item.innerHTML = '<div class="name"></div>' + (c.email ? '<div class="email"></div>' : '');
+        item.querySelector('.name').textContent = c.name;
+        if (c.email) item.querySelector('.email').textContent = c.email;
+        item.addEventListener('click', () => selectWaveCustomer(c));
+        box.appendChild(item);
+      });
+    }
+    box.style.display = '';
+  }
+
+  el('wave-customer-search').addEventListener('input', () => {
+    // Typing freely invalidates whatever was picked before -- a half-typed name must never
+    // silently keep submitting the OLD selection's id.
+    if (selectedWaveCustomer && el('wave-customer-search').value !== selectedWaveCustomer.name) {
+      selectedWaveCustomer = null;
+      updateWaveCustomerHint();
+    }
+    clearTimeout(waveSearchTimer);
+    const q = el('wave-customer-search').value.trim();
+    waveSearchTimer = setTimeout(async () => {
+      const res = await fetch('/api/wave-customers?q=' + encodeURIComponent(q));
+      const data = await res.json();
+      renderWaveDropdown(data.customers || []);
+    }, 200);
+  });
+  el('wave-customer-search').addEventListener('focus', () => {
+    if (el('wave-customer-search').value.trim()) el('wave-customer-search').dispatchEvent(new Event('input'));
+  });
+  el('wave-customer-clear-btn').addEventListener('click', clearWaveCustomer);
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.wave-picker')) hideWaveDropdown();
+  });
 
   function candidateSummary(candidate) {
     const mainLabels = candidate.lineItems.filter((li) => li.type === 'package' || li.type === 'base').map((li) => li.label);
@@ -556,6 +735,10 @@
       rootFolder: el('rootFolder').value.trim(),
       order: readOrder(),
       notes: el('shoot-notes-text').value,
+      // Wave invoicing (2026-09-23) -- both optional; null/[] when no Wave customer was picked.
+      waveCustomerId: selectedWaveCustomer ? selectedWaveCustomer.id : null,
+      waveCustomerName: selectedWaveCustomer ? selectedWaveCustomer.name : '',
+      customItems: readCustomItems(),
     };
   }
 
@@ -714,7 +897,12 @@
 
   // Sets every form control from an `order` object (readOrder()'s exact
   // shape) -- the inverse of readOrder(), used to restore a loaded draft.
-  function applyOrderToForm(order) {
+  // `customItems` (2026-09-23) is the loaded job/draft's saved custom-items array (may be
+  // undefined/[]) -- order.manualAdjustmentCents already has their sum folded in (readOrder()'s
+  // doing), so it's subtracted back out here before filling the Manual Adjustment field, and the
+  // rows themselves are rebuilt separately -- otherwise reopening a job would double-count them
+  // the next time readOrder() runs.
+  function applyOrderToForm(order, customItems) {
     order = order || {};
     el(order.propertyType === 'house' ? 'pt-house' : 'pt-condo').checked = true;
     el(order.photography === 'luxury' ? 'ph-luxury' : 'ph-standard').checked = true;
@@ -722,7 +910,10 @@
     addonIds.forEach((id) => { el('addon-' + id).checked = !!addons[id]; });
     el('virtual_staging_qty').disabled = !el('addon-virtual_staging').checked;
     el('virtual_staging_qty').value = addons.virtual_staging_qty || 0;
-    el('manual-adjustment').value = order.manualAdjustmentCents ? (order.manualAdjustmentCents / 100).toFixed(2) : '';
+    renderCustomItemRows(customItems);
+    const customItemsSumCents = (customItems || []).reduce((sum, c) => sum + (Number(c.amountCents) || 0), 0);
+    const baseAdjustmentCents = (order.manualAdjustmentCents || 0) - customItemsSumCents;
+    el('manual-adjustment').value = baseAdjustmentCents ? (baseAdjustmentCents / 100).toFixed(2) : '';
     // The "exact package price" field is a pure input-mode convenience --
     // only manualAdjustmentCents (the resulting delta) is ever persisted,
     // so a loaded draft/job always shows up in the field above, never here.
@@ -746,6 +937,7 @@
     el('shoot-notes-error').textContent = '';
     el('save-draft-result').textContent = '';
     applyOrderToForm({});
+    clearWaveCustomer();
     selectedCandidateIndex = 0;
     commissionCheckedIds = null;
     commissionTravelCents = 0;
@@ -869,7 +1061,9 @@
     el('shootTime').value = data.shootTime || '';
     el('shootTime-error').textContent = '';
     el('shoot-notes-text').value = data.notes || '';
-    applyOrderToForm(data.order);
+    applyOrderToForm(data.order, data.customItems);
+    if (data.waveCustomerId) selectWaveCustomer({ id: data.waveCustomerId, name: data.waveCustomerName || data.waveCustomerId });
+    else clearWaveCustomer();
     selectedCandidateIndex = Number.isInteger(data.chosenCandidateIndex) ? data.chosenCandidateIndex : 0;
 
     shootNotesImages = (data.images || []).map((img) => ({ kind: 'saved', filename: img.filename, dataBase64: img.dataBase64, url: img.url }));
@@ -1380,6 +1574,16 @@
         ? '<div>Folder renamed from <code>' + result.renamedFrom + '</code> to <code>' + result.folderName + '</code> (same Job ID)'
           + (result.dropboxRename && result.dropboxRename.success === false ? ', but the Dropbox-side rename failed -- see below' : ', including on Dropbox') + '.</div>'
         : '';
+      // Wave draft invoice (2026-09-23, see wave-backend.js) -- result.wave is null whenever
+      // auto-invoice is off or no Wave customer was picked (the common case), so nothing shows then.
+      const wv = result.wave;
+      const waveHtml = !wv ? '' : !wv.success
+        ? '<div style="color:#7a1f1f;">Wave draft invoice not created/updated: ' + wv.error + '</div>'
+        : wv.action === 'skipped'
+          ? '<div style="color:#6b510f;">' + wv.reason + ' <a href="' + wv.invoice.viewUrl + '" target="_blank" rel="noopener">View in Wave</a></div>'
+          : '<div>Wave draft invoice ' + (wv.action === 'created' ? 'created' : 'updated') + ': '
+            + '<a href="' + wv.invoice.viewUrl + '" target="_blank" rel="noopener">#' + wv.invoice.invoiceNumber + '</a>'
+            + ' -- review it in Wave, then Approve before sending the delivery email.</div>';
       el('create-result').innerHTML =
         '<div class="result-box success">' +
         '<div><strong>Job ' + jobStatusLabel + ': ' + result.jobId + '</strong></div>' +
@@ -1391,6 +1595,7 @@
         updateHtml +
         calendarHtml +
         deliveryEmailHtml +
+        waveHtml +
         pendingHtml +
         '</div>';
 
@@ -1750,6 +1955,7 @@
   refreshCommission(true);
   refreshDraftsList();
   refreshRecentJobsList();
+  refreshWaveCustomerRow();
 })();
 </script>
 

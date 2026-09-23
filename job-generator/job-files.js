@@ -168,6 +168,7 @@ function buildJobJson(jobData) {
     // last-known state of the created/patched draft invoice (or null); server.js's `completedAt`-style
     // carry-forward pattern applies here too -- see the `previousWave` local there.
     waveCustomerId: jobData.waveCustomerId || null,
+    waveCustomerName: jobData.waveCustomerName || '',
     customItems: Array.isArray(jobData.customItems) ? jobData.customItems : [],
     wave: jobData.wave || null,
     client: { name: jobData.clientName },

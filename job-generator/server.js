@@ -483,6 +483,7 @@ async function handleApi(req, res, urlPath) {
         commission: saved.commission,
         images: calendarFile.readExistingImages(jobFolderPath),
         waveCustomerId: data.waveCustomerId || null,
+        waveCustomerName: data.waveCustomerName || '',
         customItems: Array.isArray(data.customItems) ? data.customItems : [],
         wave: data.wave && typeof data.wave === 'object' ? data.wave : null,
       });
@@ -931,6 +932,49 @@ async function handleApi(req, res, urlPath) {
       // accident before the job is ever finalized. Runs on the one call
       // that assigns the real ID (finalizedFromDraft) same as any other
       // create/update.
+      // Wave draft invoice (2026-09-23, optional -- see wave-backend.js). Only when WAVE_AUTO_INVOICE
+      // is on AND a Wave customer was picked in the form. No invoiceId saved yet -> create; one saved
+      // AND its last-known status is still DRAFT -> patch (line items may have changed); anything else
+      // (SAVED/approved, sent, paid) -> never touched automatically, per Franky's confirmed flow (he
+      // reviews/approves the draft in Wave himself before sending the delivery email) -- flagged in
+      // pendingConfirmation instead so a real price change doesn't go unnoticed. Best-effort like every
+      // other real-ID-only side effect below: never blocks Create/Update Job. Runs BEFORE the delivery
+      // email block below so a freshly-created invoice's link can be auto-filled into it the same call
+      // (see waveViewUrl passed to generateDeliveryEmails).
+      let waveResult = null;
+      const waveNotes = []; // merged into pendingConfirmation once it exists, below
+      const waveCustomerId = body.waveCustomerId || null;
+      const waveCustomerName = body.waveCustomerName || '';
+      const customItems = Array.isArray(body.customItems) ? body.customItems : [];
+      if (waveBackend.config().autoInvoice && waveCustomerId && price.status === 'ok') {
+        const invoiceArgs = {
+          pricing: price, customerId: waveCustomerId, address: body.address, jobId,
+          invoiceDate: nowIso.slice(0, 10), customItems,
+        };
+        try {
+          if (previousWave && previousWave.invoiceId && previousWave.status === 'DRAFT') {
+            const inv = await waveBackend.buildAndSubmitInvoice({ ...invoiceArgs, mode: 'patch', invoiceId: previousWave.invoiceId, currentStatus: previousWave.status });
+            waveResult = { success: true, action: 'patched', invoice: inv };
+          } else if (previousWave && previousWave.invoiceId) {
+            waveResult = { success: true, action: 'skipped', invoice: previousWave, reason: 'Wave invoice is ' + previousWave.status + ', not DRAFT -- not updated automatically.' };
+            waveNotes.push('Wave invoice ' + previousWave.invoiceId + ' is already ' + previousWave.status + ' -- the price may have changed since; update it by hand in Wave if needed.');
+          } else {
+            const inv = await waveBackend.buildAndSubmitInvoice({ ...invoiceArgs, mode: 'create' });
+            waveResult = { success: true, action: 'created', invoice: inv };
+          }
+        } catch (err) {
+          waveResult = { success: false, error: err.message };
+          waveNotes.push('Wave draft invoice not created/updated (' + err.message + ').');
+        }
+      }
+      // Whatever we ended up with (freshly created/patched, skipped-because-not-DRAFT, a failure, or
+      // simply nothing attempted) is what gets carried into job.json -- see previousWave above for why
+      // "carry forward on failure/skip" matters (never silently lose a previously-created invoice's id).
+      const waveJson = waveResult && waveResult.success && waveResult.invoice ? {
+        invoiceId: waveResult.invoice.id, viewUrl: waveResult.invoice.viewUrl,
+        invoiceNumber: waveResult.invoice.invoiceNumber, status: waveResult.invoice.status, updatedAt: nowIso,
+      } : previousWave;
+
       let deliveryEmailResult = null;
       let coverClosingResult = null;
       let tourLinkResult = null;
@@ -961,51 +1005,12 @@ async function handleApi(req, res, urlPath) {
           deliveryEmailResult = await deliveryEmail.generateDeliveryEmails({
             jobId, jobFolderPath, folderName, clientName: body.clientName, address: body.address,
             order, componentFolders, totalCents: price.totalCents, preTaxCents: price.finalSubtotalCents,
+            waveViewUrl: waveJson && waveJson.viewUrl,
           });
         } catch (err) {
           deliveryEmailResult = { attempted: true, success: false, error: 'Unexpected delivery-email failure: ' + err.message };
         }
       }
-
-      // Wave draft invoice (2026-09-23, optional -- see wave-backend.js). Only when WAVE_AUTO_INVOICE
-      // is on AND a Wave customer was picked in the form. No invoiceId saved yet -> create; one saved
-      // AND its last-known status is still DRAFT -> patch (line items may have changed); anything else
-      // (SAVED/approved, sent, paid) -> never touched automatically, per Franky's confirmed flow (he
-      // reviews/approves the draft in Wave himself before sending the delivery email) -- flagged in
-      // pendingConfirmation instead so a real price change doesn't go unnoticed. Best-effort like every
-      // other real-ID-only side effect above: never blocks Create/Update Job.
-      let waveResult = null;
-      const waveNotes = []; // merged into pendingConfirmation once it exists, below
-      const waveCustomerId = body.waveCustomerId || null;
-      const customItems = Array.isArray(body.customItems) ? body.customItems : [];
-      if (waveBackend.config().autoInvoice && waveCustomerId && price.status === 'ok') {
-        const invoiceArgs = {
-          pricing: price, customerId: waveCustomerId, address: body.address, jobId,
-          invoiceDate: nowIso.slice(0, 10), customItems,
-        };
-        try {
-          if (previousWave && previousWave.invoiceId && previousWave.status === 'DRAFT') {
-            const inv = await waveBackend.buildAndSubmitInvoice({ ...invoiceArgs, mode: 'patch', invoiceId: previousWave.invoiceId, currentStatus: previousWave.status });
-            waveResult = { success: true, action: 'patched', invoice: inv };
-          } else if (previousWave && previousWave.invoiceId) {
-            waveResult = { success: true, action: 'skipped', invoice: previousWave, reason: 'Wave invoice is ' + previousWave.status + ', not DRAFT -- not updated automatically.' };
-            waveNotes.push('Wave invoice ' + previousWave.invoiceId + ' is already ' + previousWave.status + ' -- the price may have changed since; update it by hand in Wave if needed.');
-          } else {
-            const inv = await waveBackend.buildAndSubmitInvoice({ ...invoiceArgs, mode: 'create' });
-            waveResult = { success: true, action: 'created', invoice: inv };
-          }
-        } catch (err) {
-          waveResult = { success: false, error: err.message };
-          waveNotes.push('Wave draft invoice not created/updated (' + err.message + ').');
-        }
-      }
-      // Whatever we ended up with (freshly created/patched, skipped-because-not-DRAFT, a failure, or
-      // simply nothing attempted) is what gets carried into job.json -- see previousWave above for why
-      // "carry forward on failure/skip" matters (never silently lose a previously-created invoice's id).
-      const waveJson = waveResult && waveResult.success && waveResult.invoice ? {
-        invoiceId: waveResult.invoice.id, viewUrl: waveResult.invoice.viewUrl,
-        invoiceNumber: waveResult.invoice.invoiceNumber, status: waveResult.invoice.status, updatedAt: nowIso,
-      } : previousWave;
 
       // Form-reload sidecar (see form-state.js) -- written every call,
       // draft or real, so a Draft OR a Recent Job can be re-opened later
@@ -1038,6 +1043,7 @@ async function handleApi(req, res, urlPath) {
         dropboxResult,
         commission,
         waveCustomerId,
+        waveCustomerName,
         customItems,
         wave: waveJson,
       };
