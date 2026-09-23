@@ -327,6 +327,21 @@ Recorded so nobody mistakes intent for current behaviour:
   pulls the selected HD originals from Dropbox. **Not implemented** — current
   photo meta is `{ photoId, filename, ext, width, height, hasThumb, bytes,
   uploadedAt, role? }` and export uses the Supabase bucket.
+- **OPEN ISSUE — Android phone display is broken (reported 2026-09-21, not yet
+  diagnosed).** The editor was built for desktop. On iPhone the overall layout
+  is fine; on Android it has "relatively big" problems (exact symptoms unknown —
+  the user owes screenshots + phone model + browser). Do NOT guess-fix; get
+  screenshots first. Debug via Chrome `chrome://inspect#devices` (USB debugging)
+  or serve the local dev server on the LAN (`node server.js`, open
+  `http://<mac-ip>:4180` on the phone). What IS fixed (branch `fsb-mobile`,
+  merged to `main` 2026-09-21, live at fs.realgta.ca): on `@media (hover: none)`
+  devices the hover-only slot tools/Move handle are hidden (they stuck "on" after
+  a tap and covered small photos so a tap couldn't open the picker), zoom/reset
+  moved into the picker bar, library delete ✕ enlarged, and `pointercancel`
+  (browser took a touch scroll) no longer opens the picker. Known remaining
+  limits: no vertical one-finger pan of a photo on touch (`touch-action: pan-y`
+  so the page can scroll), no two-finger pinch zoom on slots. Desktop behaviour
+  is unchanged by design.
 - **Admin console** folds into the unified FranVision management system; custom
   domain gets bound. Both are config-level, later.
 

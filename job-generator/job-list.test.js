@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const assert = require('assert');
-const { scanJobs, listDrafts, listRecentJobs, RECENT_JOBS_WINDOW_MS } = require('./job-list.js');
+const { scanJobs, listDrafts, listRecentJobs, markJobCompleted } = require('./job-list.js');
 const { writeFormState } = require('./form-state.js');
 
 let passed = 0, failed = 0;
@@ -101,28 +101,69 @@ test('listDrafts: only jobId === null folders, most-recently-updated first', () 
   }
 });
 
-test('listRecentJobs: only real jobIds created within the window, most-recent first, excludes drafts and stale jobs', () => {
+test('listRecentJobs: every real jobId regardless of age, most-recent first, excludes drafts (permanent retention, 2026-09-22)', () => {
   const root = makeTmpDir();
-  const now = new Date('2026-09-13T12:00:00.000Z');
   try {
     writeJob(root, 'draft', { jobId: null, createdAt: '2026-09-13T00:00:00.000Z' });
-    writeJob(root, 'stale-job', { jobId: 'FVS-20260901-001', createdAt: '2026-09-01T00:00:00.000Z' });
+    writeJob(root, 'ancient-job', { jobId: 'FVS-20260101-001', createdAt: '2026-01-01T00:00:00.000Z' });
     writeJob(root, 'recent-job-1', { jobId: 'FVS-20260912-001', createdAt: '2026-09-12T00:00:00.000Z' });
     writeJob(root, 'recent-job-2', { jobId: 'FVS-20260913-001', createdAt: '2026-09-13T10:00:00.000Z' });
-    const recent = listRecentJobs(root, now);
-    assert.deepStrictEqual(recent.map((j) => j.folderName), ['recent-job-2', 'recent-job-1']);
+    const recent = listRecentJobs(root);
+    assert.deepStrictEqual(recent.map((j) => j.folderName), ['recent-job-2', 'recent-job-1', 'ancient-job']);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
-test('listRecentJobs: a job exactly at the window boundary is still included', () => {
+test('listRecentJobs: excludes a job with completedAt set, even if very recent', () => {
   const root = makeTmpDir();
-  const now = new Date('2026-09-13T12:00:00.000Z');
   try {
-    const boundary = new Date(now.getTime() - RECENT_JOBS_WINDOW_MS).toISOString();
-    writeJob(root, 'boundary-job', { jobId: 'FVS-20260910-001', createdAt: boundary });
-    assert.strictEqual(listRecentJobs(root, now).length, 1);
+    writeJob(root, 'still-open', { jobId: 'FVS-20260913-001', createdAt: '2026-09-13T00:00:00.000Z' });
+    writeJob(root, 'done', { jobId: 'FVS-20260913-002', createdAt: '2026-09-13T01:00:00.000Z', completedAt: '2026-09-13T05:00:00.000Z' });
+    assert.deepStrictEqual(listRecentJobs(root).map((j) => j.folderName), ['still-open']);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('scanJobs: reads completedAt back out of job.json (null when absent/not a string)', () => {
+  const root = makeTmpDir();
+  try {
+    writeJob(root, 'open', { jobId: 'FVS-20260913-001', createdAt: '2026-09-13T00:00:00.000Z' });
+    writeJob(root, 'done', { jobId: 'FVS-20260913-002', createdAt: '2026-09-13T00:00:00.000Z', completedAt: '2026-09-14T00:00:00.000Z' });
+    const jobs = scanJobs(root);
+    assert.strictEqual(jobs.find((j) => j.folderName === 'open').completedAt, null);
+    assert.strictEqual(jobs.find((j) => j.folderName === 'done').completedAt, '2026-09-14T00:00:00.000Z');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// ---- markJobCompleted ----
+
+test('markJobCompleted: sets completedAt on the real job\'s job.json, leaves other fields untouched, returns true', () => {
+  const root = makeTmpDir();
+  try {
+    writeJob(root, 'a-job', { jobId: 'FVS-20260913-001', createdAt: '2026-09-13T00:00:00.000Z', client: { name: 'Jane' } });
+    assert.strictEqual(markJobCompleted(root, 'a-job'), true);
+    const saved = JSON.parse(fs.readFileSync(path.join(root, 'a-job', 'job.json'), 'utf8'));
+    assert.ok(typeof saved.completedAt === 'string' && saved.completedAt.length > 0);
+    assert.strictEqual(saved.client.name, 'Jane');
+    assert.deepStrictEqual(listRecentJobs(root), []); // drops out of the list immediately
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('markJobCompleted: false (no throw) for a missing folder, unreadable job.json, or a Draft (jobId: null)', () => {
+  const root = makeTmpDir();
+  try {
+    assert.strictEqual(markJobCompleted(root, 'does-not-exist'), false);
+    writeJob(root, 'a-draft', { jobId: null, createdAt: '2026-09-13T00:00:00.000Z' });
+    assert.strictEqual(markJobCompleted(root, 'a-draft'), false);
+    fs.mkdirSync(path.join(root, 'bad'));
+    fs.writeFileSync(path.join(root, 'bad', 'job.json'), 'not json');
+    assert.strictEqual(markJobCompleted(root, 'bad'), false);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

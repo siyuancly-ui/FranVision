@@ -30,8 +30,13 @@ function existingFromRow(row, rootFolder) {
     folderPath: path.join(rootFolder, row.folder_name),
     jobId: row.job_id || null,
     createdAt: row.created_at || null,
+    completedAt: typeof job.completedAt === 'string' ? job.completedAt : null,
     previousTotalCents: (job.pricing && Number.isInteger(job.pricing.totalCents)) ? job.pricing.totalCents : null,
     order: job.services || {},
+    wave: job.wave && typeof job.wave === 'object' ? job.wave : null,
+    waveCustomerId: job.waveCustomerId || null,
+    waveCustomerName: job.waveCustomerName || '',
+    customItems: Array.isArray(job.customItems) ? job.customItems : [],
     source: 'server',
   };
 }
@@ -46,6 +51,7 @@ function summaryFromRow(row) {
     jobId: row.job_id || null,
     createdAt: row.created_at || null,
     updatedAt: row.updated_at || row.created_at || null,
+    completedAt: typeof job.completedAt === 'string' ? job.completedAt : null,
     clientName: row.client_name || (job.client && job.client.name) || '',
     address: row.address || (job.property && job.property.address) || '',
     propertyType: (job.property && job.property.propertyType) || '',
@@ -76,6 +82,13 @@ function detailFromRow(row) {
     chosenCandidateIndex: Number.isInteger(form.chosenCandidateIndex) ? form.chosenCandidateIndex : null,
     commission: form.commission || { checkedItemIds: [], travelCents: 0 },
     calendarFile: form.calendarFile || null,
+    // Screenshots as links ({filename, url}) -- see server.js#uploadDraftImages.
+    images: Array.isArray(form.images) ? form.images : [],
+    // Wave invoicing (2026-09-23) -- see job-files.js#buildJobJson's comment.
+    waveCustomerId: job.waveCustomerId || null,
+    waveCustomerName: job.waveCustomerName || '',
+    customItems: Array.isArray(job.customItems) ? job.customItems : [],
+    wave: job.wave && typeof job.wave === 'object' ? job.wave : null,
   };
 }
 

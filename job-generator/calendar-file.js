@@ -11,16 +11,16 @@
 // What gets written, once per job:
 //   <job folder>/Shoot Schedule.ics   -- the calendar event, self-contained
 //
-// The images are embedded IN that .ics as standard base64 ATTACH
-// properties (`ATTACH;FMTTYPE=<mime>;ENCODING=BASE64;VALUE=BINARY;
-// X-APPLE-FILENAME="…";X-FILENAME="…":<base64>`). This is a plain
-// RFC 5545 binary attachment -- only the filename hint is client-
-// flavoured (X-APPLE-FILENAME for Apple Calendar, X-FILENAME for others
-// incl. classic desktop Outlook). Apple Calendar and classic Outlook
-// desktop attach it to the event on import; Google Calendar and "new"/
-// web Outlook ignore binary ATTACH entirely (their attachments are a
-// Drive/OneDrive integration, not an .ics feature). There are no loose
-// image files on disk any more.
+// The images are NOT embedded any more (2026-09-21). They used to be base64
+// ATTACH properties, which only Apple Calendar and classic Outlook desktop
+// showed -- Google Calendar and new/web Outlook ignore binary ATTACH. Now
+// server.js uploads each image to the job server's public storage bucket
+// (job-backend.js#uploadImage, supabase/storage.sql) under an unguessable
+// path, and this file writes the resulting LINKS into the event DESCRIPTION
+// (after the notes). Every calendar app shows and linkifies a URL in the
+// description, and it is a plain link so nothing is lost when the .ics is
+// re-imported. readImagesFromIcsFile() still reads the OLD base64 ATTACH form
+// so drafts saved before this change keep their images.
 //
 // `Shoot Schedule.ics` is LOCAL-ONLY (file-sync.js's LOCAL_ONLY_FILENAMES)
 // -- it never reaches Dropbox via Push, same guarantee job.json/Job
@@ -74,6 +74,7 @@ function validateImages(images) {
     if (!ALLOWED_EXTENSIONS.has(ext)) {
       problems.push(label + ': unsupported file type (.' + (ext || '?') + ').');
     }
+    if (img && img.url) return; // already uploaded -- nothing to size-check
     const base64 = (img && img.dataBase64) || '';
     // Base64 is ~4/3 the size of the original bytes -- estimate back.
     const approxBytes = Math.floor(base64.length * 3 / 4);
@@ -261,8 +262,20 @@ function buildDraftCalendarFilename({ order, clientName, photographerName, shoot
   return sanitize.sanitizeSegment(parts.join(' '), 'Shoot Schedule') + '.ics';
 }
 
-// `images` is [{ filename, dataBase64 }] -- each becomes a base64 ATTACH
-// on the VEVENT. DESCRIPTION carries just the notes text.
+// `images` is [{ filename, url }] (already uploaded) -- listed as links in
+// DESCRIPTION after the notes; there is no ATTACH.
+// Notes, then (if any) an "Images" list: filename line + bare URL line each, so
+// every calendar app auto-links the URL.
+function buildDescription(notes, images) {
+  const parts = [];
+  if (notes && String(notes).trim()) parts.push(String(notes).trim());
+  const withUrl = (images || []).filter((img) => img && img.url);
+  if (withUrl.length) {
+    parts.push('图片 Images:\n' + withUrl.map((img, i) => (i + 1) + '. ' + img.filename + '\n' + img.url).join('\n'));
+  }
+  return parts.join('\n\n');
+}
+
 function buildIcs({ jobId, clientName, address, shootDate, shootTime, notes, images, durationMinutes, order, photographerName }) {
   const startDt = parseLocalShootDateTime(shootDate, shootTime);
   // Real elapsed-time addition (not wall-clock field arithmetic) -- exact
@@ -282,25 +295,15 @@ function buildIcs({ jobId, clientName, address, shootDate, shootTime, notes, ima
     'SUMMARY:' + icsEscape(buildEventTitle({ order, clientName, photographerName })),
     'LOCATION:' + icsEscape(address),
   ];
-  if (notes && String(notes).trim()) {
-    lines.push('DESCRIPTION:' + icsEscape(String(notes).trim()));
-  }
-  for (const img of images || []) {
-    const mime = EXT_MIME[fileExt(img.filename)] || 'application/octet-stream';
-    const nameParam = icsParamQuote(img.filename);
-    lines.push(
-      'ATTACH;FMTTYPE=' + mime + ';ENCODING=BASE64;VALUE=BINARY;X-APPLE-FILENAME=' +
-      nameParam + ';X-FILENAME=' + nameParam + ':' + img.dataBase64
-    );
-  }
+  const description = buildDescription(notes, images);
+  if (description) lines.push('DESCRIPTION:' + icsEscape(description));
   lines.push('END:VEVENT');
   lines.push('END:VCALENDAR');
 
   return lines.map(foldLine).join('\r\n') + '\r\n';
 }
 
-// Writes <jobFolder>/Shoot Schedule.ics (images embedded as base64
-// ATTACH). Returns null when there's no Shoot Time -- with no time
+// Writes <jobFolder>/Shoot Schedule.ics (images as links in DESCRIPTION). Returns null when there's no Shoot Time -- with no time
 // there's no calendar event, and this data has no other purpose, so
 // nothing is written. Throws on an invalid time, a missing/invalid Shoot
 // Date (needed for DTSTART -- a caller like draft-store.js may keep Shoot
@@ -327,7 +330,12 @@ function writeCalendarFile(jobFolderAbsolutePath, { jobId, clientName, address, 
 
   fs.mkdirSync(jobFolderAbsolutePath, { recursive: true });
 
-  // De-dupe filenames so each ATTACH's X-APPLE-FILENAME is unique.
+  // Every image must already be uploaded (server.js does that first).
+  for (const img of images || []) {
+    if (!img || !img.url) throw new Error('Invalid image(s): ' + ((img && img.filename) || 'an image') + ' has not been uploaded (no link).');
+  }
+
+  // De-dupe filenames so the listed names are unique.
   const attachedImages = [];
   const usedNames = new Set();
   const normImages = (images || []).map((img, i) => {
@@ -341,7 +349,7 @@ function writeCalendarFile(jobFolderAbsolutePath, { jobId, clientName, address, 
     }
     usedNames.add(candidate.toLowerCase());
     attachedImages.push(candidate);
-    return { filename: candidate, dataBase64: img.dataBase64 };
+    return { filename: candidate, url: img.url };
   });
 
   const icsContent = buildIcs({ jobId, clientName, address, shootDate, shootTime, notes, images: normImages, durationMinutes, order, photographerName });
@@ -414,8 +422,10 @@ module.exports = {
   MAX_IMAGE_BYTES,
   MAX_TOTAL_BYTES,
   ALLOWED_EXTENSIONS,
+  EXT_MIME,
   validateImages,
   buildIcs,
+  buildDescription,
   writeCalendarFile,
   readExistingImages,
   readImagesFromIcsFile,

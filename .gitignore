@@ -18,6 +18,10 @@
 # required keys with no real values; copy it to .env and fill it in locally.
 /job-generator/.env
 
+# Job Generator: real Wave product-id map (wave-backend.js) -- not a secret
+# by itself, but specific to Franky's real Wave business; wave-product-map.example.json documents the shape.
+/job-generator/wave-product-map.json
+
 # Feature Sheet Builder: local project + uploaded-photo storage
 /feature-sheet-builder/data/
 

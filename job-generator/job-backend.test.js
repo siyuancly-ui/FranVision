@@ -14,6 +14,29 @@ const okFetch = (payload, calls) => async (url, opts) => {
 };
 
 (async () => {
+  await test('uploadImage: POSTs the bytes to the bucket with the machine token header and returns the PUBLIC link', async () => {
+    const calls = [];
+    const url = await backend.uploadImage(
+      { objectPath: 'ab12.jpg', contentType: 'image/jpeg', buffer: Buffer.from('bytes') },
+      { env: ENV, fetchImpl: async (u, o) => { calls.push({ u, o }); return { ok: true, status: 200, text: async () => '{}' }; } });
+    assert.strictEqual(url, 'https://x.supabase.co/storage/v1/object/public/jg-shoot-notes/ab12.jpg');
+    assert.strictEqual(calls[0].u, 'https://x.supabase.co/storage/v1/object/jg-shoot-notes/ab12.jpg');
+    assert.strictEqual(calls[0].o.method, 'POST');
+    assert.strictEqual(calls[0].o.headers['x-jg-token'], 'secret-token');
+    assert.strictEqual(calls[0].o.headers['Content-Type'], 'image/jpeg');
+    assert.strictEqual(calls[0].o.headers['x-upsert'], 'false');
+    assert.ok(Buffer.from('bytes').equals(calls[0].o.body));
+  });
+
+  await test('uploadImage: rejected upload -> BackendError with status + message; network failure -> unreachable', async () => {
+    await assert.rejects(
+      backend.uploadImage({ objectPath: 'a.jpg', buffer: Buffer.alloc(1) }, { env: ENV, fetchImpl: async () => ({ ok: false, status: 403, text: async () => JSON.stringify({ message: 'violates row-level security' }) }) }),
+      (e) => e.name === 'BackendError' && e.status === 403 && /row-level security/.test(e.message) && e.unreachable === false);
+    await assert.rejects(
+      backend.uploadImage({ objectPath: 'a.jpg', buffer: Buffer.alloc(1) }, { env: ENV, fetchImpl: async () => { throw new Error('ENOTFOUND'); } }),
+      (e) => e.unreachable === true);
+  });
+
   await test('isConfigured: needs all three of url / anon key / token', () => {
     assert.strictEqual(backend.isConfigured(ENV), true);
     assert.strictEqual(backend.isConfigured({ ...ENV, JG_TOKEN: '' }), false);
@@ -64,14 +87,30 @@ const okFetch = (payload, calls) => async (url, opts) => {
     const calls = [];
     const deps = { env: ENV, fetchImpl: okFetch([], calls) };
     await backend.listDrafts(deps);
-    await backend.listRecentJobs('2026-09-01T00:00:00Z', deps);
+    await backend.listRecentJobs(deps);
     await backend.upsertJob({ folder_name: 'F' }, deps);
     await backend.deleteDraft('F', deps);
     const names = calls.map((c) => c.url.split('/').pop());
     assert.deepStrictEqual(names, ['jg_list_jobs', 'jg_list_jobs', 'jg_upsert_job', 'jg_delete_draft']);
     assert.strictEqual(JSON.parse(calls[0].opts.body).p_kind, 'drafts');
-    assert.strictEqual(JSON.parse(calls[1].opts.body).p_since, '2026-09-01T00:00:00Z');
+    // 'recent' now means "not completed", no time window -- no p_since sent at all.
+    assert.strictEqual(JSON.parse(calls[1].opts.body).p_kind, 'recent');
+    assert.strictEqual('p_since' in JSON.parse(calls[1].opts.body), false);
     assert.deepStrictEqual(JSON.parse(calls[2].opts.body).p_row, { folder_name: 'F' });
+  });
+
+  await test('completeJob: calls jg_complete_job with the folder name', async () => {
+    const calls = [];
+    await backend.completeJob('2026.9.9 12 Test Ave_Jane', { env: ENV, fetchImpl: okFetch({ folder_name: 'x' }, calls) });
+    assert.ok(calls[0].url.endsWith('/jg_complete_job'));
+    assert.strictEqual(JSON.parse(calls[0].opts.body).p_folder_name, '2026.9.9 12 Test Ave_Jane');
+  });
+
+  await test('completeJob: "not found" errors (legacy local-only job never synced) are flagged notFound', async () => {
+    const f = async () => ({ ok: false, status: 400, text: async () => JSON.stringify({ message: 'jg: job not found or not a real job' }) });
+    await assert.rejects(
+      backend.completeJob('F', { env: ENV, fetchImpl: f }),
+      (e) => e.name === 'BackendError' && e.notFound === true);
   });
 
   console.log('\n' + passed + ' passed, ' + failed + ' failed');

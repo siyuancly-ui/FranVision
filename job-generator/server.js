@@ -39,6 +39,7 @@ const deliveryEmail = require('./delivery-email.js');
 const crypto = require('crypto');
 const jobBackend = require('./job-backend.js');
 const jobSync = require('./job-sync.js');
+const waveBackend = require('./wave-backend.js');
 
 // Windows can reserve whole port ranges (Hyper-V / WSL / Docker), which makes
 // listen() fail with EACCES on a port nothing is using -- so on EACCES we try
@@ -218,6 +219,28 @@ async function renameFolderWithRetry(oldPath, newPath, { attempts = 5, delayMs =
 // job/draft metadata once configured. Creating/updating a job while it can't
 // be reached is REFUSED rather than worked around with a local/temporary ID
 // (explicit decision 2026-09-19) -- Dropbox needs the network anyway.
+// Save as Draft: turn the request's images into links. Entries that already
+// carry a `url` (re-saved draft) are kept as-is; fresh / legacy base64 ones are
+// uploaded to the job server's public bucket under an unguessable path (random
+// 128-bit hex -- the link IS the access control, see supabase/storage.sql).
+// Throws BackendError on failure so the caller can refuse the save: a calendar
+// event that silently lost its screenshots would be worse than an error.
+async function uploadDraftImages(images) {
+  const out = [];
+  for (const img of images || []) {
+    if (img && img.url) { out.push({ filename: img.filename, url: img.url }); continue; }
+    const ext = String(img.filename || '').toLowerCase().match(/\.([a-z0-9]+)$/);
+    const objectPath = crypto.randomBytes(16).toString('hex') + '.' + (ext ? ext[1] : 'jpg');
+    const url = await jobBackend.uploadImage({
+      objectPath,
+      contentType: calendarFile.EXT_MIME[ext ? ext[1] : 'jpg'] || 'application/octet-stream',
+      buffer: Buffer.from(img.dataBase64 || '', 'base64'),
+    });
+    out.push({ filename: img.filename, url });
+  }
+  return out;
+}
+
 function sendBackendError(res, err) {
   const offline = !!(err && err.unreachable);
   return sendJson(res, offline ? 503 : 502, {
@@ -391,10 +414,11 @@ async function handleApi(req, res, urlPath) {
     }
 
     if (urlPath === '/api/recent-jobs' && req.method === 'GET') {
+      // Kept permanently (no time window) until marked Complete -- see
+      // job-list.js's header comment and POST /api/complete-job below.
       if (jobBackend.isConfigured()) {
         try {
-          const since = new Date(Date.now() - jobList.RECENT_JOBS_WINDOW_MS).toISOString();
-          const rows = await jobBackend.listRecentJobs(since);
+          const rows = await jobBackend.listRecentJobs();
           const fromServer = (rows || []).map(jobSync.summaryFromRow);
           const known = new Set(fromServer.map((j) => j.folderName));
           const legacy = jobList.listRecentJobs(rootFolder).filter((j) => !known.has(j.folderName));
@@ -404,6 +428,54 @@ async function handleApi(req, res, urlPath) {
         }
       }
       return sendJson(res, 200, { jobs: jobList.listRecentJobs(rootFolder) });
+    }
+
+    // Marks a Recent Job Complete -- it drops out of every machine's Recent
+    // Jobs list (see job-list.js#markJobCompleted / job-backend.js#completeJob).
+    // No undo in the UI: the job's folder, job.json (now with completedAt
+    // set) and Job ID are all untouched, only its list membership changes,
+    // so nothing is destroyed -- re-adding it to the list would need a
+    // direct edit of job.json today.
+    if (urlPath === '/api/complete-job' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      const effectiveRootFolder = body.rootFolder || rootFolder;
+      const folderName = body.folderName || '';
+      if (!folderName) return sendJson(res, 400, { error: 'folderName is required.' });
+
+      // Local write is best-effort and independent of the server call -- a
+      // job made on THIS machine should stop showing here even if the
+      // server is unreachable right now.
+      const localUpdated = jobList.markJobCompleted(effectiveRootFolder, folderName);
+
+      if (jobBackend.isConfigured()) {
+        try {
+          await jobBackend.completeJob(folderName);
+        } catch (err) {
+          // A legacy job the server never heard about (no row) is fine --
+          // the local write above is all there is to do for it. Anything
+          // else (unreachable, real error) is reported so the user knows
+          // the OTHER machine won't see this as completed yet.
+          if (!err.notFound) {
+            return sendJson(res, 200, { success: true, localUpdated, serverError: err.message });
+          }
+        }
+      }
+      return sendJson(res, 200, { success: true, localUpdated });
+    }
+
+    // Wave customer picker (2026-09-23, see wave-backend.js). Read-only. `configured:false` when
+    // WAVE_TOKEN/WAVE_BUSINESS_ID aren't set -- the UI hides the picker entirely in that case, same
+    // pattern as the shared job server being optional. Errors (Wave unreachable, bad token) are
+    // reported but never break the page -- picking a customer is optional, Create Job must still work.
+    if (urlPath === '/api/wave-customers' && req.method === 'GET') {
+      if (!waveBackend.isConfigured()) return sendJson(res, 200, { configured: false, customers: [] });
+      try {
+        const q = new URL(req.url, 'http://localhost').searchParams.get('q') || '';
+        const customers = await waveBackend.searchCustomers(q);
+        return sendJson(res, 200, { configured: true, customers });
+      } catch (err) {
+        return sendJson(res, 200, { configured: true, customers: [], error: err.message });
+      }
     }
 
     // Loads a job folder's full record back into the Create Job form --
@@ -422,10 +494,10 @@ async function handleApi(req, res, urlPath) {
           const row = await jobBackend.getJob(body.folderName || '');
           if (row) {
             const detail = jobSync.detailFromRow(row);
-            detail.images = fs.existsSync(jobFolderPath) ? calendarFile.readExistingImages(jobFolderPath) : [];
-            // A new-style draft has no folder -- its images are in the calendar
-            // file it dropped into the Job Root Folder (on this machine only;
-            // cross-machine images are a later stage).
+            // New-style drafts keep their screenshots as LINKS in the row
+            // (detail.images from detailFromRow) -- works on any machine.
+            // Older ones: base64 in this machine's folder / calendar file.
+            if (!detail.images.length) detail.images = fs.existsSync(jobFolderPath) ? calendarFile.readExistingImages(jobFolderPath) : [];
             if (!detail.images.length && detail.calendarFile) {
               detail.images = calendarFile.readImagesFromIcsFile(path.join(effectiveRootFolder, detail.calendarFile));
             }
@@ -456,6 +528,10 @@ async function handleApi(req, res, urlPath) {
         chosenCandidateIndex: saved.chosenCandidateIndex,
         commission: saved.commission,
         images: calendarFile.readExistingImages(jobFolderPath),
+        waveCustomerId: data.waveCustomerId || null,
+        waveCustomerName: data.waveCustomerName || '',
+        customItems: Array.isArray(data.customItems) ? data.customItems : [],
+        wave: data.wave && typeof data.wave === 'object' ? data.wave : null,
       });
     }
 
@@ -729,6 +805,12 @@ async function handleApi(req, res, urlPath) {
         jobId = await idGenerator.getNextJobIdChecked(effectiveRootFolder, undefined, dropboxSync.jobIdExistsOnDropbox);
       }
       const createdAt = folderExists ? (existing.createdAt || nowIso) : nowIso;
+      // Carried forward from whatever the existing job.json/row already had (a completed job
+      // reopened via a manually-retyped identity keeps its completedAt -- Create/Update Job never
+      // clears it; see job-list.js#markJobCompleted for how it gets SET in the first place).
+      const completedAt = folderExists ? (existing.completedAt || null) : null;
+      // Same carry-forward idea as completedAt, for the Wave draft invoice created/patched below.
+      const previousWave = folderExists ? (existing.wave || null) : null;
       // True only on the one call that actually turns a Save-Draft'd
       // folder into a real job -- lets the response (and the UI) say
       // something more specific than the generic "updated".
@@ -767,6 +849,9 @@ async function handleApi(req, res, urlPath) {
           folderName, componentFolders: draftComponentFolders, commission,
         };
         try {
+          // Upload the screenshots first: their links go into the draft row
+          // (so any machine can re-show them) and into the calendar file.
+          draftForm.images = await uploadDraftImages(body.images);
           await jobBackend.upsertJob(jobSync.buildRow({ folderName, job: jobFiles.buildJobJson(draftJobData), form: draftForm }));
         } catch (err) {
           return sendBackendError(res, err); // nothing has been written anywhere yet
@@ -779,7 +864,7 @@ async function handleApi(req, res, urlPath) {
             jobId: 'draft-' + crypto.createHash('sha1').update(folderName).digest('hex').slice(0, 16),
             clientName: body.clientName, address: body.address,
             shootDate: body.shootDate, shootTime: body.shootTime,
-            notes: body.notes, images: body.images || [],
+            notes: body.notes, images: draftForm.images,
             order: body.order, photographerName: body.photographerName,
           }, { filename: calendarFilename });
           draftCalendar = { icsPath: written.icsPath, icsFilename: written.icsFilename, imageCount: written.attachedImages.length };
@@ -893,6 +978,49 @@ async function handleApi(req, res, urlPath) {
       // accident before the job is ever finalized. Runs on the one call
       // that assigns the real ID (finalizedFromDraft) same as any other
       // create/update.
+      // Wave draft invoice (2026-09-23, optional -- see wave-backend.js). Only when WAVE_AUTO_INVOICE
+      // is on AND a Wave customer was picked in the form. No invoiceId saved yet -> create; one saved
+      // AND its last-known status is still DRAFT -> patch (line items may have changed); anything else
+      // (SAVED/approved, sent, paid) -> never touched automatically, per Franky's confirmed flow (he
+      // reviews/approves the draft in Wave himself before sending the delivery email) -- flagged in
+      // pendingConfirmation instead so a real price change doesn't go unnoticed. Best-effort like every
+      // other real-ID-only side effect below: never blocks Create/Update Job. Runs BEFORE the delivery
+      // email block below so a freshly-created invoice's link can be auto-filled into it the same call
+      // (see waveViewUrl passed to generateDeliveryEmails).
+      let waveResult = null;
+      const waveNotes = []; // merged into pendingConfirmation once it exists, below
+      const waveCustomerId = body.waveCustomerId || null;
+      const waveCustomerName = body.waveCustomerName || '';
+      const customItems = Array.isArray(body.customItems) ? body.customItems : [];
+      if (waveBackend.config().autoInvoice && waveCustomerId && price.status === 'ok') {
+        const invoiceArgs = {
+          pricing: price, customerId: waveCustomerId, address: body.address, jobId,
+          invoiceDate: nowIso.slice(0, 10), customItems,
+        };
+        try {
+          if (previousWave && previousWave.invoiceId && previousWave.status === 'DRAFT') {
+            const inv = await waveBackend.buildAndSubmitInvoice({ ...invoiceArgs, mode: 'patch', invoiceId: previousWave.invoiceId, currentStatus: previousWave.status });
+            waveResult = { success: true, action: 'patched', invoice: inv };
+          } else if (previousWave && previousWave.invoiceId) {
+            waveResult = { success: true, action: 'skipped', invoice: previousWave, reason: 'Wave invoice is ' + previousWave.status + ', not DRAFT -- not updated automatically.' };
+            waveNotes.push('Wave invoice ' + previousWave.invoiceId + ' is already ' + previousWave.status + ' -- the price may have changed since; update it by hand in Wave if needed.');
+          } else {
+            const inv = await waveBackend.buildAndSubmitInvoice({ ...invoiceArgs, mode: 'create' });
+            waveResult = { success: true, action: 'created', invoice: inv };
+          }
+        } catch (err) {
+          waveResult = { success: false, error: err.message };
+          waveNotes.push('Wave draft invoice not created/updated (' + err.message + ').');
+        }
+      }
+      // Whatever we ended up with (freshly created/patched, skipped-because-not-DRAFT, a failure, or
+      // simply nothing attempted) is what gets carried into job.json -- see previousWave above for why
+      // "carry forward on failure/skip" matters (never silently lose a previously-created invoice's id).
+      const waveJson = waveResult && waveResult.success && waveResult.invoice ? {
+        invoiceId: waveResult.invoice.id, viewUrl: waveResult.invoice.viewUrl,
+        invoiceNumber: waveResult.invoice.invoiceNumber, status: waveResult.invoice.status, updatedAt: nowIso,
+      } : previousWave;
+
       let deliveryEmailResult = null;
       let coverClosingResult = null;
       let tourLinkResult = null;
@@ -923,6 +1051,7 @@ async function handleApi(req, res, urlPath) {
           deliveryEmailResult = await deliveryEmail.generateDeliveryEmails({
             jobId, jobFolderPath, folderName, clientName: body.clientName, address: body.address,
             order, componentFolders, totalCents: price.totalCents, preTaxCents: price.finalSubtotalCents,
+            waveViewUrl: waveJson && waveJson.viewUrl,
           });
         } catch (err) {
           deliveryEmailResult = { attempted: true, success: false, error: 'Unexpected delivery-email failure: ' + err.message };
@@ -947,6 +1076,7 @@ async function handleApi(req, res, urlPath) {
         jobId,
         createdAt,
         updatedAt: nowIso,
+        completedAt,
         clientName: body.clientName,
         photographerName: body.photographerName,
         address: body.address,
@@ -958,9 +1088,14 @@ async function handleApi(req, res, urlPath) {
         componentFolders,
         dropboxResult,
         commission,
+        waveCustomerId,
+        waveCustomerName,
+        customItems,
+        wave: waveJson,
       };
       const written = jobFiles.writeJobFiles(jobFolderPath, jobData);
       const pendingConfirmation = jobFiles.computePendingConfirmation(jobData);
+      pendingConfirmation.push(...waveNotes);
 
       // Register/refresh this job on the shared backend (the local job.json
       // above stays -- it's still the per-machine record). A failure here is
@@ -1017,6 +1152,7 @@ async function handleApi(req, res, urlPath) {
         deliveryEmail: deliveryEmailResult,
         coverClosing: coverClosingResult,
         tourLink: tourLinkResult,
+        wave: waveResult,
         backendSync,
         pendingConfirmation,
       });

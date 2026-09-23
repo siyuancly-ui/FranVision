@@ -202,6 +202,11 @@ test('buildJobJson: updatedAt defaults to createdAt, and is carried through on a
   assert.strictEqual(updated.updatedAt, '2026-09-10T12:00:00.000Z');
 });
 
+test('buildJobJson: completedAt defaults to null, and is carried through (never set by this build path itself)', () => {
+  assert.strictEqual(buildJobJson(makeJobData()).completedAt, null);
+  assert.strictEqual(buildJobJson(makeJobData({ completedAt: '2026-09-22T00:00:00.000Z' })).completedAt, '2026-09-22T00:00:00.000Z');
+});
+
 test('buildJobInfoText: shows an "Updated:" line only when updatedAt differs from createdAt', () => {
   assert.ok(!buildJobInfoText(makeJobData()).includes('Updated:'));
   const text = buildJobInfoText(makeJobData({ updatedAt: '2026-09-10T12:00:00.000Z' }));

@@ -41,6 +41,21 @@ function fakeImage(filename, sizeBytes) {
   return { filename, dataBase64: Buffer.alloc(sizeBytes || 10).toString('base64') };
 }
 
+function linkedImage(filename, n) {
+  return { filename, url: 'https://x.supabase.co/storage/v1/object/public/jg-shoot-notes/' + 'ab'.repeat(16) + '-' + (n || 1) + '/' + filename };
+}
+
+// The OLD on-disk format (base64 ATTACH), hand-built -- the writer no longer
+// produces it, but drafts saved before 2026-09-21 still contain it.
+function writeLegacyAttachIcs(file, images) {
+  const lines = ['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'SUMMARY:x'];
+  for (const img of images) {
+    lines.push('ATTACH;FMTTYPE=image/jpeg;ENCODING=BASE64;VALUE=BINARY;X-APPLE-FILENAME="' + img.filename + '";X-FILENAME="' + img.filename + '":' + img.dataBase64);
+  }
+  lines.push('END:VEVENT', 'END:VCALENDAR');
+  fs.writeFileSync(file, lines.join('\r\n') + '\r\n');
+}
+
 const BASE_JOB = { jobId: 'FVS-20260908-001', clientName: 'Jane Doe', address: '123 Main St', shootDate: '2026/09/10', shootTime: '14:30' };
 
 // ---- validateImages ----
@@ -182,12 +197,20 @@ test('buildIcs: omits DESCRIPTION entirely when there are no notes (images do NO
   assert.ok(!ics.includes('DESCRIPTION:'));
 });
 
-test('buildIcs: embeds each image as a base64 ATTACH with FMTTYPE + filename params', () => {
-  const png = Buffer.from('fake png bytes').toString('base64');
-  const unfolded = buildIcs(Object.assign({}, BASE_JOB, {
-    images: [{ filename: 'lockbox.png', dataBase64: png }],
-  })).replace(/\r\n[ \t]/g, '');
-  assert.ok(unfolded.includes('ATTACH;FMTTYPE=image/png;ENCODING=BASE64;VALUE=BINARY;X-APPLE-FILENAME="lockbox.png";X-FILENAME="lockbox.png":' + png));
+test('buildIcs: images are listed as links in DESCRIPTION after the notes, and there is NO ATTACH', () => {
+  const img = linkedImage('lockbox.png');
+  const unfolded = buildIcs(Object.assign({}, BASE_JOB, { notes: 'Gate code 1234', images: [img] })).replace(/\r\n[ \t]/g, '');
+  assert.ok(!unfolded.includes('ATTACH'));
+  const desc = unfolded.split('\r\n').find((l) => l.startsWith('DESCRIPTION:'));
+  assert.ok(desc.includes('Gate code 1234'));
+  assert.ok(desc.includes('Images:\\n1. lockbox.png\\n' + img.url));
+  assert.ok(desc.indexOf('Gate code 1234') < desc.indexOf(img.url), 'notes come first');
+});
+
+test('buildIcs: images alone (no notes) still produce a DESCRIPTION with the links', () => {
+  const img = linkedImage('a.jpg');
+  const unfolded = buildIcs(Object.assign({}, BASE_JOB, { notes: '', images: [img] })).replace(/\r\n[ \t]/g, '');
+  assert.ok(unfolded.includes('DESCRIPTION:') && unfolded.includes(img.url));
 });
 
 test('buildIcs: escapes commas, semicolons, and newlines in text fields', () => {
@@ -284,16 +307,16 @@ test('writeCalendarFile: throws when Shoot Date is malformed but Shoot Time is s
   }
 });
 
-test('writeCalendarFile: embeds images (no loose files), reports sanitized filenames', () => {
+test('writeCalendarFile: writes image links (no loose files), reports sanitized filenames', () => {
   const dir = makeTmpDir();
   try {
-    const result = writeCalendarFile(dir, Object.assign({}, BASE_JOB, { images: [fakeImage('front yard.jpg', 20), fakeImage('kitchen.png', 20)] }));
+    const a = linkedImage('front yard.jpg', 1), b = linkedImage('kitchen.png', 2);
+    const result = writeCalendarFile(dir, Object.assign({}, BASE_JOB, { images: [a, b] }));
     assert.deepStrictEqual(result.attachedImages.slice().sort(), ['front yard.jpg', 'kitchen.png']);
-    // No loose image files anywhere.
     assert.deepStrictEqual(fs.readdirSync(dir), [ICS_FILENAME]);
     const ics = fs.readFileSync(path.join(dir, ICS_FILENAME), 'utf8').replace(/\r\n[ \t]/g, '');
-    assert.ok(ics.includes('X-APPLE-FILENAME="front yard.jpg"'));
-    assert.ok(ics.includes('X-APPLE-FILENAME="kitchen.png"'));
+    assert.ok(ics.includes(a.url) && ics.includes(b.url));
+    assert.ok(!ics.includes('ATTACH'));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -302,7 +325,7 @@ test('writeCalendarFile: embeds images (no loose files), reports sanitized filen
 test('writeCalendarFile: de-dupes two images with the same filename', () => {
   const dir = makeTmpDir();
   try {
-    const result = writeCalendarFile(dir, Object.assign({}, BASE_JOB, { images: [fakeImage('ref.jpg', 5), fakeImage('ref.jpg', 7)] }));
+    const result = writeCalendarFile(dir, Object.assign({}, BASE_JOB, { images: [linkedImage('ref.jpg', 1), linkedImage('ref.jpg', 2)] }));
     assert.strictEqual(result.attachedImages.length, 2);
     assert.notStrictEqual(result.attachedImages[0], result.attachedImages[1]);
   } finally {
@@ -310,17 +333,18 @@ test('writeCalendarFile: de-dupes two images with the same filename', () => {
   }
 });
 
-test('writeCalendarFile: image bytes round-trip exactly through the ATTACH base64', () => {
+test('writeCalendarFile: refuses an image that has not been uploaded (no url) rather than dropping it silently', () => {
   const dir = makeTmpDir();
   try {
-    const original = Buffer.from('not really a jpg but bytes are bytes');
-    writeCalendarFile(dir, Object.assign({}, BASE_JOB, { images: [{ filename: 'x.jpg', dataBase64: original.toString('base64') }] }));
-    const back = readExistingImages(dir);
-    assert.strictEqual(back.length, 1);
-    assert.ok(Buffer.from(back[0].dataBase64, 'base64').equals(original));
+    assert.throws(() => writeCalendarFile(dir, Object.assign({}, BASE_JOB, { images: [fakeImage('raw.jpg', 5)] })), /not been uploaded/);
+    assert.ok(!fs.existsSync(path.join(dir, ICS_FILENAME)));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('validateImages: an already-uploaded (url) image needs no size check', () => {
+  assert.deepStrictEqual(validateImages([linkedImage('a.jpg')]), []);
 });
 
 test('writeCalendarFile: throws (does not partially write) on an invalid image', () => {
@@ -366,10 +390,10 @@ test('readExistingImages: [] when there is no calendar file', () => {
   }
 });
 
-test('readExistingImages: parses embedded ATTACH images back out of the .ics', () => {
+test('readExistingImages: still parses OLD base64 ATTACH images out of an existing .ics', () => {
   const dir = makeTmpDir();
   try {
-    writeCalendarFile(dir, Object.assign({}, BASE_JOB, { images: [fakeImage('lockbox.jpg', 12), fakeImage('gate.png', 8)] }));
+    writeLegacyAttachIcs(path.join(dir, ICS_FILENAME), [fakeImage('lockbox.jpg', 12), fakeImage('gate.png', 8)]);
     const back = readExistingImages(dir).sort((a, b) => a.filename.localeCompare(b.filename));
     assert.deepStrictEqual(back.map((i) => i.filename), ['gate.png', 'lockbox.jpg']);
     back.forEach((i) => assert.ok(typeof i.dataBase64 === 'string' && i.dataBase64.length > 0));
@@ -459,10 +483,10 @@ test('writeCalendarFile: writeOpts.filename writes that name (not Shoot Schedule
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('readImagesFromIcsFile: reads the ATTACH images of one named .ics file; [] when it does not exist', () => {
+test('readImagesFromIcsFile: reads the (old) ATTACH images of one named .ics file; [] when it does not exist', () => {
   const dir = makeTmpDir();
   try {
-    cal.writeCalendarFile(dir, { jobId: 'd', clientName: 'J', address: '1 X', shootDate: '2026/09/25', shootTime: '10:00', notes: '', images: [fakeImage('gate.jpg')], order: {} }, { filename: 'D.ics' });
+    writeLegacyAttachIcs(path.join(dir, 'D.ics'), [fakeImage('gate.jpg')]);
     assert.deepStrictEqual(cal.readImagesFromIcsFile(path.join(dir, 'D.ics')).map((i) => i.filename), ['gate.jpg']);
     assert.deepStrictEqual(cal.readImagesFromIcsFile(path.join(dir, 'nope.ics')), []);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
