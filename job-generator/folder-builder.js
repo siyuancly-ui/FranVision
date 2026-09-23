@@ -17,7 +17,8 @@
 //   Revisions           <- always, empty
 //   Local Report        <- always, empty (added 2026-09-07)
 //   HDR Photos          <- always (renamed from "MLS" 2026-09-12 -- see below)
-//     Callout          <- always, empty (added 2026-09-18, delivery page's Callout photos)
+//     Callout          <- Walkthrough Video, Vlog Video, OR Drone Photos selected (added
+//                          2026-09-18 as always-on; narrowed 2026-09-22 -- see below)
 //   Floorplan           <- Floor Plan OR Site Plan selected (Site Plan merges in, no separate folder)
 //   Virtual Staging     <- Virtual Staging selected
 //   Feature Sheets      <- Feature Sheets selected
@@ -79,13 +80,16 @@ function getComponentFolders(order) {
   // flagged so it isn't forgotten before invoicing.
   const stagingQty = Number(addons.virtual_staging_qty) || 0;
   const wantsVirtualStaging = !!addons.virtual_staging || stagingQty > 0;
+  // 'HDR Photos/Callout': where the photos for the delivery page's Callout
+  // section go (drone/aerial or any highlight shots) -- delivery-page/
+  // photo-sync-worker read it as a nested folder under HDR Photos. A
+  // normal synced component folder, unlike the Dropbox-only 'Cover&Closing'
+  // (see dropbox-sync.js). Was unconditional 2026-09-18..2026-09-22; narrowed
+  // to only the jobs that actually produce Callout-worthy shots (video or
+  // drone) so it stops appearing empty on every plain photo-only job.
+  const wantsCallout = wantsWalkthrough || wantsVlog || !!addons.drone_photos;
 
-  // 'HDR Photos/Callout' (added 2026-09-18): where the photos for the
-  // delivery page's Callout section go (drone/aerial or any highlight
-  // shots) -- delivery-page/photo-sync-worker read it as a nested folder
-  // under HDR Photos. A normal synced component folder, unlike the
-  // Dropbox-only 'Cover&Closing' (see dropbox-sync.js).
-  const folders = ['0 RAW/1 Raws', 'Revisions', 'Local Report', 'HDR Photos', 'HDR Photos/Callout'];
+  const folders = ['0 RAW/1 Raws', 'Revisions', 'Local Report', 'HDR Photos'];
 
   if (isLuxury) {
     folders.push('0 RAW/4 Raw HDR');
@@ -94,6 +98,7 @@ function getComponentFolders(order) {
     folders.push('0 RAW/2 Video');
     folders.push('0 RAW/3 Image');
   }
+  if (wantsCallout) folders.push('HDR Photos/Callout');
   if (wantsWalkthrough) folders.push('Video');
   if (wantsVlog) folders.push('VLOG');
   if (wantsFloorplan) folders.push('Floorplan');
