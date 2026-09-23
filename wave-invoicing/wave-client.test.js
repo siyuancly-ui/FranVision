@@ -18,6 +18,15 @@ test('createDraftInvoice shapes the result', async () => {
   assert.deepEqual(calls[0].variables.i, { businessId: 'B', items: [] });
 });
 
+test('patchInvoice sends id + fields, shapes the result; refuses businessId or status in fields', async () => {
+  const { client, calls } = mk([resp(200, { data: { invoicePatch: { didSucceed: true, inputErrors: null, invoice: inv } } })]);
+  const out = await client.patchInvoice('I', { items: [{ productId: 'P', quantity: 1, unitPrice: '1.00' }], poNumber: 'FVS-1' });
+  assert.equal(out.id, 'I');
+  assert.deepEqual(calls[0].variables.i, { id: 'I', items: [{ productId: 'P', quantity: 1, unitPrice: '1.00' }], poNumber: 'FVS-1' });
+  await assert.rejects(() => client.patchInvoice('I', { businessId: 'B' }), /must not include businessId/);
+  await assert.rejects(() => client.patchInvoice('I', { status: 'DRAFT' }), /never changes status/);
+});
+
 test('rejects an invoice input built for a different business', async () => {
   const { client } = mk([]);
   await assert.rejects(() => client.createDraftInvoice({ businessId: 'OTHER' }), /does not match/);

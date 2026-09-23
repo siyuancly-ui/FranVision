@@ -73,6 +73,17 @@ function createWaveClient({ token, businessId, fetchImpl = fetch, sleep = (ms) =
       return shape(mustSucceed(d.invoiceApprove, 'invoiceApprove').invoice);
     },
 
+    // `fields` is an invoice's worth of line data (items/customerId/poNumber/memo/dueDate/...), same
+    // shapes buildInvoiceRequest produces MINUS businessId/status -- InvoicePatchInput has no businessId
+    // (the invoice already belongs to one) and this client never changes status via patch (DRAFT->SAVED
+    // is invoiceApprove only; the caller is expected to skip patching an invoice that's already past DRAFT).
+    async patchInvoice(invoiceId, fields) {
+      if ('businessId' in fields) throw new Error('patchInvoice fields must not include businessId');
+      if ('status' in fields) throw new Error('patchInvoice never changes status -- use approveInvoice, or skip patching a non-DRAFT invoice');
+      const d = await gql(`mutation($i:InvoicePatchInput!){ invoicePatch(input:$i){ didSucceed inputErrors{ message path } invoice{ ${INVOICE_FIELDS} } } }`, { i: { id: invoiceId, ...fields } }, { mutation: true });
+      return shape(mustSucceed(d.invoicePatch, 'invoicePatch').invoice);
+    },
+
     async getInvoice(invoiceId) {
       const d = await gql(`query($b:ID!,$i:ID!){ business(id:$b){ invoice(id:$i){ ${INVOICE_FIELDS} } } }`, { b: businessId, i: invoiceId });
       return shape(d.business.invoice);

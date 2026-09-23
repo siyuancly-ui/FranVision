@@ -39,6 +39,7 @@ const deliveryEmail = require('./delivery-email.js');
 const crypto = require('crypto');
 const jobBackend = require('./job-backend.js');
 const jobSync = require('./job-sync.js');
+const waveBackend = require('./wave-backend.js');
 
 // Windows can reserve whole port ranges (Hyper-V / WSL / Docker), which makes
 // listen() fail with EACCES on a port nothing is using -- so on EACCES we try
@@ -416,6 +417,21 @@ async function handleApi(req, res, urlPath) {
       return sendJson(res, 200, { success: true, localUpdated });
     }
 
+    // Wave customer picker (2026-09-23, see wave-backend.js). Read-only. `configured:false` when
+    // WAVE_TOKEN/WAVE_BUSINESS_ID aren't set -- the UI hides the picker entirely in that case, same
+    // pattern as the shared job server being optional. Errors (Wave unreachable, bad token) are
+    // reported but never break the page -- picking a customer is optional, Create Job must still work.
+    if (urlPath === '/api/wave-customers' && req.method === 'GET') {
+      if (!waveBackend.isConfigured()) return sendJson(res, 200, { configured: false, customers: [] });
+      try {
+        const q = new URL(req.url, 'http://localhost').searchParams.get('q') || '';
+        const customers = await waveBackend.searchCustomers(q);
+        return sendJson(res, 200, { configured: true, customers });
+      } catch (err) {
+        return sendJson(res, 200, { configured: true, customers: [], error: err.message });
+      }
+    }
+
     // Loads a job folder's full record back into the Create Job form --
     // for re-opening a Draft OR a Recent Job (neither had this before
     // 2026-09-13; Drafts had their own separate loader, Recent Jobs is
@@ -466,6 +482,9 @@ async function handleApi(req, res, urlPath) {
         chosenCandidateIndex: saved.chosenCandidateIndex,
         commission: saved.commission,
         images: calendarFile.readExistingImages(jobFolderPath),
+        waveCustomerId: data.waveCustomerId || null,
+        customItems: Array.isArray(data.customItems) ? data.customItems : [],
+        wave: data.wave && typeof data.wave === 'object' ? data.wave : null,
       });
     }
 
@@ -743,6 +762,8 @@ async function handleApi(req, res, urlPath) {
       // reopened via a manually-retyped identity keeps its completedAt -- Create/Update Job never
       // clears it; see job-list.js#markJobCompleted for how it gets SET in the first place).
       const completedAt = folderExists ? (existing.completedAt || null) : null;
+      // Same carry-forward idea as completedAt, for the Wave draft invoice created/patched below.
+      const previousWave = folderExists ? (existing.wave || null) : null;
       // True only on the one call that actually turns a Save-Draft'd
       // folder into a real job -- lets the response (and the UI) say
       // something more specific than the generic "updated".
@@ -946,6 +967,46 @@ async function handleApi(req, res, urlPath) {
         }
       }
 
+      // Wave draft invoice (2026-09-23, optional -- see wave-backend.js). Only when WAVE_AUTO_INVOICE
+      // is on AND a Wave customer was picked in the form. No invoiceId saved yet -> create; one saved
+      // AND its last-known status is still DRAFT -> patch (line items may have changed); anything else
+      // (SAVED/approved, sent, paid) -> never touched automatically, per Franky's confirmed flow (he
+      // reviews/approves the draft in Wave himself before sending the delivery email) -- flagged in
+      // pendingConfirmation instead so a real price change doesn't go unnoticed. Best-effort like every
+      // other real-ID-only side effect above: never blocks Create/Update Job.
+      let waveResult = null;
+      const waveNotes = []; // merged into pendingConfirmation once it exists, below
+      const waveCustomerId = body.waveCustomerId || null;
+      const customItems = Array.isArray(body.customItems) ? body.customItems : [];
+      if (waveBackend.config().autoInvoice && waveCustomerId && price.status === 'ok') {
+        const invoiceArgs = {
+          pricing: price, customerId: waveCustomerId, address: body.address, jobId,
+          invoiceDate: nowIso.slice(0, 10), customItems,
+        };
+        try {
+          if (previousWave && previousWave.invoiceId && previousWave.status === 'DRAFT') {
+            const inv = await waveBackend.buildAndSubmitInvoice({ ...invoiceArgs, mode: 'patch', invoiceId: previousWave.invoiceId, currentStatus: previousWave.status });
+            waveResult = { success: true, action: 'patched', invoice: inv };
+          } else if (previousWave && previousWave.invoiceId) {
+            waveResult = { success: true, action: 'skipped', invoice: previousWave, reason: 'Wave invoice is ' + previousWave.status + ', not DRAFT -- not updated automatically.' };
+            waveNotes.push('Wave invoice ' + previousWave.invoiceId + ' is already ' + previousWave.status + ' -- the price may have changed since; update it by hand in Wave if needed.');
+          } else {
+            const inv = await waveBackend.buildAndSubmitInvoice({ ...invoiceArgs, mode: 'create' });
+            waveResult = { success: true, action: 'created', invoice: inv };
+          }
+        } catch (err) {
+          waveResult = { success: false, error: err.message };
+          waveNotes.push('Wave draft invoice not created/updated (' + err.message + ').');
+        }
+      }
+      // Whatever we ended up with (freshly created/patched, skipped-because-not-DRAFT, a failure, or
+      // simply nothing attempted) is what gets carried into job.json -- see previousWave above for why
+      // "carry forward on failure/skip" matters (never silently lose a previously-created invoice's id).
+      const waveJson = waveResult && waveResult.success && waveResult.invoice ? {
+        invoiceId: waveResult.invoice.id, viewUrl: waveResult.invoice.viewUrl,
+        invoiceNumber: waveResult.invoice.invoiceNumber, status: waveResult.invoice.status, updatedAt: nowIso,
+      } : previousWave;
+
       // Form-reload sidecar (see form-state.js) -- written every call,
       // draft or real, so a Draft OR a Recent Job can be re-opened later
       // with Shoot Time/notes/the pricing candidate chosen/commission
@@ -976,9 +1037,13 @@ async function handleApi(req, res, urlPath) {
         componentFolders,
         dropboxResult,
         commission,
+        waveCustomerId,
+        customItems,
+        wave: waveJson,
       };
       const written = jobFiles.writeJobFiles(jobFolderPath, jobData);
       const pendingConfirmation = jobFiles.computePendingConfirmation(jobData);
+      pendingConfirmation.push(...waveNotes);
 
       // Register/refresh this job on the shared backend (the local job.json
       // above stays -- it's still the per-machine record). A failure here is
@@ -1035,6 +1100,7 @@ async function handleApi(req, res, urlPath) {
         deliveryEmail: deliveryEmailResult,
         coverClosing: coverClosingResult,
         tourLink: tourLinkResult,
+        wave: waveResult,
         backendSync,
         pendingConfirmation,
       });

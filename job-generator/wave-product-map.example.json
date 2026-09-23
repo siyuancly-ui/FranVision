@@ -1,0 +1,19 @@
+{
+  "_comment": "Copy this file to wave-product-map.json (same folder, gitignored) and replace every value with the real Wave product id from the business WAVE_BUSINESS_ID points at. Built once via wave-probe/setup-real-products.js (core-schema branch) --apply, which prints this exact map. Keys are pricing-config.js service/package ids, plus two fixed keys for lines that aren't a priced service: adjustment_discount (any negative custom item or price-adjustment remainder) and custom_item (any positive custom item, generic 'Other' product -- see wave-invoicing/invoice-request.js).",
+  "standard_photo": "",
+  "luxury_photo": "",
+  "floor_plan": "",
+  "vlog_video": "",
+  "drone_photos": "",
+  "virtual_staging": "",
+  "feature_sheets": "",
+  "three_d_tour": "",
+  "standard_floorplan": "",
+  "luxury_floorplan": "",
+  "standard_walkthrough": "",
+  "luxury_walkthrough": "",
+  "luxury_vlog": "",
+  "floorplan_siteplan": "",
+  "adjustment_discount": "",
+  "custom_item": ""
+}

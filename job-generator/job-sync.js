@@ -33,6 +33,9 @@ function existingFromRow(row, rootFolder) {
     completedAt: typeof job.completedAt === 'string' ? job.completedAt : null,
     previousTotalCents: (job.pricing && Number.isInteger(job.pricing.totalCents)) ? job.pricing.totalCents : null,
     order: job.services || {},
+    wave: job.wave && typeof job.wave === 'object' ? job.wave : null,
+    waveCustomerId: job.waveCustomerId || null,
+    customItems: Array.isArray(job.customItems) ? job.customItems : [],
     source: 'server',
   };
 }
@@ -80,6 +83,10 @@ function detailFromRow(row) {
     calendarFile: form.calendarFile || null,
     // Screenshots as links ({filename, url}) -- see server.js#uploadDraftImages.
     images: Array.isArray(form.images) ? form.images : [],
+    // Wave invoicing (2026-09-23) -- see job-files.js#buildJobJson's comment.
+    waveCustomerId: job.waveCustomerId || null,
+    customItems: Array.isArray(job.customItems) ? job.customItems : [],
+    wave: job.wave && typeof job.wave === 'object' ? job.wave : null,
   };
 }
 

@@ -160,6 +160,16 @@ function buildJobJson(jobData) {
     // (see server.js's `completedAt` local), so completing a job never gets silently undone by a
     // later edit, and a fresh job/draft simply has none.
     completedAt: jobData.completedAt || null,
+    // Wave invoicing (2026-09-23, optional -- see wave-backend.js). waveCustomerId is the customer
+    // picked in the form (null if none/Wave not in use); customItems are free-form one-off invoice
+    // lines (name + amountCents, e.g. Road Fee -- their SUM is already folded into
+    // pricing.manualAdjustmentCents by the client before /api/plan, so the engine's total already
+    // accounts for them; this array is only the itemized breakdown for the invoice). wave holds the
+    // last-known state of the created/patched draft invoice (or null); server.js's `completedAt`-style
+    // carry-forward pattern applies here too -- see the `previousWave` local there.
+    waveCustomerId: jobData.waveCustomerId || null,
+    customItems: Array.isArray(jobData.customItems) ? jobData.customItems : [],
+    wave: jobData.wave || null,
     client: { name: jobData.clientName },
     // Flat string, not an object -- the Photographer Commission module
     // (commission-engine.js) keys directly off this same value.

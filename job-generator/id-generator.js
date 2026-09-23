@@ -172,6 +172,9 @@ function findExistingJob(jobRootFolder, folderName) {
     completedAt: typeof data.completedAt === 'string' ? data.completedAt : null,
     previousTotalCents: (data.pricing && Number.isInteger(data.pricing.totalCents)) ? data.pricing.totalCents : null,
     order: data.services || {},
+    wave: data.wave && typeof data.wave === 'object' ? data.wave : null,
+    waveCustomerId: data.waveCustomerId || null,
+    customItems: Array.isArray(data.customItems) ? data.customItems : [],
   };
 }
 
