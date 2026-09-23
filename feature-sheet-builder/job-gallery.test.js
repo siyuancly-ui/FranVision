@@ -40,6 +40,17 @@ test('galleryPhotos: keeps HDR Photos / MLS synced photos, drops everything else
   assert.deepEqual(G.galleryPhotos(photos).map((p) => p.photoId), ['2', '1']);   // natural order: IMG_2 < IMG_10
 });
 
+test('galleryPhotos: a Callout is pickable only when it sits under HDR Photos / MLS', () => {
+  const photos = [
+    ph({ photoId: 'c1', filename: 'callout.jpg', folder: 'Callout', dropboxPath: '/j/HDR Photos/Callout/callout.jpg' }),
+    ph({ photoId: 'c2', filename: 'callout2.jpg', folder: 'callout', dropboxPath: '/j/mls/Callout/callout2.jpg' }),
+    ph({ photoId: 'c3', filename: 'aerial.jpg', folder: 'Callout', dropboxPath: '/j/Callout/aerial.jpg' }),   // job-level: delivery page only
+    ph({ photoId: 'c4', filename: 'HDR Photos', folder: 'Callout', dropboxPath: '/j/Callout/HDR Photos' }),    // filename must not count
+    ph({ photoId: 'c5', folder: 'Callout', dropboxPath: '/j/HDR Photos/Callout/x.jpg', status: 'pending_review' }),
+  ];
+  assert.deepEqual(G.galleryPhotos(photos).map((p) => p.photoId), ['c1', 'c2']);
+});
+
 test('syncedFiles: on-screen full is the 1024 thumb, even when a large render exists', () => {
   assert.deepEqual(G.syncedFiles({ photoId: 'x', hasLarge: true }), { thumb: 'x_thumb.jpg', full: 'x_thumb.jpg' });
   assert.deepEqual(G.syncedFiles({ photoId: 'x' }), { thumb: 'x_thumb.jpg', full: 'x_thumb.jpg' });

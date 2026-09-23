@@ -12,6 +12,11 @@
 
   // Dropbox sub-folders whose photos the agent may pick from.
   var GALLERY_FOLDERS = ['HDR Photos', 'MLS'];
+  // The worker records the INNERMOST recognised folder as `folder`, so a file in
+  // HDR Photos/Callout/ shows up as folder 'Callout'. A Callout is only pickable
+  // when it sits under HDR Photos / MLS -- a job-level Callout folder is the
+  // delivery page's aerial curation, not sheet material.
+  var CALLOUT_FOLDER = 'Callout';
 
   var JOB_ID_RE = /^FVS-\d{8}-\d{3,}$/;
 
@@ -27,9 +32,17 @@
   // the job a sheet is connected to, or ''
   function jobIdOf(project) { return project ? normalizeJobId(project.jobId) : ''; }
 
+  function underGalleryFolder(dropboxPath) {
+    var segs = String(dropboxPath || '').split('/').filter(Boolean).slice(0, -1);   // directories only
+    return segs.some(function (s) {
+      return GALLERY_FOLDERS.some(function (g) { return g.toLowerCase() === s.toLowerCase(); });
+    });
+  }
+
   function isGalleryPhoto(p) {
-    return !!(p && !p.role && p.dropboxPath && p.hasThumb !== false &&
-      p.status !== 'pending_review' && GALLERY_FOLDERS.indexOf(p.folder) >= 0);
+    if (!(p && !p.role && p.dropboxPath && p.hasThumb !== false && p.status !== 'pending_review')) return false;
+    if (GALLERY_FOLDERS.indexOf(p.folder) >= 0) return true;
+    return String(p.folder || '').toLowerCase() === CALLOUT_FOLDER.toLowerCase() && underGalleryFolder(p.dropboxPath);
   }
 
   function byFilename(a, b) {

@@ -147,8 +147,10 @@ clicks Connect; that stores `jobId` on the sheet (`store.js` `DATA_KEYS`). The J
 photo-sync-worker / delivery-page (`photos[]`, `videos[]`, `address`, `tourUrl`) and the FSB **only reads it**
 (`store.getJobGallery`, cached in `photo-source.js`); every FSB write path refuses an `FVS-` id (a whole-blob save would
 wipe the worker's keys), and opening `?p=FVS-…` shows an explanatory card instead of a sheet.
-- Once connected the picker/library list that Job's `HDR Photos`/`MLS` photos, read-only, in natural filename order
-  (`job-gallery.js`). **The editor, preview and picker all use the 1024 `_thumb.jpg`** (the preview keeps its watermark),
+- Once connected the picker/library list that Job's `HDR Photos`/`MLS` photos (plus a `Callout` folder nested under them; a
+  job-level `Callout` is the delivery page's, not listed), read-only, in natural filename order (`job-gallery.js`). The admin
+  library keeps its **Upload** button for one-off photos that aren't in Dropbox: they're the sheet's own uploads (listed after
+  the gallery, `own: true`, the only ones with a delete button / cleared by Clear). **The editor, preview and picker all use the 1024 `_thumb.jpg`** (the preview keeps its watermark),
   read from the Job's folder in the `photos` bucket; the sheet's own headshot/logo stay under the sheet's folder.
   Nothing larger goes in Supabase on purpose: the 2048 set and the originals are the paid deliverable. Placed photos are
   stored only as ids in `pages.*.slots`. The Job's address fills a blank street-address field on connect.
