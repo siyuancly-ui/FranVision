@@ -166,9 +166,26 @@ export function parseAddressFromJobFolder(jobFolder) {
 // Absolute Dropbox path of the compressed download copy for an MLS photo:
 // /<jobFolder>/<downloadSubfolder>/<basename>.jpg  (extension forced to jpg,
 // because the Dropbox thumbnail is always JPEG).
-export function downloadCopyPath(jobFolderPath, downloadSubfolder, filename) {
+export function downloadCopyPath(jobFolderPath, downloadSubfolder, filename, subdir = '') {
   const base = String(filename).replace(/\.[^.]+$/, '');
-  return `${jobFolderPath}/${downloadSubfolder}/${base}.jpg`;
+  return `${jobFolderPath}/${downloadSubfolder}/${subdir ? subdir + '/' : ''}${base}.jpg`;
+}
+
+// Does this classified sync item get a downloadable copy, and in which
+// sub-directory of the download folder? Returns null (no copy), '' (directly
+// in the download folder -- HDR Photos/MLS files) or a folder name (a nested
+// folder such as HDR Photos/Callout/x.jpg -> "MLS for download/Callout/x.jpg",
+// mirroring the source structure). A nested folder only counts when it sits
+// UNDER a download-set folder: a job-level Callout folder (the delivery
+// page's aerial curation) is left alone.
+export function downloadSubdirFor(item, { downloadSetFolders, downloadNestedFolders }) {
+  if (folderMatches(item.subFolder, downloadSetFolders)) return '';
+  if (!folderMatches(item.subFolder, downloadNestedFolders || [])) return null;
+  const dirs = String(item.relPathFromJob || '').split('/').filter(Boolean).slice(0, -1);
+  const outer = dirs.findIndex((d) => folderMatches(d, downloadSetFolders));
+  if (outer === -1) return null;
+  const nested = dirs.slice(outer + 1).find((d) => folderMatches(d, downloadNestedFolders));
+  return nested || null;
 }
 
 export { WEB_IMAGE_EXTS, VIDEO_EXTS };
