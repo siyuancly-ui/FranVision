@@ -198,6 +198,59 @@
   }
   .draft-btn:hover:not(:disabled) { background: #a37b2a; }
   .draft-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ---- Shoot Date calendar picker (2026-09-22) ---- */
+  .datepicker-overlay {
+    position: fixed; inset: 0; background: rgba(26,26,26,0.45);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 1000; padding: 16px;
+  }
+  .datepicker-card {
+    background: var(--panel); border-radius: 14px; width: 320px; max-width: 100%;
+    box-shadow: 0 12px 36px rgba(0,0,0,0.22); overflow: hidden;
+  }
+  .datepicker-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 14px 10px; border-bottom: 1px solid var(--border);
+  }
+  .datepicker-title { font-size: 14px; font-weight: 600; }
+  .datepicker-link {
+    background: none; border: none; font-size: 14px; color: var(--muted); cursor: pointer; padding: 4px 6px;
+  }
+  .datepicker-link-accent { color: var(--accent); font-weight: 600; }
+  .datepicker-month-row {
+    display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 4px;
+  }
+  .datepicker-month-label { font-size: 13.5px; font-weight: 600; }
+  .datepicker-nav {
+    background: none; border: none; font-size: 18px; color: var(--ink); cursor: pointer;
+    width: 28px; height: 28px; border-radius: 50%; line-height: 1;
+  }
+  .datepicker-nav:hover { background: var(--bg); }
+  .datepicker-weekdays, .datepicker-grid {
+    display: grid; grid-template-columns: repeat(7, 1fr); padding: 0 10px;
+  }
+  .datepicker-weekdays span {
+    text-align: center; font-size: 11px; color: var(--muted); padding: 6px 0;
+  }
+  .datepicker-grid { padding-bottom: 10px; row-gap: 2px; }
+  .datepicker-day {
+    background: none; border: none; font-size: 13.5px; color: var(--ink); cursor: pointer;
+    height: 34px; border-radius: 50%;
+  }
+  .datepicker-day:hover:not(:disabled) { background: var(--bg); }
+  .datepicker-day:disabled { visibility: hidden; }
+  .datepicker-day.is-today { font-weight: 700; color: var(--accent); }
+  .datepicker-day.is-selected { background: var(--accent); color: #fff; }
+  .datepicker-quickpicks {
+    display: flex; gap: 8px; padding: 12px 14px 16px; border-top: 1px solid var(--border);
+  }
+  .datepicker-pill {
+    flex: 1; padding: 8px 4px; border-radius: 20px; border: 1px solid var(--border);
+    background: #fff; color: var(--ink); font-size: 12.5px; cursor: pointer; text-align: center;
+  }
+  .datepicker-pill:hover { border-color: var(--accent); }
+  .datepicker-pill.is-selected { background: var(--accent); border-color: var(--accent); color: #fff; }
 </style>
 </head>
 <body>
@@ -220,12 +273,12 @@
 
 <div class="section-divider">
   <h2 class="section-title">Recent Jobs</h2>
-  <p class="field-hint">Real jobs (a Job ID already assigned) created in the last 3 days -- click one to reopen it and adjust anything that only became clear after the shoot (an extra Feature Sheet, the final Virtual Staging count, &hellip;). Updating a job here never changes its Job ID.</p>
+  <p class="field-hint">Real jobs (a Job ID already assigned) that aren't marked Complete yet -- click one to reopen it and adjust anything that only became clear after the shoot (an extra Feature Sheet, the final Virtual Staging count, &hellip;). Updating a job here never changes its Job ID. Click <strong>Complete</strong> once a job is fully wrapped up to drop it off this list -- the folder, Job ID and job.json are untouched, only the list.</p>
 </div>
 <div class="layout" style="grid-template-columns: 1fr;">
   <div class="panel">
     <div id="recent-jobs-list"></div>
-    <div id="recent-jobs-empty-hint" class="empty-hint">No jobs created in the last 3 days.</div>
+    <div id="recent-jobs-empty-hint" class="empty-hint">No open jobs.</div>
   </div>
 </div>
 
@@ -263,9 +316,9 @@
         <label class="field-label" for="shootDate">Shoot Date</label>
         <div class="stub-row">
           <input type="text" id="shootDate" placeholder="yyyy/mm/dd">
-          <button class="browse-btn" type="button" id="shootdate-today-btn">Tomorrow</button>
+          <button class="browse-btn" type="button" id="shootdate-today-btn">📅 Choose</button>
         </div>
-        <div class="field-hint" id="shootdate-hint">Format: yyyy/mm/dd</div>
+        <div class="field-hint" id="shootdate-hint">Format: yyyy/mm/dd — click the field or 📅 Choose to pick from a calendar</div>
       </div>
       <div class="field-row">
         <label class="field-label" for="shootTime">Shoot Time (optional)</label>
@@ -404,6 +457,30 @@
       <button class="create-btn" id="pull-btn" disabled>Sync to Local</button>
     </div>
     <div id="sync-result"></div>
+  </div>
+</div>
+
+<!-- Shoot Date calendar picker (2026-09-22) -- see the JS section below for
+     buildCalendar()/openDatePicker(). Quick picks: Today / Tomorrow / Day
+     after tomorrow, Tomorrow highlighted by default (most shoots are booked
+     a day ahead -- same reasoning the old one-click "Tomorrow" button had). -->
+<div id="datepicker-overlay" class="datepicker-overlay" style="display:none;">
+  <div class="datepicker-card">
+    <div class="datepicker-header">
+      <button type="button" class="datepicker-link" id="datepicker-cancel">Cancel</button>
+      <div class="datepicker-title">Select Shoot Date</div>
+      <button type="button" class="datepicker-link datepicker-link-accent" id="datepicker-confirm">Done</button>
+    </div>
+    <div class="datepicker-month-row">
+      <button type="button" class="datepicker-nav" id="datepicker-prev" aria-label="Previous month">&lsaquo;</button>
+      <div class="datepicker-month-label" id="datepicker-month-label"></div>
+      <button type="button" class="datepicker-nav" id="datepicker-next" aria-label="Next month">&rsaquo;</button>
+    </div>
+    <div class="datepicker-weekdays">
+      <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+    </div>
+    <div class="datepicker-grid" id="datepicker-grid"></div>
+    <div class="datepicker-quickpicks" id="datepicker-quickpicks"></div>
   </div>
 </div>
 
@@ -685,8 +762,9 @@
 
   // Shared row renderer for both the Drafts list and the Recent Jobs list
   // -- `withDelete` adds a Delete button (Drafts only; a real job has no
-  // delete/undo, see DESIGN-job-update.md).
-  function renderJobRows(listElId, emptyHintId, jobs, { withDelete }) {
+  // delete/undo, see DESIGN-job-update.md). `withComplete` adds a Complete
+  // button (Recent Jobs only, 2026-09-22) that drops the row off the list.
+  function renderJobRows(listElId, emptyHintId, jobs, { withDelete, withComplete }) {
     const list = el(listElId);
     list.innerHTML = '';
     el(emptyHintId).style.display = jobs.length ? 'none' : '';
@@ -696,23 +774,36 @@
 
       const info = document.createElement('div');
       info.className = 'info';
+      // Address before client name (client name LAST, 2026-09-22 -- the user reads down this list
+      // scanning for a client, and having it land in the same trailing spot on every row is faster
+      // to find than when it sits right after the Job ID with a variable-length address after it).
       info.innerHTML =
         '<div class="primary">' + (job.jobId ? '<code>' + job.jobId + '</code> ' : '') +
-          (job.clientName || '(no client name yet)') + (job.address ? ' -- ' + job.address : '') + '</div>' +
+          (job.address || '(no address yet)') + ' -- ' + (job.clientName || '(no client name yet)') + '</div>' +
         '<div class="meta">' + shootTimeLabel(job) + ' &middot; ' + (job.jobId ? 'created' : 'saved') + ' ' + new Date(job.updatedAt || job.createdAt).toLocaleString() + '</div>';
       info.addEventListener('click', () => loadJobIntoForm(job.folderName));
 
       row.appendChild(info);
 
-      if (withDelete) {
+      if (withDelete || withComplete) {
         const actions = document.createElement('div');
         actions.className = 'actions';
-        const delBtn = document.createElement('button');
-        delBtn.type = 'button';
-        delBtn.className = 'browse-btn';
-        delBtn.textContent = 'Delete';
-        delBtn.addEventListener('click', () => deleteDraftUI(job.folderName));
-        actions.appendChild(delBtn);
+        if (withDelete) {
+          const delBtn = document.createElement('button');
+          delBtn.type = 'button';
+          delBtn.className = 'browse-btn';
+          delBtn.textContent = 'Delete';
+          delBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteDraftUI(job.folderName); });
+          actions.appendChild(delBtn);
+        }
+        if (withComplete) {
+          const doneBtn = document.createElement('button');
+          doneBtn.type = 'button';
+          doneBtn.className = 'browse-btn';
+          doneBtn.textContent = 'Complete';
+          doneBtn.addEventListener('click', (e) => { e.stopPropagation(); completeJobUI(job.folderName); });
+          actions.appendChild(doneBtn);
+        }
         row.appendChild(actions);
       }
 
@@ -729,7 +820,7 @@
   async function refreshRecentJobsList() {
     const res = await fetch('/api/recent-jobs');
     const data = await res.json();
-    renderJobRows('recent-jobs-list', 'recent-jobs-empty-hint', data.jobs || [], { withDelete: false });
+    renderJobRows('recent-jobs-list', 'recent-jobs-empty-hint', data.jobs || [], { withComplete: true });
   }
 
   async function deleteDraftUI(folderName) {
@@ -740,6 +831,18 @@
     });
     if (res.ok && currentlyEditing && currentlyEditing.folderName === folderName) clearCurrentDraft();
     refreshDraftsList();
+  }
+
+  // Marks a Recent Job Complete (server.js#/api/complete-job) -- the folder,
+  // Job ID, and job.json all stay exactly as they are; only list membership
+  // changes, so this is safe to click without a confirm() prompt (unlike
+  // Delete, which destroys the folder).
+  async function completeJobUI(folderName) {
+    await fetch('/api/complete-job', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folderName, rootFolder: el('rootFolder').value.trim() }),
+    });
+    refreshRecentJobsList();
   }
 
   // Shared loader for both a Drafts-list row and a Recent-Jobs-list row --
@@ -1360,10 +1463,102 @@
     return formatYmd(d);
   }
   el('shootdate-hint').textContent = 'Format: yyyy/mm/dd  —  today is ' + todayYmd();
-  el('shootdate-today-btn').addEventListener('click', () => {
-    el('shootDate').value = tomorrowYmd();
-    updateCreateButtonState();
-    refreshFolderPreview();
+
+  // ---- Shoot Date calendar picker (2026-09-22, replaces the old one-click
+  // "Tomorrow" button) -- click the field or the 📅 Choose button to open a
+  // month calendar with Today / Tomorrow / Day after tomorrow quick picks,
+  // Tomorrow highlighted by default (same "shoots are usually booked a day
+  // ahead" reasoning the old button had). Typing yyyy/mm/dd directly into
+  // the field still works too -- this only ADDS the picker, nothing that
+  // read/wrote el('shootDate').value before had to change.
+  function parseYmd(s) {
+    const m = /^(\d{4})\/(\d{2})\/(\d{2})$/.exec(String(s || '').trim());
+    if (!m) return null;
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    return isNaN(d.getTime()) ? null : d;
+  }
+  function sameYmd(a, b) {
+    return !!a && !!b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  }
+
+  let dpViewDate = new Date();  // which month the grid is currently showing
+  let dpSelected = null;        // the highlighted day (may be outside dpViewDate's month)
+  const DP_MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+  function renderDatePickerMonth() {
+    el('datepicker-month-label').textContent = DP_MONTH_NAMES[dpViewDate.getMonth()] + ' ' + dpViewDate.getFullYear();
+    const grid = el('datepicker-grid');
+    grid.innerHTML = '';
+    const firstOfMonth = new Date(dpViewDate.getFullYear(), dpViewDate.getMonth(), 1);
+    const leadingBlanks = (firstOfMonth.getDay() + 6) % 7; // Monday-first grid (JS getDay(): 0=Sun..6=Sat)
+    const daysInMonth = new Date(dpViewDate.getFullYear(), dpViewDate.getMonth() + 1, 0).getDate();
+    const today = new Date();
+    for (let i = 0; i < leadingBlanks; i++) {
+      const blank = document.createElement('button');
+      blank.type = 'button';
+      blank.className = 'datepicker-day';
+      blank.disabled = true;
+      grid.appendChild(blank);
+    }
+    for (let day = 1; day <= daysInMonth; day++) {
+      const d = new Date(dpViewDate.getFullYear(), dpViewDate.getMonth(), day);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'datepicker-day' + (sameYmd(d, today) ? ' is-today' : '') + (sameYmd(d, dpSelected) ? ' is-selected' : '');
+      btn.textContent = String(day);
+      btn.addEventListener('click', () => { dpSelected = d; renderDatePickerMonth(); renderDatePickerQuickpicks(); });
+      grid.appendChild(btn);
+    }
+  }
+
+  function renderDatePickerQuickpicks() {
+    const today = new Date();
+    const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+    const dayAfter = new Date(); dayAfter.setDate(dayAfter.getDate() + 2);
+    const row = el('datepicker-quickpicks');
+    row.innerHTML = '';
+    [['Today', today], ['Tomorrow', tomorrow], ['Day after tomorrow', dayAfter]].forEach(([label, d]) => {
+      const pill = document.createElement('button');
+      pill.type = 'button';
+      pill.className = 'datepicker-pill' + (sameYmd(d, dpSelected) ? ' is-selected' : '');
+      pill.textContent = label;
+      pill.addEventListener('click', () => {
+        dpSelected = d;
+        dpViewDate = new Date(d.getFullYear(), d.getMonth(), 1);
+        renderDatePickerMonth();
+        renderDatePickerQuickpicks();
+      });
+      row.appendChild(pill);
+    });
+  }
+
+  function openDatePicker() {
+    if (el('shootdate-today-btn').disabled) return; // identity-locked (see updateIdentityLockUI) -- same gate the old button respected
+    el('shootDate').blur();
+    const parsed = parseYmd(el('shootDate').value);
+    dpSelected = parsed || (() => { const d = new Date(); d.setDate(d.getDate() + 1); return d; })(); // default: Tomorrow
+    dpViewDate = new Date(dpSelected.getFullYear(), dpSelected.getMonth(), 1);
+    renderDatePickerMonth();
+    renderDatePickerQuickpicks();
+    el('datepicker-overlay').style.display = 'flex';
+  }
+  function closeDatePicker() {
+    el('datepicker-overlay').style.display = 'none';
+  }
+  el('shootDate').addEventListener('click', openDatePicker);
+  el('shootdate-today-btn').addEventListener('click', openDatePicker);
+  el('datepicker-prev').addEventListener('click', () => { dpViewDate = new Date(dpViewDate.getFullYear(), dpViewDate.getMonth() - 1, 1); renderDatePickerMonth(); });
+  el('datepicker-next').addEventListener('click', () => { dpViewDate = new Date(dpViewDate.getFullYear(), dpViewDate.getMonth() + 1, 1); renderDatePickerMonth(); });
+  el('datepicker-cancel').addEventListener('click', closeDatePicker);
+  el('datepicker-overlay').addEventListener('click', (e) => { if (e.target === el('datepicker-overlay')) closeDatePicker(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && el('datepicker-overlay').style.display !== 'none') closeDatePicker(); });
+  el('datepicker-confirm').addEventListener('click', () => {
+    if (dpSelected) {
+      el('shootDate').value = formatYmd(dpSelected);
+      updateCreateButtonState();
+      refreshFolderPreview();
+    }
+    closeDatePicker();
   });
 
   function updateShootTimeError() {

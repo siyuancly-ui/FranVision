@@ -24,6 +24,9 @@ const fake = (over) => Object.assign({ isConfigured: () => true, getJob: async (
     assert.strictEqual(s.folderName, 'F'); assert.strictEqual(s.jobId, null);
     assert.strictEqual(s.shootTime, '14:30'); assert.strictEqual(s.previousTotalCents, 11074);
     assert.strictEqual(s.updatedAt, '2026-09-19T11:00:00Z');
+    assert.strictEqual(s.completedAt, null);
+    const done = ROW({}); done.data.job.completedAt = '2026-09-20T00:00:00Z';
+    assert.strictEqual(sync.summaryFromRow(done).completedAt, '2026-09-20T00:00:00Z');
   });
 
   await test('detailFromRow: everything loadJobIntoForm needs, from the server row alone', () => {

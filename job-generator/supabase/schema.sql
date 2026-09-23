@@ -144,7 +144,12 @@ begin
 end $$;
 
 -- p_kind: 'drafts' (job_id is null, newest-updated first) or
--- 'recent' (real job_id created at/after p_since, newest-created first).
+-- 'recent' (real job_id, not yet marked Complete, newest-created first).
+-- p_since is UNUSED as of 2026-09-22 (kept in the signature so this stays a
+-- CREATE OR REPLACE, not a breaking drop+recreate) -- 'recent' used to mean
+-- "created in the last p_since/3-days window"; it now means "not completed",
+-- with NO time limit, so a job stays listed indefinitely until the user
+-- clicks Complete in the UI (see jg_complete_job below).
 create or replace function public.jg_list_jobs(p_token text, p_kind text, p_since timestamptz default null)
 returns jsonb language plpgsql security definer set search_path = public, extensions as $$
 begin
@@ -153,7 +158,7 @@ begin
     return coalesce((select jsonb_agg(to_jsonb(j) order by j.updated_at desc) from public.jg_jobs j where j.job_id is null), '[]'::jsonb);
   elsif p_kind = 'recent' then
     return coalesce((select jsonb_agg(to_jsonb(j) order by j.created_at desc) from public.jg_jobs j
-                     where j.job_id is not null and j.created_at >= coalesce(p_since, now() - interval '3 days')), '[]'::jsonb);
+                     where j.job_id is not null and coalesce(j.data->'job'->>'completedAt', '') = ''), '[]'::jsonb);
   end if;
   raise exception 'jg: unknown kind %', p_kind;
 end $$;
@@ -171,9 +176,30 @@ begin
   return jsonb_build_object('deleted', true);
 end $$;
 
+-- Marks a real job Complete (atomic jsonb_set, no read-modify-write race) --
+-- it drops out of every machine's Recent Jobs list (jg_list_jobs 'recent'
+-- above). Never touches a Draft or a job with no row (2026-09-22, see
+-- job-generator/job-list.js's markJobCompleted for the LOCAL half of this).
+create or replace function public.jg_complete_job(p_token text, p_folder_name text)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare v_row public.jg_jobs;
+begin
+  perform public.jg_check_token(p_token);
+  update public.jg_jobs
+  set data = jsonb_set(
+        coalesce(data, '{}'::jsonb), '{job}',
+        coalesce(data->'job', '{}'::jsonb) || jsonb_build_object('completedAt', to_jsonb(now()::text))
+      ),
+      updated_at = now()
+  where folder_name = p_folder_name and job_id is not null
+  returning * into v_row;
+  if not found then raise exception 'jg: job not found or not a real job'; end if;
+  return to_jsonb(v_row);
+end $$;
+
 revoke all on function public.jg_peek_job_id(text, text, integer), public.jg_allocate_job_id(text, text, integer),
   public.jg_upsert_job(text, jsonb), public.jg_get_job(text, text), public.jg_list_jobs(text, text, timestamptz),
-  public.jg_delete_draft(text, text) from public;
+  public.jg_delete_draft(text, text), public.jg_complete_job(text, text) from public;
 grant execute on function public.jg_peek_job_id(text, text, integer), public.jg_allocate_job_id(text, text, integer),
   public.jg_upsert_job(text, jsonb), public.jg_get_job(text, text), public.jg_list_jobs(text, text, timestamptz),
-  public.jg_delete_draft(text, text) to anon;
+  public.jg_delete_draft(text, text), public.jg_complete_job(text, text) to anon;

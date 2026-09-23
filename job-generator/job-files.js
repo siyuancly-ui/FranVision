@@ -155,6 +155,11 @@ function buildJobJson(jobData) {
     jobId: jobData.jobId,
     createdAt: jobData.createdAt,
     updatedAt: jobData.updatedAt || jobData.createdAt,
+    // Set only by job-list.js#markJobCompleted (the Recent Jobs "Complete" button), never by this
+    // build path itself -- Create/Update Job just carries forward whatever the caller passed in
+    // (see server.js's `completedAt` local), so completing a job never gets silently undone by a
+    // later edit, and a fresh job/draft simply has none.
+    completedAt: jobData.completedAt || null,
     client: { name: jobData.clientName },
     // Flat string, not an object -- the Photographer Commission module
     // (commission-engine.js) keys directly off this same value.

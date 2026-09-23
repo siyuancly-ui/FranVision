@@ -15,11 +15,14 @@
 // immediate subfolders (same walk id-generator.js#collectExistingJobIds
 // already does for a different purpose) and split them into:
 //   - Drafts:      jobId === null
-//   - Recent Jobs: jobId is a real string AND createdAt is within the
-//                  last RECENT_JOBS_WINDOW_MS (see DESIGN-job-update.md's
-//                  "no created jobs list" decision -- superseded 2026-09-13
-//                  by this, scoped to a rolling recent window rather than
-//                  every job ever created).
+//   - Recent Jobs: jobId is a real string AND not yet marked Complete
+//                  (see DESIGN-job-update.md's "no created jobs list"
+//                  decision -- superseded 2026-09-13 by this; the list was
+//                  originally scoped to a rolling 3-day window, changed
+//                  2026-09-22 to kept PERMANENTLY until the user clicks
+//                  Complete on it, since a 3-day cutoff was silently
+//                  dropping jobs still being worked on -- see
+//                  markJobCompleted()/completedAt below).
 //
 // A folder with no readable job.json, or a job.json with a jobId that's
 // neither a string nor null (corrupted), is silently skipped from BOTH
@@ -30,8 +33,6 @@ const fs = require('fs');
 const path = require('path');
 const calendarFile = require('./calendar-file.js');
 const formState = require('./form-state.js');
-
-const RECENT_JOBS_WINDOW_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 
 // Scans jobRootFolder's immediate subfolders and returns a parsed summary
 // for every one with a readable job.json and a valid jobId (string or
@@ -63,6 +64,7 @@ function scanJobs(jobRootFolder) {
       jobId: data.jobId,
       createdAt: typeof data.createdAt === 'string' ? data.createdAt : null,
       updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : data.createdAt || null,
+      completedAt: typeof data.completedAt === 'string' ? data.completedAt : null,
       clientName: (data.client && data.client.name) || '',
       address: (data.property && data.property.address) || '',
       propertyType: (data.property && data.property.propertyType) || '',
@@ -85,13 +87,31 @@ function listDrafts(jobRootFolder) {
     .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
 }
 
-// Recent Jobs panel -- a real jobId, created within the last 3 days.
-// most-recently-created first. `now` is overridable for tests.
-function listRecentJobs(jobRootFolder, now) {
-  const cutoff = (now instanceof Date ? now.getTime() : Date.now()) - RECENT_JOBS_WINDOW_MS;
+// Recent Jobs panel -- every real job that hasn't been marked Complete yet
+// (no time window -- see the header comment), most-recently-created first.
+function listRecentJobs(jobRootFolder) {
   return scanJobs(jobRootFolder)
-    .filter((j) => typeof j.jobId === 'string' && j.createdAt && Date.parse(j.createdAt) >= cutoff)
+    .filter((j) => typeof j.jobId === 'string' && !j.completedAt)
     .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
 }
 
-module.exports = { RECENT_JOBS_WINDOW_MS, scanJobs, listDrafts, listRecentJobs };
+// Marks a real job Complete on THIS machine's local job.json (read-modify-write;
+// does not touch the shared job server -- server.js's completeJobUI does both,
+// this is the local half). Returns true if a real job's job.json was updated,
+// false if the folder/job.json is missing, unreadable, or the job has no real
+// jobId yet (a Draft can't be "completed"). Never throws.
+function markJobCompleted(jobRootFolder, folderName) {
+  const jsonPath = path.join(jobRootFolder, folderName, 'job.json');
+  let data;
+  try {
+    data = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+  } catch (err) {
+    return false;
+  }
+  if (!data || typeof data.jobId !== 'string') return false; // no job.json, corrupted, or a Draft
+  data.completedAt = new Date().toISOString();
+  fs.writeFileSync(jsonPath, JSON.stringify(data, null, 2), 'utf8');
+  return true;
+}
+
+module.exports = { scanJobs, listDrafts, listRecentJobs, markJobCompleted };

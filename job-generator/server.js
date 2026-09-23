@@ -367,10 +367,11 @@ async function handleApi(req, res, urlPath) {
     }
 
     if (urlPath === '/api/recent-jobs' && req.method === 'GET') {
+      // Kept permanently (no time window) until marked Complete -- see
+      // job-list.js's header comment and POST /api/complete-job below.
       if (jobBackend.isConfigured()) {
         try {
-          const since = new Date(Date.now() - jobList.RECENT_JOBS_WINDOW_MS).toISOString();
-          const rows = await jobBackend.listRecentJobs(since);
+          const rows = await jobBackend.listRecentJobs();
           const fromServer = (rows || []).map(jobSync.summaryFromRow);
           const known = new Set(fromServer.map((j) => j.folderName));
           const legacy = jobList.listRecentJobs(rootFolder).filter((j) => !known.has(j.folderName));
@@ -380,6 +381,39 @@ async function handleApi(req, res, urlPath) {
         }
       }
       return sendJson(res, 200, { jobs: jobList.listRecentJobs(rootFolder) });
+    }
+
+    // Marks a Recent Job Complete -- it drops out of every machine's Recent
+    // Jobs list (see job-list.js#markJobCompleted / job-backend.js#completeJob).
+    // No undo in the UI: the job's folder, job.json (now with completedAt
+    // set) and Job ID are all untouched, only its list membership changes,
+    // so nothing is destroyed -- re-adding it to the list would need a
+    // direct edit of job.json today.
+    if (urlPath === '/api/complete-job' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      const effectiveRootFolder = body.rootFolder || rootFolder;
+      const folderName = body.folderName || '';
+      if (!folderName) return sendJson(res, 400, { error: 'folderName is required.' });
+
+      // Local write is best-effort and independent of the server call -- a
+      // job made on THIS machine should stop showing here even if the
+      // server is unreachable right now.
+      const localUpdated = jobList.markJobCompleted(effectiveRootFolder, folderName);
+
+      if (jobBackend.isConfigured()) {
+        try {
+          await jobBackend.completeJob(folderName);
+        } catch (err) {
+          // A legacy job the server never heard about (no row) is fine --
+          // the local write above is all there is to do for it. Anything
+          // else (unreachable, real error) is reported so the user knows
+          // the OTHER machine won't see this as completed yet.
+          if (!err.notFound) {
+            return sendJson(res, 200, { success: true, localUpdated, serverError: err.message });
+          }
+        }
+      }
+      return sendJson(res, 200, { success: true, localUpdated });
     }
 
     // Loads a job folder's full record back into the Create Job form --
@@ -705,6 +739,10 @@ async function handleApi(req, res, urlPath) {
         jobId = await idGenerator.getNextJobIdChecked(effectiveRootFolder, undefined, dropboxSync.jobIdExistsOnDropbox);
       }
       const createdAt = folderExists ? (existing.createdAt || nowIso) : nowIso;
+      // Carried forward from whatever the existing job.json/row already had (a completed job
+      // reopened via a manually-retyped identity keeps its completedAt -- Create/Update Job never
+      // clears it; see job-list.js#markJobCompleted for how it gets SET in the first place).
+      const completedAt = folderExists ? (existing.completedAt || null) : null;
       // True only on the one call that actually turns a Save-Draft'd
       // folder into a real job -- lets the response (and the UI) say
       // something more specific than the generic "updated".
@@ -926,6 +964,7 @@ async function handleApi(req, res, urlPath) {
         jobId,
         createdAt,
         updatedAt: nowIso,
+        completedAt,
         clientName: body.clientName,
         photographerName: body.photographerName,
         address: body.address,

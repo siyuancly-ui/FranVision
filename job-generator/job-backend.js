@@ -125,11 +125,25 @@ async function peekJobId({ date, floor } = {}, deps) {
 async function upsertJob(row, deps) { return rpc('jg_upsert_job', { p_row: row }, deps); }
 async function getJob(folderName, deps) { return rpc('jg_get_job', { p_folder_name: folderName }, deps); }
 async function listDrafts(deps) { return rpc('jg_list_jobs', { p_kind: 'drafts' }, deps); }
-async function listRecentJobs(sinceIso, deps) { return rpc('jg_list_jobs', { p_kind: 'recent', p_since: sinceIso || null }, deps); }
+// 'recent' used to mean "created in the last 3 days"; since 2026-09-22 it means "not yet marked
+// Complete" (see completeJob below) -- kept permanently until completed, no time window at all.
+async function listRecentJobs(deps) { return rpc('jg_list_jobs', { p_kind: 'recent' }, deps); }
 async function deleteDraft(folderName, deps) { return rpc('jg_delete_draft', { p_folder_name: folderName }, deps); }
+// Marks a real job Complete server-side (atomic jsonb_set on data.job.completedAt -- see
+// supabase/schema.sql) so it drops out of every machine's Recent Jobs list. Throws BackendError
+// with `notFound: true` when the folder has no row on the server yet (a legacy local-only job) --
+// server.js treats that as "nothing to do here", not a failure.
+async function completeJob(folderName, deps) {
+  try {
+    return await rpc('jg_complete_job', { p_folder_name: folderName }, deps);
+  } catch (err) {
+    if (err instanceof BackendError && /not found/i.test(err.message)) err.notFound = true;
+    throw err;
+  }
+}
 
 module.exports = {
   uploadImage, publicImageUrl, IMAGE_BUCKET,
   BackendError, isConfigured, rpc, dayStamp,
-  allocateJobId, peekJobId, upsertJob, getJob, listDrafts, listRecentJobs, deleteDraft,
+  allocateJobId, peekJobId, upsertJob, getJob, listDrafts, listRecentJobs, deleteDraft, completeJob,
 };
