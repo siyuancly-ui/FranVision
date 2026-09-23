@@ -2,7 +2,7 @@
 // for unit tests; the runners (runDelta / runBackfill / processPhotoBatch)
 // take an injectable `deps` bag so tests can hand in fake Dropbox/Supabase.
 
-import { parseJobPath, isSyncCandidate, folderMatches, matchAncestorFolder, parseFolderList, downloadCopyPath, parseAddressFromJobFolder, imageContentType } from './paths.js';
+import { parseJobPath, isSyncCandidate, folderMatches, matchAncestorFolder, parseFolderList, downloadCopyPath, parseAddressFromJobFolder, imageContentType, downloadSubdirFor } from './paths.js';
 import { photoId } from './photo-id.js';
 import { classifyForVideoSync, readVideoConfig } from './video-sync.js';
 import { classifyForTourLink, readTourLinkConfig } from './tour-link-sync.js';
@@ -149,6 +149,8 @@ export function readConfig(env) {
     root: env.DROPBOX_JOBS_ROOT || '',
     syncFolders: parseFolderList(env.SYNC_FOLDERS),
     downloadSetFolders: parseFolderList(env.DOWNLOAD_SET_FOLDERS),
+    // nested folders (under a download-set folder) whose copies keep their folder in the download tree
+    downloadNestedFolders: parseFolderList(env.DOWNLOAD_NESTED_FOLDERS || 'Callout'),
     // Folders that also get a w2048h1536 "large" render uploaded to
     // Supabase (delivery-page's full-bleed slots: Cover&Closing/Drone
     // Callout/Local Report). Deliberately NOT the whole main
@@ -361,9 +363,9 @@ export async function processPhotoBatch(env, deps, msg) {
         // Critical path: the Gallery / Feature Sheet Builder thumbnail.
         await sb.uploadThumb(jobId, pid, bytes);
 
-        const isDownloadSet = folderMatches(item.subFolder, cfg.downloadSetFolders);
-        const downloadDropboxPath = isDownloadSet
-          ? downloadCopyPath(jobFolderPath, cfg.downloadSubfolder, item.filename)
+        const dlSubdir = downloadSubdirFor(item, cfg);
+        const downloadDropboxPath = dlSubdir !== null
+          ? downloadCopyPath(jobFolderPath, cfg.downloadSubfolder, item.filename, dlSubdir)
           : undefined;
 
         // Dropbox generates media_info asynchronously after upload, so the
@@ -425,7 +427,7 @@ export async function processPhotoBatch(env, deps, msg) {
   // batch actually wrote so the deletes pass can tell "a real deletion" from
   // "the old half of a same-batch replacement" and skip the latter.
   const deliveredDestPaths = new Set();
-  const deliveryItems = succeeded.filter((i) => folderMatches(i.subFolder, cfg.downloadSetFolders));
+  const deliveryItems = succeeded.filter((i) => downloadSubdirFor(i, cfg) !== null);
   for (const part of chunk(deliveryItems, 25)) {
     let dbatch = null;
     try {
@@ -437,7 +439,7 @@ export async function processPhotoBatch(env, deps, msg) {
     for (let k = 0; k < part.length; k++) {
       const item = part[k];
       const dr = dresults[k] || {};
-      const dest = downloadCopyPath(jobFolderPath, cfg.downloadSubfolder, item.filename);
+      const dest = downloadCopyPath(jobFolderPath, cfg.downloadSubfolder, item.filename, downloadSubdirFor(item, cfg));
       try {
         let bytes;
         if (dr['.tag'] === 'success' && dr.thumbnail) {
@@ -536,8 +538,9 @@ export async function processPhotoBatch(env, deps, msg) {
     try {
       const pid = await photoId(jobId, item.relPathFromJob);
       await sb.rpc('photos_mark_pending', { p_project_id: jobId, p_photo_id: pid });
-      if (folderMatches(item.subFolder, cfg.downloadSetFolders)) {
-        const dest = downloadCopyPath(jobFolderPath, cfg.downloadSubfolder, item.filename);
+      const delSubdir = downloadSubdirFor(item, cfg);
+      if (delSubdir !== null) {
+        const dest = downloadCopyPath(jobFolderPath, cfg.downloadSubfolder, item.filename, delSubdir);
         if (deliveredDestPaths.has(dest)) {
           // This delete is the OLD half of a same-batch replacement (e.g. a
           // filename/extension change) -- the upsert pass above already

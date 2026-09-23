@@ -4,8 +4,9 @@ import { runDelta, processPhotoBatch, runBackfill, processRenderRetryPoll, MAX_R
 
 const ENV = {
   DROPBOX_JOBS_ROOT: '',
-  SYNC_FOLDERS: 'MLS,Virtual Staging,Floorplan,Local Report',
-  DOWNLOAD_SET_FOLDERS: 'MLS',
+  SYNC_FOLDERS: 'MLS,HDR Photos,Callout,Virtual Staging,Floorplan,Local Report',
+  DOWNLOAD_SET_FOLDERS: 'MLS,HDR Photos',
+  DOWNLOAD_NESTED_FOLDERS: 'Callout',
   DOWNLOAD_SUBFOLDER: 'MLS for download',
   THUMB_SIZE: 'w1024h768',
   DOWNLOAD_THUMB_SIZE: 'w2048h1536',
@@ -924,4 +925,27 @@ test('processRenderRetryPoll: one bad row does not block the rest', async () => 
   assert.equal(res.succeeded, 1);
   assert.equal(res.failed, 1);
   assert.deepEqual(deleted, [2]); // only the good one got cleaned up
+});
+
+test('processPhotoBatch: HDR Photos/Callout photo -> download copy in MLS for download/Callout/, delete removes it', async () => {
+  const dbx = makeDbx();
+  const sb = makeSb();
+  const callout = { path: '/JobA/HDR Photos/Callout/c.jpg', subFolder: 'Callout', relPathFromJob: 'HDR Photos/Callout/c.jpg', filename: 'c.jpg' };
+  await processPhotoBatch(ENV, { dbx, sb, now: () => 'T' }, {
+    jobId: 'FV-1', jobFolderPath: '/JobA',
+    items: [
+      upsertItem({ ...callout, id: 'id:9', rev: 'r9', dims: { width: 100, height: 50 } }),
+      // a Callout directly under the job folder (not a layout Job Generator creates) gets no download copy
+      upsertItem({ path: '/JobA/Callout/d.jpg', subFolder: 'Callout', relPathFromJob: 'Callout/d.jpg', filename: 'd.jpg', id: 'id:10', rev: 'r10', dims: { width: 100, height: 50 } }),
+    ],
+  });
+  assert.deepEqual(dbx.calls.uploads.map((u) => u.path), ['/JobA/MLS for download/Callout/c.jpg']);
+  const rec = sb.calls.rpc.find((c) => c.args.p_photo && c.args.p_photo.filename === 'c.jpg').args.p_photo;
+  assert.equal(rec.downloadDropboxPath, '/JobA/MLS for download/Callout/c.jpg');
+
+  const dbx2 = makeDbx();
+  await processPhotoBatch(ENV, { dbx: dbx2, sb: makeSb() }, {
+    jobId: 'FV-1', jobFolderPath: '/JobA', items: [{ type: 'delete', ...callout }],
+  });
+  assert.deepEqual(dbx2.calls.deletes, ['/JobA/MLS for download/Callout/c.jpg']);
 });

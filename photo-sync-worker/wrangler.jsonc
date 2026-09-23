@@ -109,6 +109,9 @@
     // unrelated name (Photo Sync Worker's own derived-copy folder) --
     // it is NOT part of the job-generator rename and stays as-is.
     "DOWNLOAD_SET_FOLDERS": "MLS,HDR Photos",
+    // Folders nested UNDER a download-set folder that get a copy in the same-named
+    // sub-folder of DOWNLOAD_SUBFOLDER (HDR Photos/Callout/x.jpg -> MLS for download/Callout/x.jpg).
+    "DOWNLOAD_NESTED_FOLDERS": "Callout",
     "DOWNLOAD_SUBFOLDER": "MLS for download",
 
     // Sub-folders that ALSO get a large (DOWNLOAD_THUMB_SIZE) render

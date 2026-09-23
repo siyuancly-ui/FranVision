@@ -148,7 +148,7 @@ photo-sync-worker / delivery-page (`photos[]`, `videos[]`, `address`, `tourUrl`)
 (`store.getJobGallery`, cached in `photo-source.js`); every FSB write path refuses an `FVS-` id (a whole-blob save would
 wipe the worker's keys), and opening `?p=FVS-…` shows an explanatory card instead of a sheet.
 - Once connected the picker/library list that Job's `HDR Photos`/`MLS` photos (plus a `Callout` folder nested under them; a
-  job-level `Callout` is the delivery page's, not listed), read-only, in natural filename order (`job-gallery.js`). The admin
+  `Callout` directly under the job folder isn't listed -- Job Generator only creates `HDR Photos/Callout`), read-only, in natural filename order (`job-gallery.js`). The admin
   library keeps its **Upload** button for one-off photos that aren't in Dropbox: they're the sheet's own uploads (listed after
   the gallery, `own: true`, the only ones with a delete button / cleared by Clear). **The editor, preview and picker all use the 1024 `_thumb.jpg`** (the preview keeps its watermark),
   read from the Job's folder in the `photos` bucket; the sheet's own headshot/logo stay under the sheet's folder.
