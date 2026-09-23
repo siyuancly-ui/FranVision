@@ -130,10 +130,15 @@ test('renderTemplate: an unknown {{TOKEN}} is left as-is rather than silently bl
 
 // ---- buildTokens ----
 
-test('buildTokens: All-in-One stays a placeholder without a Job ID; Wave is always a placeholder', () => {
+test('buildTokens: All-in-One stays a placeholder without a Job ID; Wave is a placeholder without waveViewUrl', () => {
   const tokens = buildTokens({ lang: 'en', clientName: 'Cindy', address: '1 Main St', totalCents: 10000, preTaxCents: 8850, linkByKey: {} });
   assert.ok(tokens.ALL_IN_ONE_LINK.toLowerCase().includes('fill in'));
   assert.ok(tokens.WAVE_LINK.toLowerCase().includes('fill in'));
+});
+
+test('buildTokens: WAVE_LINK is auto-filled from waveViewUrl when given (2026-09-23)', () => {
+  const tokens = buildTokens({ lang: 'zh', clientName: 'Cindy', address: '1 Main St', totalCents: 10000, preTaxCents: 8850, linkByKey: {}, waveViewUrl: 'https://next.waveapps.com/x' });
+  assert.strictEqual(tokens.WAVE_LINK, 'https://next.waveapps.com/x');
 });
 
 test('buildTokens: All-in-One link is built from address slug + Job ID (both languages)', () => {

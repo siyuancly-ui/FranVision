@@ -178,7 +178,7 @@ function formatPreTaxAmount(cents) {
 // ---- Pure: builds the {{TOKEN}} -> value map for one language, given the
 // already-resolved links (linkByKey: {HDR: 'https://...'|null, ...}) and
 // the manual-fill-in fields, which are always the placeholder for now. ----
-function buildTokens({ lang, clientName, address, totalCents, preTaxCents, linkByKey, jobId }) {
+function buildTokens({ lang, clientName, address, totalCents, preTaxCents, linkByKey, jobId, waveViewUrl }) {
   const ph = PLACEHOLDERS[lang];
   const tokens = {
     CLIENT_NAME: clientName || '',
@@ -190,7 +190,10 @@ function buildTokens({ lang, clientName, address, totalCents, preTaxCents, linkB
     PRETAX_AMOUNT: formatPreTaxAmount(preTaxCents || 0),
     TOTAL_AMOUNT: centsToDisplay(totalCents || 0),
     ALL_IN_ONE_LINK: buildAllInOneLink(jobId, address) || ph.ALL_IN_ONE_LINK,
-    WAVE_LINK: ph.WAVE_LINK,
+    // Auto-filled from wave-backend.js's just-created/patched DRAFT invoice (2026-09-23) when Wave
+    // auto-invoice is on and a customer was picked -- falls back to the manual-fill-in placeholder
+    // otherwise, same as before this existed.
+    WAVE_LINK: waveViewUrl || ph.WAVE_LINK,
     THREE_D_LINK: ph.THREE_D_LINK,
   };
   for (const [key, url] of Object.entries(linkByKey || {})) {
@@ -210,7 +213,7 @@ function writeDeliveryEmailFiles(jobFolderAbsolutePath, { zhContent, enContent }
 // ---- The one function server.js calls. NEVER throws -- same contract as
 // dropbox-sync.js. `client` is a test-only seam (delivery-email.test.js
 // injects a fake Dropbox client so the suite never hits the real API). ----
-async function generateDeliveryEmails({ jobId, jobFolderPath, folderName, clientName, address, order, componentFolders, totalCents, preTaxCents, client }) {
+async function generateDeliveryEmails({ jobId, jobFolderPath, folderName, clientName, address, order, componentFolders, totalCents, preTaxCents, client, waveViewUrl }) {
   try {
     const lines = getDeliverableLines(order, componentFolders);
     const includedKeys = new Set(lines.filter((l) => l.include).map((l) => l.key));
@@ -230,8 +233,8 @@ async function generateDeliveryEmails({ jobId, jobFolderPath, folderName, client
 
     const zhTemplate = fs.readFileSync(TEMPLATE_ZH_PATH, 'utf8');
     const enTemplate = fs.readFileSync(TEMPLATE_EN_PATH, 'utf8');
-    const zhContent = renderTemplate(zhTemplate, buildTokens({ lang: 'zh', clientName, address, totalCents, preTaxCents, linkByKey, jobId }), includedKeys);
-    const enContent = renderTemplate(enTemplate, buildTokens({ lang: 'en', clientName, address, totalCents, preTaxCents, linkByKey, jobId }), includedKeys);
+    const zhContent = renderTemplate(zhTemplate, buildTokens({ lang: 'zh', clientName, address, totalCents, preTaxCents, linkByKey, jobId, waveViewUrl }), includedKeys);
+    const enContent = renderTemplate(enTemplate, buildTokens({ lang: 'en', clientName, address, totalCents, preTaxCents, linkByKey, jobId, waveViewUrl }), includedKeys);
 
     const written = writeDeliveryEmailFiles(jobFolderPath, { zhContent, enContent });
     return { attempted: true, success: linkErrors.length === 0, ...written, linkByKey, linkErrors };
