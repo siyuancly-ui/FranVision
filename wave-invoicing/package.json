@@ -1,0 +1,7 @@
+{
+  "name": "franvision-wave-invoicing",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Pricing-engine result -> Wave invoiceCreate request, plus a small Wave GraphQL client. No dependencies.",
+  "scripts": { "test": "node --test" }
+}
