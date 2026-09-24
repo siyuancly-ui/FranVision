@@ -542,7 +542,9 @@
       listAllProjects: function (token) {
         return sb.functions.invoke('list-projects', { body: { token: token || '' } }).then(function (res) {
           if (res.error) throw new Error(res.error.message || 'unauthorized');
-          return (res.data && res.data.projects) || [];
+          // Job rows (FVS-…) are the worker's, not sheets (also filtered in the edge function; this covers
+          // a not-yet-redeployed one)
+          return ((res.data && res.data.projects) || []).filter(function (r) { return !J.isJobId(r.id); });
         });
       },
     };

@@ -440,8 +440,11 @@ class LocalDiskStorage {
       try { d = JSON.parse(fs.readFileSync(this._projFile(id), 'utf8')); } catch (_e) { d = {}; }
       const pi = d.propertyInfo || {};
       const agents = [d.agentInfo && d.agentInfo.name, d.agentInfo2 && d.agentInfo2.name].filter(Boolean);
+      const logoMeta = (d.photos || []).find((p) => p.photoId === (d.agentInfo && d.agentInfo.brokerageLogoPhotoId));
       return {
         id,
+        brokerage: (d.agentInfo && d.agentInfo.brokerage) || '',
+        logo: logoMeta ? { photoId: logoMeta.photoId, ext: logoMeta.ext, hasThumb: logoMeta.hasThumb } : null,
         address: pi.address || '',
         city: pi.city || '',
         agents,

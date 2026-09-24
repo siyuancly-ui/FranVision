@@ -174,6 +174,21 @@ test('clearPhotos: wipes the library but keeps headshot / logo (role) assets', a
   assert.ok(store.getPhotoPath(p.projectId, head.photoId, 'original'), 'headshot file kept');
 });
 
+test('listProjects: reports the typed brokerage name and the brokerage logo meta (for the admin Company column)', async () => {
+  const { store } = freshStore();
+  const p = await store.createProject({ templateSystem: 'fsb-v2' });
+  const logo = await store.savePhoto(p.projectId, { buffer: PNG_1PX, filename: 'logo.png', contentType: 'image/png', role: 'logo' });
+  await store.updateProject(p.projectId, { agentInfo: { brokerageLogoPhotoId: logo.photoId } });
+  let row = (await store.listProjects())[0];
+  assert.strictEqual(row.brokerage, '');
+  assert.strictEqual(row.logo.photoId, logo.photoId);
+  await store.updateProject(p.projectId, { agentInfo: { brokerage: 'Royal LePage' } });
+  row = (await store.listProjects())[0];
+  assert.strictEqual(row.brokerage, 'Royal LePage');
+  const noLogo = await store.createProject({ templateSystem: 'fsb-v2' });
+  assert.strictEqual((await store.listProjects()).find((r) => r.id === noLogo.projectId).logo, null);
+});
+
 test('recycle bin: soft delete -> restore -> purge; listProjects splits active vs trash', async () => {
   const { store } = freshStore();
   const a = await store.createProject({ templateSystem: 'fsb-v2' });

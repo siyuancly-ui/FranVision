@@ -130,7 +130,12 @@ One Postgres table + one storage bucket + two edge functions. Project ref
   refused anon writes — the path is just never shown in the UI).
 - **Edge function `list-projects`** (`supabase/functions/list-projects/index.ts`)
   — powers `admin.js`. Gated by a shared `ADMIN_TOKEN` secret, reads with the
-  service role. `view:"trash"` returns the recycle bin. Redeploy on change:
+  service role. `view:"trash"` returns the recycle bin. Skips `FVS-…` rows (Jobs the
+  photo-sync-worker mirrors into `projects` -- they have no agent/property info and used to
+  appear as blank sheets in the list; `store.js#listAllProjects` filters them too). Returns
+  `brokerage` + `logo` (the brokerage logo's photo meta) for the admin list's **Company**
+  column: typed brokerage name, else the logo thumbnail (a human reads the name off it; no
+  OCR). Redeploy on change:
   `supabase functions deploy list-projects --project-ref papaswihicvajzcubbri`.
 - **Edge function `notify-submission`**
   (`supabase/functions/notify-submission/index.ts`) — called by `submit.js` after

@@ -99,3 +99,15 @@ test('createdVia is stored on create', async () => {
   assert.equal(ins.v.data.createdVia, 'root');
   assert.equal(ins.v.data.createdRef, 'mail.example.com');
 });
+
+test('admin list: Job rows (FVS-…) the worker mirrors into projects are not listed as sheets', async () => {
+  const rows = [{ id: JOB, address: '' }, { id: 'abc123abc123', address: '1 Main St' }, { id: 'def456def456', address: '' }];
+  const win = { FSB: {}, FSB_V2: { blankProject: () => ({}) }, FSB_CONFIG: { supabaseUrl: 'https://sb.test', supabaseAnonKey: 'k' }, location: { search: '' }, crypto: { getRandomValues: (a) => a } };
+  const client = { from: () => ({}), storage: { from: () => ({}) }, functions: { invoke: () => Promise.resolve({ data: { projects: rows } }) } };
+  win.supabase = { createClient: () => client };
+  const ctx = { window: win, URL, Image: function () {}, console };
+  vm.createContext(ctx);
+  for (const f of ['job-gallery.js', 'store.js']) vm.runInContext(fs.readFileSync(path.join(__dirname, 'public/js', f), 'utf8'), ctx);
+  const list = await win.FSB.store.listAllProjects('tok');
+  assert.deepEqual(list.map((r) => r.id), ['abc123abc123', 'def456def456']);
+});
