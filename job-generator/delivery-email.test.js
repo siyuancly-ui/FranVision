@@ -259,7 +259,7 @@ await testAsync('generateDeliveryEmails: writes both language files with links f
       // line) must be gone, not just blanked.
       assert.ok(!zh.includes('Video 视频'));
       assert.ok(!en.includes('Video ('));
-      assert.ok(!zh.includes('ready in 24 hours') && !en.includes('ready in 24 hours'));
+      assert.ok(!zh.includes('24小时内完成') && !en.includes('ready in 24 hours'));
       // 2026-09-16: a "-----" divider separates what's visible before
       // payment from the (gated) download content, and no 3D Tour line
       // appears since three_d_tour wasn't ordered on this job.
@@ -442,18 +442,22 @@ test('templates no longer carry a separate Gallery block (the HDR line is the Ga
   }
 });
 
-// ---- Video line note (2026-09-24): "(ready in 24 hours)" in BOTH languages ----
+// ---- Video line note (2026-09-24): each language in its OWN language ----
 
-test('the Video line carries "(ready in 24 hours)" in both the Chinese and English templates, only when video was ordered', () => {
+test('the Video line carries the 24-hour note -- Chinese in the Chinese email, English in the English email (never mixed) -- only when video was ordered', () => {
   const tokens = (lang) => buildTokens({ lang, clientName: 'C', address: '1 Main St', totalCents: 1, preTaxCents: 1, jobId: 'FVS-20260924-001', linkByKey: { VIDEO: 'https://dropbox.com/v', HDR: 'https://dropbox.com/h' } });
   const zh = fs.readFileSync(path.join(__dirname, 'delivery-email-template.zh.txt'), 'utf8');
   const en = fs.readFileSync(path.join(__dirname, 'delivery-email-template.en.txt'), 'utf8');
   const withVideo = new Set(['HDR', 'VIDEO']);
-  assert.ok(renderTemplate(zh, tokens('zh'), withVideo).includes('Video 视频 (ready in 24 hours)：\nhttps://dropbox.com/v'));
-  assert.ok(renderTemplate(en, tokens('en'), withVideo).includes('Video (ready in 24 hours):\nhttps://dropbox.com/v'));
+  const zhOut = renderTemplate(zh, tokens('zh'), withVideo);
+  const enOut = renderTemplate(en, tokens('en'), withVideo);
+  assert.ok(zhOut.includes('Video 视频（24小时内完成）：\nhttps://dropbox.com/v'));
+  assert.ok(enOut.includes('Video (ready in 24 hours):\nhttps://dropbox.com/v'));
+  assert.ok(!zhOut.includes('ready in 24 hours'), 'no English note in the Chinese email');
+  assert.ok(!enOut.includes('24小时'), 'no Chinese note in the English email');
   for (const [t, lang] of [[zh, 'zh'], [en, 'en']]) {
     const out = renderTemplate(t, tokens(lang), new Set(['HDR']));           // no video ordered -> whole block gone
-    assert.ok(!out.includes('ready in 24 hours'));
+    assert.ok(!out.includes('ready in 24 hours') && !out.includes('24小时内完成'));
     assert.ok(!out.includes('https://dropbox.com/v'));
   }
 });
