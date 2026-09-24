@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { buildDeliveryModel, renderDeliveryPage } from '../src/render.js';
 import { isGalleryToken, galleryPath, buildGalleryModel, renderGalleryPage, zipFilename } from '../src/gallery.js';
 
 const OPTS = {
@@ -94,4 +95,30 @@ test('zipFilename', () => {
   assert.equal(zipFilename('12 Main St, Toronto', 'J1', 'original'), '12-main-st-toronto-original-photos.zip');
   assert.equal(zipFilename('12 Main St, Toronto', 'J1', 'mls'), '12-main-st-toronto-mls-photos.zip');
   assert.equal(zipFilename(null, 'FVS-1', 'mls'), 'FVS-1-mls-photos.zip');
+});
+
+// The Gallery's hero must ALWAYS be the same photo as the delivery page's ("All in One") hero.
+// Guaranteed structurally (buildGalleryModel calls buildDeliveryModel; both render via heroHtml)
+// -- this pins it against anyone giving the Gallery its own pick later.
+const heroUrl = (html) => /class="hero" style="background-image:url\('([^']+)'\)/.exec(html)?.[1] || null;
+
+test('Gallery hero photo === delivery page hero photo, in every selection scenario', () => {
+  const many = Array.from({ length: 8 }, (_, i) => ph(i + 1));
+  const scenarios = {
+    'auto pick (3rd photo by filename)': many,
+    'a large-render fallback photo': many.map((p, i) => (i === 2 ? { ...p, hasLarge: true } : p)),
+    'Cover&Closing override wins': [...many, ph(20, { folder: 'Cover&Closing', filename: 'a-cover.jpg', hasLarge: true }), ph(21, { folder: 'Cover&Closing', filename: 'z-closing.jpg', hasLarge: true })],
+    'a single photo only': [ph(1)],
+    'two photos (clamped pick)': [ph(1), ph(2)],
+    'unsorted input order': [...many].reverse(),
+    'pending/failed photos mixed in': [ph(1, { status: 'pending_review' }), ...many, ph(30, { hasThumb: false })],
+  };
+  for (const [name, photos] of Object.entries(scenarios)) {
+    const proj = project(photos);
+    const fromDelivery = heroUrl(renderDeliveryPage(buildDeliveryModel(proj, OPTS)));
+    const fromGallery = heroUrl(renderGalleryPage(buildGalleryModel(proj, OPTS), { base: '/delivery/x/TOK' }));
+    assert.ok(fromDelivery, `${name}: delivery page has a hero`);
+    assert.equal(fromGallery, fromDelivery, name);
+  }
+  assert.equal(heroUrl(renderGalleryPage(buildGalleryModel(project([]), OPTS), { base: '/delivery/x/TOK' })), heroUrl(renderDeliveryPage(buildDeliveryModel(project([]), OPTS)))); // both null with no photos
 });
