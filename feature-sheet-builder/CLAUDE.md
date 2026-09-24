@@ -205,7 +205,7 @@ themes.
   `../Feature Sheet Template/` via `templates/fsb-v2/tools/idml_parse.py` — **not
   eyeballed**.
 - **7 themes, 2 layout families** (`themes.js`):
-  - **Standard** — `navy` / `marble` / `burgundy` / `emerald` (dropdown labels since 2026-09-24: 华邸藏蓝·Estate Navy / 大理石·Marble / 华邸酒红·Estate Burgundy / 华邸墨绿·Estate Emerald — the labels are cosmetic and deliberately NOT the layout family; ids are unchanged). Share `geometry.js`. Support a
+  - **Standard** — `navy` / `marble` / `burgundy` / `emerald` (dropdown labels since 2026-09-24: 华邸藏蓝·Estate Navy / 华邸云石·Estate Carrara / 华邸酒红·Estate Burgundy / 华邸墨绿·Estate Emerald — the labels are cosmetic and deliberately NOT the layout family; ids are unchanged). Share `geometry.js`. Support a
     second co-listing agent, a bed/bath/garage icon row, and a
     description-present vs. 6-photo-collage left column (chosen automatically from
     what the agent fills in — see `modules.js` + `layout-engine.js`).
