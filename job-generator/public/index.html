@@ -139,11 +139,12 @@
   }
   .create-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .create-btn:hover:not(:disabled) { background: #333; }
-  .result-box { margin-top: 14px; padding: 12px 14px; border-radius: 8px; font-size: 13.5px; }
+  .result-box { margin-top: 14px; padding: 14px 16px; border-radius: 8px; font-size: 16px; line-height: 1.65; }
   .result-box.success { background: var(--ok-bg); border: 1px solid var(--ok-border); color: #2b5c2b; }
   .result-box.error { background: var(--error-bg); border: 1px solid var(--error-border); color: #7a1f1f; }
   .result-box .path { font-family: ui-monospace, monospace; word-break: break-all; margin: 6px 0; }
-  .pending-note { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .pending-note { font-size: 15px; line-height: 1.6; color: var(--muted); margin-top: 8px; }
+  .result-box .pending-note { color: #6b510f; font-weight: 600; }
   .section-divider { max-width: 1200px; margin: 8px auto 0; padding: 0 24px; border-top: 1px solid var(--border); padding-top: 20px; }
   .section-title { font-size: 15px; margin: 0 0 6px; color: var(--ink); }
   .sync-summary { font-size: 13.5px; }
@@ -330,28 +331,28 @@
       <!-- Wave customer picker (2026-09-23) -- hidden entirely unless the server has Wave configured
            (see refreshWaveCustomerRow()); optional either way, Create Job works without a pick. -->
       <div class="field-row" id="wave-customer-row" style="display:none;">
-        <label class="field-label" for="wave-customer-search">Bill To (Wave Customer, optional)</label>
+        <label class="field-label" for="wave-customer-search">开票客户（Wave 客户，可选）</label>
         <div class="wave-picker">
           <div class="stub-row">
-            <input type="text" id="wave-customer-search" placeholder="Type to search Wave customers…" autocomplete="off">
+            <input type="text" id="wave-customer-search" placeholder="输入名字搜索 Wave 客户…" autocomplete="off">
             <button class="browse-btn" type="button" id="wave-customer-clear-btn" style="display:none;">Clear</button>
-            <button class="browse-btn" type="button" id="wave-customer-new-btn">+ New</button>
+            <button class="browse-btn" type="button" id="wave-customer-new-btn">+ 新建客户</button>
           </div>
           <div id="wave-customer-dropdown" class="wave-dropdown" style="display:none;"></div>
         </div>
         <div class="wave-suggest" id="wave-customer-suggest" style="display:none;"></div>
         <div class="wave-new-form" id="wave-new-form" style="display:none;">
-          <div class="field-row"><label class="field-label" for="wave-new-name">Name</label><input type="text" id="wave-new-name" autocomplete="off"></div>
-          <div class="field-row"><label class="field-label" for="wave-new-email">Email (optional)</label><input type="text" id="wave-new-email" autocomplete="off"></div>
-          <div class="field-row"><label class="field-label" for="wave-new-phone">Phone (optional)</label><input type="text" id="wave-new-phone" autocomplete="off"></div>
-          <div class="field-row"><label class="field-label" for="wave-new-address">Address (optional)</label><input type="text" id="wave-new-address" autocomplete="off"></div>
+          <div class="field-row"><label class="field-label" for="wave-new-name">姓名（必填）</label><input type="text" id="wave-new-name" autocomplete="off"></div>
+          <div class="field-row"><label class="field-label" for="wave-new-email">邮箱（可选）</label><input type="text" id="wave-new-email" autocomplete="off"></div>
+          <div class="field-row"><label class="field-label" for="wave-new-phone">电话（可选）</label><input type="text" id="wave-new-phone" autocomplete="off"></div>
+          <div class="field-row"><label class="field-label" for="wave-new-address">地址（可选）</label><input type="text" id="wave-new-address" autocomplete="off"></div>
           <div class="stub-row">
-            <button class="browse-btn" type="button" id="wave-new-create-btn">Create Wave customer</button>
-            <button class="browse-btn" type="button" id="wave-new-cancel-btn">Cancel</button>
+            <button class="browse-btn" type="button" id="wave-new-create-btn">在 Wave 里创建这个客户</button>
+            <button class="browse-btn" type="button" id="wave-new-cancel-btn">取消</button>
           </div>
           <div class="wave-new-error" id="wave-new-error"></div>
         </div>
-        <div class="field-hint" id="wave-customer-hint">No Wave customer selected -- no invoice will be created for this job.</div>
+        <div class="field-hint" id="wave-customer-hint">还没有选 Wave 客户 —— 这个 Job 不会自动建发票。</div>
       </div>
     </div>
 
@@ -533,7 +534,7 @@
     <div class="datepicker-header">
       <button type="button" class="datepicker-link" id="datepicker-cancel">Cancel</button>
       <div class="datepicker-title">Select Shoot Date</div>
-      <button type="button" class="datepicker-link datepicker-link-accent" id="datepicker-confirm">Done</button>
+      <span class="datepicker-link" aria-hidden="true">&nbsp;</span>
     </div>
     <div class="datepicker-month-row">
       <button type="button" class="datepicker-nav" id="datepicker-prev" aria-label="Previous month">&lsaquo;</button>
@@ -678,7 +679,7 @@
 
   function updateWaveCustomerHint() {
     el('wave-customer-hint').textContent = selectedWaveCustomer
-      ? 'Invoicing to: ' + selectedWaveCustomer.name
+      ? '发票开给：' + selectedWaveCustomer.name
       : 'No Wave customer selected -- no invoice will be created for this job.';
     el('wave-customer-clear-btn').style.display = selectedWaveCustomer ? '' : 'none';
   }
@@ -705,7 +706,7 @@
     const box = el('wave-customer-dropdown');
     box.innerHTML = '';
     if (!customers.length) {
-      box.innerHTML = '<div class="wave-dropdown-empty">No matching Wave customers.</div>';
+      box.innerHTML = '<div class="wave-dropdown-empty">Wave 里没有找到匹配的客户。</div>';
     } else {
       customers.forEach((c) => {
         const item = document.createElement('div');
@@ -721,7 +722,7 @@
     if (!customers.length) {
       const nu = document.createElement('div');
       nu.className = 'wave-dropdown-new';
-      nu.textContent = '+ New customer' + (el('wave-customer-search').value.trim() ? ' "' + el('wave-customer-search').value.trim() + '"' : '');
+      nu.textContent = '+ 新建客户' + (el('wave-customer-search').value.trim() ? '「' + el('wave-customer-search').value.trim() + '」' : '');
       nu.addEventListener('click', () => showWaveNewForm());
       box.appendChild(nu);
     }
@@ -742,7 +743,7 @@
   el('wave-new-cancel-btn').addEventListener('click', hideWaveNewForm);
   el('wave-new-create-btn').addEventListener('click', async () => {
     const name = el('wave-new-name').value.trim();
-    if (!name) { el('wave-new-error').textContent = 'Name is required.'; return; }
+    if (!name) { el('wave-new-error').textContent = '请填写姓名。'; return; }
     el('wave-new-create-btn').disabled = true;
     el('wave-new-error').textContent = '';
     try {
@@ -750,7 +751,7 @@
         name, email: el('wave-new-email').value.trim(), phone: el('wave-new-phone').value.trim(), address: el('wave-new-address').value.trim(),
       }) });
       const data = await res.json();
-      if (!data.success) throw new Error(data.error || 'Could not create the customer.');
+      if (!data.success) throw new Error(data.error || '创建客户失败。');
       selectWaveCustomer(data.customer);
     } catch (err) {
       el('wave-new-error').textContent = err.message;
@@ -768,13 +769,13 @@
     box.innerHTML = '';
     if (!list.length || selectedWaveCustomer) { box.style.display = 'none'; return; }
     const label = document.createElement('span');
-    label.textContent = 'Suggested:';
+    label.textContent = '推荐：';
     box.appendChild(label);
     list.forEach((sg) => {
       const chip = document.createElement('button');
       chip.type = 'button';
       chip.className = 'wave-suggest-chip';
-      chip.textContent = sg.waveCustomerName + (sg.match === 'exact' ? '' : ' (similar name: ' + sg.clientName + ')') + (sg.useCount > 1 ? ' · ' + sg.useCount + '×' : '');
+      chip.textContent = sg.waveCustomerName + (sg.match === 'partial' ? '（相近的名字：' + sg.clientName + '）' : '') + (sg.useCount > 1 ? ' · 用过 ' + sg.useCount + ' 次' : '');
       chip.addEventListener('click', () => selectWaveCustomer({ id: sg.waveCustomerId, name: sg.waveCustomerName }));
       box.appendChild(chip);
     });
@@ -1614,7 +1615,7 @@
 
     try {
       if (shootNotesImages.length) {
-        el('create-result').innerHTML = '<div class="empty-hint">Preparing images&hellip;</div>';
+        el('create-result').innerHTML = '<div class="empty-hint">正在准备图片…</div>';
       }
       inputs.images = await resolveImagesForSubmit();
 
@@ -1622,13 +1623,19 @@
       const result = await res.json();
 
       if (!res.ok) {
-        el('create-result').innerHTML = '<div class="result-box error">' + (result.error || 'Failed to create job.') + '</div>';
+        el('create-result').innerHTML = '<div class="result-box error">' + (result.error || '创建 Job 失败。') + '</div>';
         return;
       }
 
+      // The first three messages come from job-files.js (English, also written into Job Info.txt) --
+      // translated here for display only; everything the server adds on top is already Chinese.
+      const pendingZh = (msg) => msg === 'Photographer Name not filled in yet.' ? '还没有填写摄影师姓名。'
+        : /^Virtual Staging quantity not confirmed yet/.test(msg) ? '还没有确认 Virtual Staging 的数量（目前这一项按 $0 计算，开发票前请更新）。'
+        : /^Dropbox sync did not complete/.test(msg) ? 'Dropbox 同步没有完成，请手动重试：' + msg.replace(/^Dropbox sync did not complete -- retry manually: /, '')
+        : msg;
       const pendingHtml = (result.pendingConfirmation && result.pendingConfirmation.length)
-        ? '<div class="pending-note">⚠ Needs follow-up before invoicing:<ul>' +
-          result.pendingConfirmation.map((msg) => '<li>' + msg + '</li>').join('') + '</ul></div>'
+        ? '<div class="pending-note">⚠ 开发票之前还需要处理：<ul>' +
+          result.pendingConfirmation.map((msg) => '<li>' + pendingZh(msg) + '</li>').join('') + '</ul></div>'
         : '';
 
       const calendarHtml = ''; // Create Job no longer generates a calendar file -- see Save as Draft
@@ -1641,59 +1648,59 @@
       // token in the .txt rather than failing the whole job creation.
       const de = result.deliveryEmail;
       const deliveryEmailHtml = de && de.attempted
-        ? '<div>Delivery Email .txt files ' + (de.success ? 'generated' : 'generated with some links missing') + ' (中文 + EN).'
-          + (de.linkErrors && de.linkErrors.length ? ' Fill in manually: ' + de.linkErrors.map((e) => e.key).join(', ') + '.' : '') + '</div>'
+        ? '<div>Delivery Email 的 .txt 文件' + (de.success ? '已生成' : '已生成，但有些链接没生成出来') + '（中文 + 英文）。'
+          + (de.linkErrors && de.linkErrors.length ? '请手动填写：' + de.linkErrors.map((e) => e.key).join('、') + '。' : '') + '</div>'
         : '';
 
       const isUpdate = result.mode === 'updated';
       let updateHtml = '';
       if (isUpdate) {
         if (Number.isInteger(result.previousTotalCents) && result.previousTotalCents !== (result.price && result.price.totalCents)) {
-          updateHtml += '<div>Total changed: ' + centsToDisplay(result.previousTotalCents) + ' &rarr; ' + centsToDisplay(result.price.totalCents) + '.</div>';
+          updateHtml += '<div>总价有变化：' + centsToDisplay(result.previousTotalCents) + ' &rarr; ' + centsToDisplay(result.price.totalCents) + '。</div>';
         }
         if (result.foldersAdded && result.foldersAdded.length) {
-          updateHtml += '<div>Folders added: ' + result.foldersAdded.join(', ') + '.</div>';
+          updateHtml += '<div>新增的文件夹：' + result.foldersAdded.join('、') + '。</div>';
         }
         if (result.foldersRemoved && result.foldersRemoved.length) {
-          updateHtml += '<div>Empty folders removed: ' + result.foldersRemoved.join(', ') + '.</div>';
+          updateHtml += '<div>已删除的空文件夹：' + result.foldersRemoved.join('、') + '。</div>';
         }
         if (result.foldersKeptWithFiles && result.foldersKeptWithFiles.length) {
-          updateHtml += '<div style="color:#6b510f;">Kept locally (no longer a selected service, but contains files): ' + result.foldersKeptWithFiles.join(', ') + '.</div>';
+          updateHtml += '<div style="color:#6b510f;">本地保留了这些文件夹（服务已取消，但里面有文件，没有删）：' + result.foldersKeptWithFiles.join('、') + '。</div>';
         }
         const dp = result.dropboxPrune;
         if (dp && dp.attempted) {
-          if (dp.foldersRemoved && dp.foldersRemoved.length) updateHtml += '<div>Dropbox: pruned ' + dp.foldersRemoved.length + ' empty folder(s).</div>';
-          if (dp.foldersKeptWithFiles && dp.foldersKeptWithFiles.length) updateHtml += '<div style="color:#6b510f;">Dropbox: kept ' + dp.foldersKeptWithFiles.length + ' folder(s) that still have files there.</div>';
+          if (dp.foldersRemoved && dp.foldersRemoved.length) updateHtml += '<div>Dropbox：已清理 ' + dp.foldersRemoved.length + ' 个空文件夹。</div>';
+          if (dp.foldersKeptWithFiles && dp.foldersKeptWithFiles.length) updateHtml += '<div style="color:#6b510f;">Dropbox：有 ' + dp.foldersKeptWithFiles.length + ' 个文件夹里还有文件，没有删除。</div>';
         }
       }
 
-      const jobStatusLabel = result.finalizedFromDraft ? 'finalized from Draft' : (isUpdate ? 'updated' : 'created');
+      const jobStatusLabel = result.finalizedFromDraft ? '已由草稿转为正式 Job' : (isUpdate ? '已更新' : '已创建');
       const tl = result.tourLink;
       const tourLinkHtml = tl && tl.success && tl.created
-        ? '<div>3D Tour selected: empty <code>Tour Link.txt</code> created on Dropbox (job folder root) -- paste the tour URL into it there.</div>'
-        : (tl && tl.success && tl.removed ? '<div>3D Tour unchecked: <code>Tour Link.txt</code> removed from Dropbox.</div>'
-        : (tl && tl.attempted && !tl.success ? '<div style="color:#7a1f1f;">Tour Link.txt on Dropbox could not be updated: ' + tl.error + '</div>' : ''));
+        ? '<div>已选 3D Tour：Dropbox 上已建好空的 <code>Tour Link.txt</code>（在 Job 文件夹根目录），请把 Tour 链接粘贴进去。</div>'
+        : (tl && tl.success && tl.removed ? '<div>已取消 3D Tour：Dropbox 上的 <code>Tour Link.txt</code> 已删除。</div>'
+        : (tl && tl.attempted && !tl.success ? '<div style="color:#7a1f1f;">Dropbox 上的 Tour Link.txt 没有更新成功：' + tl.error + '</div>' : ''));
       const coverClosingHtml = result.coverClosing && result.coverClosing.success
-        ? '<div>Dropbox <code>Cover&amp;Closing</code> folder ready (put the hand-picked cover/closing photo(s) there).</div>'
+        ? '<div>Dropbox 上的 <code>Cover&amp;Closing</code> 文件夹已准备好（请把挑好的封面 / 结尾照片放进去）。</div>'
         : '';
       const renameHtml = result.renamedFrom
-        ? '<div>Folder renamed from <code>' + result.renamedFrom + '</code> to <code>' + result.folderName + '</code> (same Job ID)'
-          + (result.dropboxRename && result.dropboxRename.success === false ? ', but the Dropbox-side rename failed -- see below' : ', including on Dropbox') + '.</div>'
+        ? '<div>文件夹已从 <code>' + result.renamedFrom + '</code> 改名为 <code>' + result.folderName + '</code>（Job 编号不变）'
+          + (result.dropboxRename && result.dropboxRename.success === false ? '，但 Dropbox 上的改名失败了，见下方提示' : '，Dropbox 上也已同步改名') + '。</div>'
         : '';
       // Wave invoice (2026-09-23, see wave-backend.js) -- result.wave is null whenever auto-invoice is
       // off or no Wave customer was picked (the common case), so nothing shows then. New invoices are
       // approved automatically; an existing one is edited in place (even if already approved).
       const wv = result.wave;
       const waveHtml = !wv ? '' : !wv.success
-        ? '<div style="color:#7a1f1f;">Wave invoice not created/updated: ' + wv.error + '</div>'
-        : '<div>Wave invoice ' + (wv.action === 'created' ? 'created' : 'updated')
-          + (wv.invoice.approveError ? ' (NOT approved -- approve it in Wave)' : (wv.invoice.status === 'DRAFT' ? '' : ' and approved')) + ': '
-          + '<a href="' + wv.invoice.viewUrl + '" target="_blank" rel="noopener">#' + wv.invoice.invoiceNumber + '</a>.</div>';
+        ? '<div style="color:#7a1f1f;">Wave 发票没有建成 / 没有更新成功：' + wv.error + '</div>'
+        : '<div>Wave 发票' + (wv.action === 'created' ? '已创建' : '已更新')
+          + (wv.invoice.approveError ? '（还没有 Approve，请到 Wave 里手动 Approve）' : (wv.invoice.status === 'DRAFT' ? '' : '并已自动 Approve')) + '：'
+          + '<a href="' + wv.invoice.viewUrl + '" target="_blank" rel="noopener">#' + wv.invoice.invoiceNumber + '</a>。</div>';
       el('create-result').innerHTML =
         '<div class="result-box success">' +
-        '<div><strong>Job ' + jobStatusLabel + ': ' + result.jobId + '</strong></div>' +
+        '<div><strong>Job ' + jobStatusLabel + '：' + result.jobId + '</strong></div>' +
         '<div class="path">' + result.jobFolderPath + '</div>' +
-        '<div>Job Info.txt and job.json ' + (isUpdate ? 'rewritten' : 'written') + '.</div>' +
+        '<div>Job Info.txt 和 job.json ' + (isUpdate ? '已重新写入' : '已写入') + '。</div>' +
         renameHtml +
         tourLinkHtml +
         coverClosingHtml +
@@ -1816,7 +1823,7 @@
       btn.type = 'button';
       btn.className = 'datepicker-day' + (sameYmd(d, today) ? ' is-today' : '') + (sameYmd(d, dpSelected) ? ' is-selected' : '');
       btn.textContent = String(day);
-      btn.addEventListener('click', () => { dpSelected = d; renderDatePickerMonth(); renderDatePickerQuickpicks(); });
+      btn.addEventListener('click', () => commitDatePick(d)); // picking a day IS the confirmation (no Done button)
       grid.appendChild(btn);
     }
   }
@@ -1832,12 +1839,7 @@
       pill.type = 'button';
       pill.className = 'datepicker-pill' + (sameYmd(d, dpSelected) ? ' is-selected' : '');
       pill.textContent = label;
-      pill.addEventListener('click', () => {
-        dpSelected = d;
-        dpViewDate = new Date(d.getFullYear(), d.getMonth(), 1);
-        renderDatePickerMonth();
-        renderDatePickerQuickpicks();
-      });
+      pill.addEventListener('click', () => commitDatePick(d));
       row.appendChild(pill);
     });
   }
@@ -1862,14 +1864,14 @@
   el('datepicker-cancel').addEventListener('click', closeDatePicker);
   el('datepicker-overlay').addEventListener('click', (e) => { if (e.target === el('datepicker-overlay')) closeDatePicker(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && el('datepicker-overlay').style.display !== 'none') closeDatePicker(); });
-  el('datepicker-confirm').addEventListener('click', () => {
-    if (dpSelected) {
-      el('shootDate').value = formatYmd(dpSelected);
-      updateCreateButtonState();
-      refreshFolderPreview();
-    }
+  // Selecting a day (or a Today/Tomorrow quick pick) applies it and closes the picker immediately.
+  function commitDatePick(d) {
+    dpSelected = d;
+    el('shootDate').value = formatYmd(d);
+    updateCreateButtonState();
+    refreshFolderPreview();
     closeDatePicker();
-  });
+  }
 
   function updateShootTimeError() {
     const value = el('shootTime').value.trim();
