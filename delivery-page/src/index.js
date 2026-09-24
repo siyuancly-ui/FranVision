@@ -2,7 +2,7 @@ import { createSupabase } from './supabase.js';
 import { buildDeliveryModel, renderDeliveryPage, renderNotFoundPage } from './render.js';
 import { buildAdminModel, renderAdminPage } from './admin.js';
 import {
-  buildGalleryModel, renderGalleryPage, renderGalleryNotFoundPage, renderGalleryPreparingPage, isGalleryToken, galleryPath, zipFilename,
+  buildGalleryModel, renderGalleryPage, renderGalleryNotFoundPage, renderGalleryPreparingPage, isGalleryToken, zipFilename,
 } from './gallery.js';
 
 function html(body, status = 200) {
@@ -110,25 +110,12 @@ async function handleAdmin(url, env) {
   if (!env.ADMIN_TOKEN || token !== env.ADMIN_TOKEN) return html('unauthorized', 401);
 
   const sb = createSupabase(env);
-  const [rows, galleryTokens] = await Promise.all([sb.listProjects(), sb.listGalleryTokens()]);
+  const rows = await sb.listProjects();
+  // Every Job gets its Gallery link automatically (like its All in One page,
+  // which exists as soon as the Job does) -- no button to press.
+  const galleryTokens = await sb.ensureGalleryTokens(rows.map((r) => r.id));
   const model = buildAdminModel(rows, galleryTokens);
   return html(renderAdminPage(model, { origin: url.origin }));
-}
-
-// POST /admin/gallery-link/<jobId>?admin=<ADMIN_TOKEN> -- the directory's
-// "Create Gallery link" button: returns the Job's Gallery path, minting its
-// token first if Job Generator never did (e.g. a Job from before the Gallery
-// existed). Idempotent: an existing token is returned unchanged.
-async function handleAdminGalleryLink(jobId, url, env) {
-  const token = url.searchParams.get('admin') || '';
-  if (!env.ADMIN_TOKEN || token !== env.ADMIN_TOKEN) return json({ error: 'unauthorized' }, 401);
-  if (!/^FVS-\d{8}-\d{3,}$/.test(jobId)) return json({ error: 'not a job id' }, 400);
-  const sb = createSupabase(env);
-  const project = await sb.getProject(jobId);
-  if (!project) return json({ error: 'job not found' }, 404);
-  const galleryToken = await sb.ensureGalleryToken(jobId);
-  if (!galleryToken) return json({ error: 'could not create link' }, 500);
-  return json({ jobId, path: galleryPath(project.data && project.data.address, galleryToken) });
 }
 
 async function handleAdminSetJob(jobId, request, env) {
@@ -209,15 +196,6 @@ export default {
       } catch (err) {
         console.log('admin_list_error', { error: String(err) });
         return html('error loading admin directory', 500);
-      }
-    }
-
-    if (request.method === 'POST' && parts[0] === 'admin' && parts[1] === 'gallery-link' && parts[2]) {
-      try {
-        return await handleAdminGalleryLink(decodeURIComponent(parts[2]), url, env);
-      } catch (err) {
-        console.log('admin_gallery_link_error', { jobId: parts[2], error: String(err) });
-        return json({ error: String(err) }, 500);
       }
     }
 

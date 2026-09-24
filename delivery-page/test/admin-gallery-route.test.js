@@ -1,72 +1,81 @@
-// Worker-level tests for the admin directory's Gallery support.
+// Worker-level tests for the admin directory's Gallery support: every Job gets its
+// Gallery link automatically when the directory loads (no button).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import worker from '../src/index.js';
 
-const JOB = 'FVS-20260924-001';
-const ROWS = [{ id: JOB, data: { address: '12 Main St, Toronto' }, updated_at: '2026-09-24T10:00:00Z' }];
+const ROWS = [
+  { id: 'FVS-20260924-001', data: { address: '12 Main St, Toronto' }, updated_at: '2026-09-24T10:00:00Z' },
+  { id: 'FVS-20260925-002', data: { address: '48 Red Ash Dr, Oakville' }, updated_at: '2026-09-25T09:00:00Z' },
+];
 
-function setup({ tokens = [{ job_id: JOB, token: 'a'.repeat(32) }], tableMissing = false } = {}) {
+function setup({ tokens = [], tableMissing = false } = {}) {
   const calls = [];
   const store = [...tokens];
   globalThis.fetch = async (url, init = {}) => {
     const u = String(url);
-    calls.push({ u, method: init.method || 'GET', body: init.body });
+    calls.push({ u, method: init.method || 'GET' });
     const json = (v, status = 200) => new Response(JSON.stringify(v), { status, headers: { 'content-type': 'application/json' } });
     if (u.includes('/rest/v1/gallery_tokens')) {
       if (tableMissing) return json({ message: 'relation does not exist' }, 404);
       if (init.method === 'POST') {
-        const row = JSON.parse(init.body);
-        if (!store.some((r) => r.job_id === row.job_id)) store.push(row); // ignore-duplicates
+        for (const row of JSON.parse(init.body)) if (!store.some((r) => r.job_id === row.job_id)) store.push(row); // ignore-duplicates
         return new Response('', { status: 201 });
       }
-      const m = /job_id=eq\.([^&]+)/.exec(u);
-      return json(m ? store.filter((r) => r.job_id === decodeURIComponent(m[1])).map((r) => ({ token: r.token })) : store);
+      return json(store);
     }
-    if (u.includes('/rest/v1/projects')) return json(u.includes(`id=eq.${JOB}`) || u.includes('id=like') ? ROWS.filter((r) => u.includes('id=like') || u.includes(r.id)) : []);
+    if (u.includes('/rest/v1/projects')) return json(ROWS);
     return new Response('nf', { status: 404 });
   };
   return { env: { SUPABASE_URL: 'https://sb.test', SUPABASE_SERVICE_ROLE_KEY: 'k', ADMIN_TOKEN: 'adm' }, calls, store };
 }
-const req = (env, path, method = 'GET') => worker.fetch(new Request('https://realgta.ca' + path, { method }), env);
+const get = (env, path = '/admin?admin=adm') => worker.fetch(new Request('https://realgta.ca' + path), env);
+const tokenOf = (html, slug) => new RegExp(`/delivery/${slug}/([0-9a-f]{32})`).exec(html)?.[1];
 
-test('GET /admin lists each Job with both links, using the stored gallery token', async () => {
-  const { env } = setup();
-  const html = await (await req(env, '/admin?admin=adm')).text();
-  assert.match(html, /realgta\.ca\/12-main-st-toronto\/FVS-20260924-001/);
-  assert.match(html, new RegExp(`realgta\\.ca\\/delivery\\/12-main-st-toronto\\/${'a'.repeat(32)}`));
-});
-
-test('GET /admin still loads when the gallery_tokens table does not exist yet (SQL not run)', async () => {
-  const { env } = setup({ tableMissing: true });
-  const res = await req(env, '/admin?admin=adm');
-  assert.equal(res.status, 200);
-  assert.match(await res.text(), /Create link 生成链接/);
-});
-
-test('POST /admin/gallery-link/<job>: returns the existing token unchanged (idempotent)', async () => {
+test('loading /admin creates a Gallery link for every Job that has none -- no button involved', async () => {
   const { env, store } = setup();
-  const res = await req(env, `/admin/gallery-link/${JOB}?admin=adm`, 'POST');
+  const html = await (await get(env)).text();
+  assert.equal(store.length, 2);
+  assert.match(tokenOf(html, '12-main-st-toronto'), /^[0-9a-f]{32}$/);
+  assert.match(tokenOf(html, '48-red-ash-dr-oakville'), /^[0-9a-f]{32}$/);
+  assert.doesNotMatch(html, /Create link|create-btn/);
+  assert.doesNotMatch(html, /class="open-link is-off"/);  // both columns active for both Jobs
+});
+
+test('links are stable: reloading never changes a token, and existing tokens (from Job Generator) are kept', async () => {
+  const mine = 'a'.repeat(32);
+  const { env, store } = setup({ tokens: [{ job_id: 'FVS-20260924-001', token: mine }] });
+  const first = await (await get(env)).text();
+  assert.equal(tokenOf(first, '12-main-st-toronto'), mine);      // untouched
+  const second = await (await get(env)).text();
+  assert.equal(tokenOf(second, '12-main-st-toronto'), mine);
+  assert.equal(tokenOf(second, '48-red-ash-dr-oakville'), tokenOf(first, '48-red-ash-dr-oakville'));
+  assert.equal(store.length, 2);
+});
+
+test('only the Jobs missing a token are inserted (one batched request, and none when all have one)', async () => {
+  const all = ROWS.map((r, i) => ({ job_id: r.id, token: String(i).repeat(32) }));
+  const { env, calls } = setup({ tokens: all });
+  await get(env);
+  assert.equal(calls.filter((c) => c.method === 'POST').length, 0);
+  const s2 = setup({ tokens: [all[0]] });
+  await get(s2.env);
+  assert.equal(s2.calls.filter((c) => c.method === 'POST').length, 1);
+});
+
+test('if the gallery_tokens table does not exist yet, the directory still loads (Gallery column greyed out)', async () => {
+  const { env } = setup({ tableMissing: true });
+  const res = await get(env);
   assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { jobId: JOB, path: `/delivery/12-main-st-toronto/${'a'.repeat(32)}` });
-  assert.equal(store.length, 1);
+  const html = await res.text();
+  assert.match(html, /12-main-st-toronto\/FVS-20260924-001/);     // All in One links unaffected
+  assert.match(html, /class="open-link is-off"/);
 });
 
-test('POST /admin/gallery-link/<job>: mints a random 32-hex token for a Job that has none, and reuses it after', async () => {
-  const { env, store } = setup({ tokens: [] });
-  const first = await (await req(env, `/admin/gallery-link/${JOB}?admin=adm`, 'POST')).json();
-  assert.match(first.path, /^\/delivery\/12-main-st-toronto\/[0-9a-f]{32}$/);
-  assert.equal(store.length, 1);
-  const second = await (await req(env, `/admin/gallery-link/${JOB}?admin=adm`, 'POST')).json();
-  assert.equal(second.path, first.path);
-  assert.equal(store.length, 1);
-});
-
-test('POST /admin/gallery-link: needs the admin token, a real Job id, and an existing project', async () => {
+test('the old "create link" endpoint is gone; /admin still needs the admin token', async () => {
   const { env } = setup();
-  assert.equal((await req(env, `/admin/gallery-link/${JOB}`, 'POST')).status, 401);
-  assert.equal((await req(env, `/admin/gallery-link/${JOB}?admin=wrong`, 'POST')).status, 401);
-  assert.equal((await req(env, '/admin/gallery-link/not-a-job?admin=adm', 'POST')).status, 400);
-  assert.equal((await req(env, '/admin/gallery-link/FVS-20260101-999?admin=adm', 'POST')).status, 404);
-  assert.equal((await req(env, `/admin/gallery-link/${JOB}?admin=adm`, 'GET')).status, 404); // POST only
+  const res = await worker.fetch(new Request('https://realgta.ca/admin/gallery-link/FVS-20260924-001?admin=adm', { method: 'POST' }), env);
+  assert.equal(res.status, 404);
+  assert.equal((await get(env, '/admin')).status, 401);
+  assert.equal((await get(env, '/admin?admin=wrong')).status, 401);
 });

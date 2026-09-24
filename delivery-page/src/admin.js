@@ -55,8 +55,9 @@ export function buildAdminModel(rows, galleryTokens = {}) {
       hasVideo: videos.length > 0,
       hasTour: typeof data.tourUrl === 'string' && !!data.tourUrl.trim(),
       updatedAt: row.updated_at || null,
-      // null until one is minted (job server at Create/Update Job, or the
-      // directory's own "Create gallery link" button).
+      // Minted by the job server at Create/Update Job, or automatically when this
+      // directory loads (supabase.js#ensureGalleryTokens); null only if the token
+      // table isn't reachable.
       galleryToken: (galleryTokens && galleryTokens[row.id]) || null,
     };
   });
@@ -106,9 +107,8 @@ const CSS = `
   .copy-btn.err{border-color:#c0392b;color:#c0392b;}
   .open-link{color:#0a5cd8;text-decoration:none;font-size:12.5px;}
   .open-link:hover{text-decoration:underline;}
-  .open-link.is-off{color:#c7c7cc;cursor:default;pointer-events:none;}  /* greyed until the Gallery link exists */
-  .create-btn{background:#1f8b3a;border-color:#1f8b3a;color:#fff;}
-  .create-btn:hover{background:#187030;border-color:#187030;}
+  .open-link.is-off{color:#c7c7cc;cursor:default;pointer-events:none;}  /* only if the token table isn't reachable */
+  .copy-btn:disabled{opacity:.45;cursor:default;}
   .btns{display:flex;flex-direction:column;gap:6px;align-items:flex-start;}
   @media (prefers-color-scheme: dark){
     body{background:#000;color:#f2f2f7;}
@@ -119,7 +119,6 @@ const CSS = `
     tr:hover td{background:#1c1c1e;}
     .copy-btn{background:#1c1c1e;border-color:#3a3a3c;color:#f2f2f7;}
     .open-link.is-off{color:#48484a;}
-    .create-btn{background:#248a3d;border-color:#248a3d;color:#fff;}
   }
 `;
 
@@ -151,8 +150,8 @@ export function renderAdminPage(model, { origin = '' } = {}) {
         <button class="copy-btn" type="button" data-link="${escapeHtml(fullLink)}">Copy link 复制链接</button>
       </div></td>
       <td><div class="btns">
-        <a class="open-link gallery-open${gPath ? '' : ' is-off'}"${gPath ? ` href="${escapeHtml(gPath)}" target="_blank" rel="noopener"` : ' aria-disabled="true"'}>Open 打开</a>
-        <button class="copy-btn gallery-btn${gFull ? '' : ' create-btn'}" type="button" data-job="${escapeHtml(j.jobId)}" data-link="${escapeHtml(gFull)}">${gFull ? 'Copy link 复制链接' : 'Create link 生成链接'}</button>
+        <a class="open-link${gPath ? '' : ' is-off'}"${gPath ? ` href="${escapeHtml(gPath)}" target="_blank" rel="noopener"` : ' aria-disabled="true"'}>Open 打开</a>
+        <button class="copy-btn" type="button" data-link="${escapeHtml(gFull)}"${gFull ? '' : ' disabled'}>Copy link 复制链接</button>
       </div></td>
     </tr>`;
   }).join('');
@@ -195,27 +194,7 @@ export function renderAdminPage(model, { origin = '' } = {}) {
     }
   }
   document.querySelectorAll('.copy-btn').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      if (btn.dataset.link) return copy(btn, btn.dataset.link);
-      // Gallery link doesn't exist yet for this Job: mint it here, then copy.
-      btn.disabled = true;
-      fetch('/admin/gallery-link/' + encodeURIComponent(btn.dataset.job) + location.search, { method: 'POST' })
-        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-        .then(function (j) {
-          var full = location.origin + j.path;
-          btn.dataset.link = full;
-          btn.dataset.label = 'Copy link 复制链接';
-          btn.textContent = btn.dataset.label;
-          var tr = btn.closest('tr');
-          var open = tr.querySelector('.gallery-open');
-          open.href = j.path; open.target = '_blank'; open.rel = 'noopener';
-          open.removeAttribute('aria-disabled'); open.classList.remove('is-off');
-          btn.classList.remove('create-btn');
-          btn.disabled = false;
-          copy(btn, full);
-        })
-        .catch(function () { btn.disabled = false; flash(btn, 'Failed 失败，请重试', 'err'); });
-    });
+    btn.addEventListener('click', function () { if (btn.dataset.link) copy(btn, btn.dataset.link); });
   });
 </script>
 </body></html>`;

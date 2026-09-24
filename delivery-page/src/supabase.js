@@ -52,20 +52,31 @@ export function createSupabase(env) {
       }
     },
 
-    // The Job's gallery token, minting one if it has none yet (same random
-    // 128-bit hex the job server's jg_gallery_token() mints; whichever gets
-    // there first wins and the other reads it back, so links never change).
-    // Lets the admin directory heal Jobs created before the Gallery existed.
-    async ensureGalleryToken(jobId) {
-      const bytes = crypto.getRandomValues(new Uint8Array(16));
-      const fresh = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-      await readJson(await fetch(`${BASE}/rest/v1/gallery_tokens`, {
-        method: 'POST',
-        headers: { ...authHeaders, 'Content-Type': 'application/json', Prefer: 'resolution=ignore-duplicates,return=minimal' },
-        body: JSON.stringify({ job_id: jobId, token: fresh }),
+    // Guarantees every given Job has a gallery token, minting random 128-bit
+    // hex ones (the same kind the job server's jg_gallery_token() mints) for
+    // those that don't -- one insert-ignore-duplicates for the whole batch, so
+    // it is idempotent and safe against a race with Job Generator (whoever gets
+    // there first wins; a link already emailed can never change). Returns the
+    // full { jobId: token } map afterwards. Never throws: if the table isn't
+    // there yet, returns whatever could be read (usually {}).
+    async ensureGalleryTokens(jobIds) {
+      const existing = await this.listGalleryTokens();
+      const missing = (jobIds || []).filter((id) => !existing[id]);
+      if (missing.length === 0) return existing;
+      const rows = missing.map((job_id) => ({
+        job_id,
+        token: Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join(''),
       }));
-      const rows = await readJson(await fetch(`${BASE}/rest/v1/gallery_tokens?job_id=eq.${encodeURIComponent(jobId)}&select=token`, { headers: authHeaders }));
-      return Array.isArray(rows) && rows[0] ? rows[0].token : null;
+      try {
+        await readJson(await fetch(`${BASE}/rest/v1/gallery_tokens`, {
+          method: 'POST',
+          headers: { ...authHeaders, 'Content-Type': 'application/json', Prefer: 'resolution=ignore-duplicates,return=minimal' },
+          body: JSON.stringify(rows),
+        }));
+      } catch {
+        return existing; // table missing / transient -- the directory still loads, links just not there yet
+      }
+      return this.listGalleryTokens();
     },
 
     // Every Job's projects row (id, data, updated_at), newest-updated first

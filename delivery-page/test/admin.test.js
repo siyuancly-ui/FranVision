@@ -104,18 +104,16 @@ test('renderAdminPage: All in One and Gallery are two separate columns, each wit
   assert.ok(cells[0].includes('data-link="https://realgta.ca/12-main-st-toronto/FVS-1"'));
   assert.ok(!cells[0].includes('/delivery/12-main-st-toronto/'));   // All in One cell has no gallery link
   assert.ok(cells[1].includes(`data-link="https://realgta.ca/delivery/12-main-st-toronto/${TOK}"`));
-  assert.ok(out.includes(`class="open-link gallery-open" href="/delivery/12-main-st-toronto/${TOK}"`));
-  assert.ok(!out.includes('gallery-open is-off'));
-  assert.ok(!out.includes('create-btn"'));
+  assert.ok(out.includes(`class="open-link" href="/delivery/12-main-st-toronto/${TOK}"`));
+  assert.ok(!out.includes('open-link is-off'));  // both columns fully active
 });
 
-test('renderAdminPage: a Job without a gallery token gets a "Create link" button in the Gallery column (no dead link)', () => {
+test('renderAdminPage: no button ever creates a link; a Job whose token is unreachable shows greyed-out Open + disabled Copy', () => {
   const out = renderAdminPage(buildAdminModel([row('FVS-1', { data: { address: '1 A St' } })]), { origin: 'https://realgta.ca' });
-  assert.ok(out.includes('Create link 生成链接'));
-  assert.ok(out.includes('data-job="FVS-1" data-link=""'));
-  assert.ok(/class="open-link gallery-open is-off" aria-disabled="true"/.test(out)); // greyed, and no href to click
-  assert.ok(!/gallery-open is-off"[^>]*href/.test(out));
-  assert.ok(out.includes('gallery-btn create-btn'));                              // green Create button
+  assert.ok(!/Create link|create-btn/.test(out));
+  assert.ok(/class="open-link is-off" aria-disabled="true"/.test(out));
+  assert.ok(!/is-off"[^>]*href/.test(out));                        // nothing to click
+  assert.ok(/data-link="" disabled/.test(out));
 });
 
 test('renderAdminPage: escapes address and agent content', () => {
