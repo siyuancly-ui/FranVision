@@ -167,7 +167,7 @@ ${creditHtml()}
 <div class="lb" id="lb" hidden>
   <div class="lb-stage" id="lbStage"><img id="lbImg" src="" alt=""></div>
   <button class="lb-ui lb-close" id="lbClose" type="button" aria-label="Close">${X_ICON}</button>
-  <div class="lb-ui lb-top"><a class="lb-dl" id="lbDl" href="#" download aria-label="Download this photo" title="Download">${DL_ICON}</a></div>
+  <div class="lb-ui lb-top"><a class="lb-dl" id="lbDl" href="#" download aria-label="Download this photo"><span class="lb-dl-text">Download</span><span class="lb-dl-circle">${DL_ICON}</span></a></div>
   <div class="lb-ui lb-theme" id="lbTheme" role="group" aria-label="Background"><button type="button" data-theme="light" aria-label="Light background">${SUN_ICON}</button><button type="button" data-theme="dark" aria-label="Dark background">${MOON_ICON}</button></div>
   <button class="lb-ui lb-nav lb-prev" id="lbPrev" type="button" aria-label="Previous photo">${CHEV_L}</button>
   <button class="lb-ui lb-nav lb-next" id="lbNext" type="button" aria-label="Next photo">${CHEV_R}</button>
@@ -224,19 +224,28 @@ const GALLERY_CSS = `
   .lb{position:fixed;inset:0;z-index:50;background:#000;color:#fff;font-family:Lato,Montserrat,-apple-system,sans-serif;}
   .lb[hidden]{display:none;}
   .lb.lb-light{background:#fff;color:#2b2b30;}
-  .lb-stage{position:absolute;top:60px;bottom:65px;left:0;right:0;display:flex;align-items:center;justify-content:center;}
+  .lb-stage{position:absolute;top:100px;bottom:65px;left:0;right:0;display:flex;align-items:center;justify-content:center;}
   .lb-stage img{max-width:100%;max-height:100%;object-fit:contain;user-select:none;-webkit-user-drag:none;}
   .lb-ui{transition:opacity .35s;}
   .lb.is-idle .lb-ui{opacity:0;pointer-events:none;}
   .lb.is-idle{cursor:none;}
   .lb button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;padding:0;}
-  .lb-close{position:absolute;top:16px;left:18px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:50%;opacity:.9;}
-  .lb-top{position:absolute;top:14px;left:0;right:0;display:flex;justify-content:center;gap:22px;pointer-events:none;}
-  .lb-dl{pointer-events:auto;display:flex;align-items:center;justify-content:center;width:40px;height:40px;color:inherit;border-radius:50%;opacity:.92;}
-  .lb-dl .dl-ico{width:26px;height:26px;}
+  .lb-close{position:absolute;top:29px;left:20px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:50%;opacity:.9;}
+  .lb-top{position:absolute;top:22px;left:0;right:0;display:flex;justify-content:center;pointer-events:none;}
+  /* The lightbox's download button: a pill with the word + a round arrow badge (like the
+     studio's reference), in translucent grey-white so it sits in the page's palette. */
+  .lb-dl{pointer-events:auto;display:inline-flex;align-items:center;gap:16px;height:50px;padding:0 7px 0 26px;border-radius:999px;color:#fff;text-decoration:none;background:linear-gradient(180deg,rgba(255,255,255,0.42),rgba(255,255,255,0.26));border:1px solid rgba(255,255,255,0.55);box-shadow:0 4px 14px rgba(0,0,0,0.45),inset 0 1px 0 rgba(255,255,255,0.5);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);transition:background .15s,transform .15s,box-shadow .15s;}
+  .lb-dl:hover{background:linear-gradient(180deg,rgba(255,255,255,0.54),rgba(255,255,255,0.36));transform:translateY(-1px);box-shadow:0 6px 18px rgba(0,0,0,0.42),inset 0 1px 0 rgba(255,255,255,0.4);}
+  .lb-dl:active{transform:translateY(1px);box-shadow:inset 0 2px 5px rgba(0,0,0,0.35);}
+  .lb-dl-text{font-weight:700;font-size:16px;letter-spacing:.1em;text-transform:uppercase;line-height:1;}
+  .lb-dl-circle{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid rgba(255,255,255,0.9);background:rgba(255,255,255,0.2);}
+  .lb-dl-circle .dl-ico{width:18px;height:18px;}
   .lb-dl[hidden]{display:none;}
-  .lb-close:hover,.lb-dl:hover{background:rgba(128,128,128,0.25);}
-  .lb-theme{position:absolute;top:10px;right:16px;display:flex;align-items:center;border:1px solid rgba(128,128,128,0.45);border-radius:999px;padding:3px;gap:2px;}
+  .lb.lb-light .lb-dl{color:#2b2b30;background:linear-gradient(180deg,rgba(0,0,0,0.1),rgba(0,0,0,0.04));border-color:rgba(0,0,0,0.26);box-shadow:0 4px 12px rgba(0,0,0,0.16),inset 0 1px 0 rgba(255,255,255,0.7);}
+  .lb.lb-light .lb-dl:hover{background:linear-gradient(180deg,rgba(0,0,0,0.16),rgba(0,0,0,0.08));}
+  .lb.lb-light .lb-dl-circle{border-color:rgba(0,0,0,0.55);background:rgba(0,0,0,0.06);}
+  .lb-close:hover{background:rgba(128,128,128,0.25);}
+  .lb-theme{position:absolute;top:26px;right:20px;display:flex;align-items:center;border:1px solid rgba(128,128,128,0.45);border-radius:999px;padding:3px;gap:2px;}
   .lb-theme button{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;opacity:.6;}
   .lb-theme button.is-on{background:#fff;color:#222;opacity:1;box-shadow:0 1px 3px rgba(0,0,0,0.35);}
   .lb.lb-light .lb-theme button.is-on{background:#222;color:#fff;}
@@ -266,7 +275,9 @@ const GALLERY_CSS = `
     .g-wrap{padding-inline:4px;}
     .lb-nav{width:40px;height:40px;} .lb-prev{left:6px;} .lb-next{right:6px;}
     .lb-bottom{height:128px;} .lb-strip{gap:8px;height:56px;} .lb-thumb{width:44px;height:44px;flex-basis:44px;} .lb-thumb.is-cur{width:54px;height:54px;flex-basis:54px;} .lb-thumb.far{display:none;}
-    .lb-stage{top:56px;bottom:56px;}
+    .lb-stage{top:88px;bottom:56px;}
+    .lb-top{top:18px;} .lb-dl{height:44px;gap:12px;padding:0 6px 0 20px;} .lb-dl-text{font-size:14px;} .lb-dl-circle{width:32px;height:32px;} .lb-dl-circle .dl-ico{width:16px;height:16px;}
+    .lb-close{top:22px;left:10px;} .lb-theme{top:20px;right:10px;}
     .g-dl{width:32px;height:32px;}
   }
 `;

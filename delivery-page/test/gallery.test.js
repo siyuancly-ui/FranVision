@@ -171,6 +171,8 @@ test('lightbox follows the sample: stage, close, top download, day/night pill, s
   const html = renderGalleryPage(buildGalleryModel(project([ph(1), ph(2), ph(3)]), OPTS), { base: '/delivery/x/TOK' });
   for (const id of ['lbStage', 'lbClose', 'lbDl', 'lbTheme', 'lbPrev', 'lbNext', 'lbName', 'lbStrip', 'lbCount']) assert.match(html, new RegExp(`id="${id}"`), id);
   assert.doesNotMatch(html.toLowerCase(), /share/);
+  // the lightbox download is a pill: the WORD + a round arrow badge (not just an icon)
+  assert.match(html, /id="lbDl"[^>]*><span class="lb-dl-text">Download<\/span><span class="lb-dl-circle"><svg class="dl-ico"/);
   const data = JSON.parse(/window\.__GALLERY__=(\[.*?\]);<\/script>/s.exec(html)[1]);
   assert.equal(data.length, 3);
   assert.deepEqual(Object.keys(data[0]).sort(), ['d', 'n', 't', 'w']);
