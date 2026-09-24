@@ -2,7 +2,7 @@ import { createSupabase } from './supabase.js';
 import { buildDeliveryModel, renderDeliveryPage, renderNotFoundPage } from './render.js';
 import { buildAdminModel, renderAdminPage } from './admin.js';
 import {
-  buildGalleryModel, renderGalleryPage, renderGalleryNotFoundPage, renderGalleryPreparingPage, isGalleryToken, zipFilename,
+  buildGalleryModel, renderGalleryPage, renderGalleryNotFoundPage, renderGalleryPreparingPage, isGalleryToken, zipFilename, attachmentDisposition,
 } from './gallery.js';
 
 function html(body, status = 200) {
@@ -97,6 +97,24 @@ async function handleGallery(parts, env) {
     return new Response(upstream.body, {
       headers: { 'content-type': 'image/jpeg', 'cache-control': 'private, max-age=3600' },
     });
+  }
+
+  // One photo's ORIGINAL as a download (the icon on each grid tile / in the lightbox).
+  // Only photos that are in the grid, same as the ZIPs.
+  if (parts.length === 5 && parts[3] === 'download') {
+    const model = buildGalleryModel(project, deliveryOpts(jobId, env), pendingCopies);
+    if (!model.originalPhotoIds.includes(parts[4])) return notFound();
+    const rec = ((project.data && project.data.photos) || []).find((p) => p.photoId === parts[4]);
+    const upstream = await callPhotoSync(env, `/render/${encodeURIComponent(jobId)}/${encodeURIComponent(parts[4])}`);
+    if (!upstream.ok) return new Response('Could not prepare this download. Please try again or contact Franky.', { status: upstream.status === 404 ? 404 : 502 });
+    const headers = {
+      'content-type': upstream.headers.get('content-type') || 'application/octet-stream',
+      'content-disposition': attachmentDisposition(rec && rec.filename),
+      'cache-control': 'no-store',
+    };
+    const len = upstream.headers.get('content-length');
+    if (len) headers['content-length'] = len;
+    return new Response(upstream.body, { headers });
   }
 
   return notFound();
