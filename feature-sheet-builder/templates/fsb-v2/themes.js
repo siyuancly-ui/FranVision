@@ -85,7 +85,7 @@
       css: 'linear-gradient(157deg, #1a2340 0%, #131a30 42%, #0c1120 100%)',
     }),
 
-    marble: theme('marble', '大理石 · Marble', {
+    marble: theme('marble', '华邸云石 · Estate Carrara', {
       bg: '#F4F2EC',
       bgDeep: '#E7E3D8',
       ink: '#26292F',
