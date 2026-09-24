@@ -30,7 +30,7 @@ EMT：frankystudio@mail.com
 {{LINE:MLS}}MLS 照片：
 {{LINE:MLS}}{{MLS_LINK}}
 {{LINE:MLS}}
-{{LINE:VIDEO}}Video 视频：
+{{LINE:VIDEO}}Video 视频 (ready in 24 hours)：
 {{LINE:VIDEO}}{{VIDEO_LINK}}
 {{LINE:VIDEO}}
 {{LINE:FLOORPLAN}}Floor Plan / Site Plan：
