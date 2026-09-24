@@ -27,3 +27,8 @@
 
 # Loose credential notes dropped in the repo root -- never commit these
 /Secret and token.txt
+
+# Wave API probe: real Wave access token -- NEVER commit
+/wave-probe/.env
+/wave-probe/.write-test-ids.json
+/wave-probe/out/
