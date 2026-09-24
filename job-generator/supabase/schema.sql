@@ -284,3 +284,42 @@ group by 1, 2;
 
 revoke all on function public.jg_record_wave_pairing(text, text, text, text), public.jg_suggest_wave_pairings(text, text) from public;
 grant execute on function public.jg_record_wave_pairing(text, text, text, text), public.jg_suggest_wave_pairings(text, text) to anon;
+
+-- ---------------------------------------------------------------------------
+-- Wave product-id map (2026-09-24)
+-- pricing-config.js service/package id (+ 'adjustment_discount' / 'custom_item') -> Wave product id in
+-- Franky's real business. Used to live in a per-machine gitignored wave-product-map.json; now one shared
+-- copy so every machine sees the same map. Same token-gated RPC access as the rest (no table policies).
+create table if not exists public.jg_wave_map (
+  key        text primary key,
+  wave_id    text        not null,
+  updated_at timestamptz not null default now()
+);
+alter table public.jg_wave_map enable row level security;
+revoke all on public.jg_wave_map from anon, authenticated;
+
+-- Returns one flat JSON object { "<key>": "<wave product id>", ... }.
+create or replace function public.jg_get_wave_map(p_token text) returns jsonb
+language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform public.jg_check_token(p_token);
+  return coalesce((select jsonb_object_agg(key, wave_id) from public.jg_wave_map), '{}'::jsonb);
+end $$;
+
+-- Upserts every entry of a flat { key: wave_id } object; keys not mentioned are left alone.
+create or replace function public.jg_set_wave_map(p_token text, p_map jsonb) returns jsonb
+language plpgsql security definer set search_path = public, extensions as $$
+declare r record;
+begin
+  perform public.jg_check_token(p_token);
+  if p_map is null or jsonb_typeof(p_map) <> 'object' then raise exception 'jg: map must be a JSON object'; end if;
+  for r in select * from jsonb_each_text(p_map) loop
+    if btrim(r.key) = '' or btrim(coalesce(r.value, '')) = '' then raise exception 'jg: empty key or product id (%)', r.key; end if;
+    insert into public.jg_wave_map (key, wave_id) values (btrim(r.key), btrim(r.value))
+    on conflict (key) do update set wave_id = excluded.wave_id, updated_at = now();
+  end loop;
+  return public.jg_get_wave_map(p_token);
+end $$;
+
+revoke all on function public.jg_get_wave_map(text), public.jg_set_wave_map(text, jsonb) from public;
+grant execute on function public.jg_get_wave_map(text), public.jg_set_wave_map(text, jsonb) to anon;

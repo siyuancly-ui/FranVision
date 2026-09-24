@@ -158,9 +158,14 @@ async function suggestWavePairings(clientName, deps) {
   return rpc('jg_suggest_wave_pairings', { p_client_name: clientName }, deps);
 }
 
+// Wave product-id map (2026-09-24, see supabase/schema.sql jg_wave_map): one shared { pricingId: waveProductId }
+// object instead of a per-machine file. set = upsert of the given keys (others untouched); both return the full map.
+async function getWaveMap(deps) { return rpc('jg_get_wave_map', {}, deps); }
+async function setWaveMap(map, deps) { return rpc('jg_set_wave_map', { p_map: map }, deps); }
+
 module.exports = {
   uploadImage, publicImageUrl, IMAGE_BUCKET,
   BackendError, isConfigured, rpc, dayStamp, getGalleryToken,
   allocateJobId, peekJobId, upsertJob, getJob, listDrafts, listRecentJobs, deleteDraft, completeJob,
-  recordWavePairing, suggestWavePairings,
+  recordWavePairing, suggestWavePairings, getWaveMap, setWaveMap,
 };

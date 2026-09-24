@@ -285,7 +285,7 @@ test('renderDeliveryPage: Callout auto-advances every 5s, the main gallery/Floor
   const model = buildDeliveryModel(project, OPTS);
   const out = renderDeliveryPage(model);
   assert.ok(out.includes("setupTrack('aerialTrack', 'aerialPrev', 'aerialNext', 1000, 5000)"));
-  assert.ok(out.includes("setupTrack('galTrack', 'galPrev', 'galNext', 0)"));
+  assert.ok(out.includes("setupTrack('galTrack', 'galPrev', 'galNext', 0, 2000, true)"));
 });
 
 test('renderDeliveryPage: Callout and Floor Plan images/slides are lightbox triggers with the full-res URL', () => {

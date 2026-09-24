@@ -433,13 +433,44 @@ const SCRIPT = `<script src="https://embed.cloudflarestream.com/embed/sdk.latest
   // main gallery) so two tracks never scroll at the same moment.
   // intervalMs (default 2000) is how often it auto-advances -- Callout runs
   // slower, 5000ms, since 16:9 photos read a bit differently (2026-09-18).
-  function setupTrack(trackId, prevId, nextId, phaseOffsetMs, intervalMs){
+  function setupTrack(trackId, prevId, nextId, phaseOffsetMs, intervalMs, loop){
     var track = document.getElementById(trackId);
     if(!track) return;
+    // loop (main gallery, 2026-09-24): endless carousel -- the slides are
+    // cloned before and after the real set (3 identical copies) and we park
+    // on the middle copy; once scrolling settles anywhere in an outer copy we
+    // jump by exactly one set width (invisible, the copies are identical), so
+    // there's never a blank edge left of the first / right of the last photo.
+    var setWidth = 0, recenter = function(){};
+    if(loop && track.children.length > 1){
+      var originals = Array.prototype.slice.call(track.children);
+      var before = document.createDocumentFragment(), after = document.createDocumentFragment();
+      originals.forEach(function(el){
+        var b = el.cloneNode(true), a = el.cloneNode(true);
+        b.setAttribute('aria-hidden', 'true'); a.setAttribute('aria-hidden', 'true');
+        before.appendChild(b); after.appendChild(a);
+      });
+      track.insertBefore(before, track.firstChild);
+      track.appendChild(after);
+      var measure = function(){ setWidth = track.children[originals.length * 2].offsetLeft - track.children[originals.length].offsetLeft; };
+      var park = function(){ measure(); track.scrollLeft = setWidth; };
+      park();
+      window.addEventListener('resize', park);
+      var settle = null;
+      recenter = function(){
+        if(!setWidth) return;
+        if(track.scrollLeft < setWidth * 0.5) track.scrollLeft += setWidth;
+        else if(track.scrollLeft > setWidth * 1.5) track.scrollLeft -= setWidth;
+      };
+      track.addEventListener('scroll', function(){
+        clearTimeout(settle);
+        settle = setTimeout(recenter, 120);
+      });
+    }
     var slideWidth = function(){ return track.firstElementChild ? track.firstElementChild.getBoundingClientRect().width + 16 : 0; };
     var atEnd = function(){ return track.scrollLeft + track.clientWidth >= track.scrollWidth - 4; };
-    function goNext(){ atEnd() ? track.scrollTo({left:0, behavior:'smooth'}) : track.scrollBy({left:slideWidth(), behavior:'smooth'}); }
-    function goPrev(){ track.scrollBy({left:-slideWidth(), behavior:'smooth'}); }
+    function goNext(){ recenter(); (!setWidth && atEnd()) ? track.scrollTo({left:0, behavior:'smooth'}) : track.scrollBy({left:slideWidth(), behavior:'smooth'}); }
+    function goPrev(){ recenter(); track.scrollBy({left:-slideWidth(), behavior:'smooth'}); }
 
     var prev = document.getElementById(prevId), next = document.getElementById(nextId);
     var timer = null;
@@ -470,7 +501,7 @@ const SCRIPT = `<script src="https://embed.cloudflarestream.com/embed/sdk.latest
     });
   }
 
-  setupTrack('galTrack', 'galPrev', 'galNext', 0);
+  setupTrack('galTrack', 'galPrev', 'galNext', 0, 2000, true);
   setupTrack('aerialTrack', 'aerialPrev', 'aerialNext', 1000, 5000);
   setupTrack('floorplanTrack', 'floorplanPrev', 'floorplanNext', 2000);
 

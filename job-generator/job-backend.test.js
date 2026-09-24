@@ -49,6 +49,17 @@ const okFetch = (payload, calls) => async (url, opts) => {
     assert.deepStrictEqual(out, [{ waveCustomerId: 'W1' }]);
   });
 
+  await test('getWaveMap / setWaveMap: call jg_get_wave_map / jg_set_wave_map with the token (and p_map)', async () => {
+    const calls = [];
+    const got = await backend.getWaveMap({ env: ENV, fetchImpl: okFetch({ standard_photo: 'P1' }, calls) });
+    assert.ok(calls[0].url.endsWith('/rest/v1/rpc/jg_get_wave_map'));
+    assert.deepStrictEqual(JSON.parse(calls[0].opts.body), { p_token: 'secret-token' });
+    assert.deepStrictEqual(got, { standard_photo: 'P1' });
+    await backend.setWaveMap({ custom_item: 'PC' }, { env: ENV, fetchImpl: okFetch({}, calls) });
+    assert.ok(calls[1].url.endsWith('/rest/v1/rpc/jg_set_wave_map'));
+    assert.deepStrictEqual(JSON.parse(calls[1].opts.body), { p_token: 'secret-token', p_map: { custom_item: 'PC' } });
+  });
+
   await test('isConfigured: needs all three of url / anon key / token', () => {
     assert.strictEqual(backend.isConfigured(ENV), true);
     assert.strictEqual(backend.isConfigured({ ...ENV, JG_TOKEN: '' }), false);
