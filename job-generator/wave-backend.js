@@ -12,10 +12,8 @@
 //   - an in-memory cache of Wave's customer list (Wave has no server-side name search -- see the
 //     2026-09-23 introspection in project history -- so the picker fetches the full list, small,
 //     ~300 rows, and searches client-side/here) and of the HST tax id (rarely changes)
-//   - turning a job's pricing + selected customer into a create-or-patch call, honoring the
-//     "never silently touch an invoice that's already past DRAFT" rule (server.js decides whether
-//     to call patch at all, based on the job's saved wave.status; this module just refuses if asked
-//     to patch with a non-DRAFT status recorded, as a second guard)
+//   - turning a job's pricing + selected customer into a create-and-approve or patch call (see
+//     buildAndSubmitInvoice; only PAID/PARTIAL invoices are refused, per the live status in Wave)
 
 const fs = require('fs');
 const path = require('path');
@@ -118,25 +116,55 @@ async function searchCustomers(query, deps) {
   return matches.slice(0, MAX_SEARCH_RESULTS);
 }
 
+// Creates a Wave customer (name required; email/phone/address optional) and puts it straight into the
+// cached list so the picker finds it immediately, without waiting out the 5-minute cache TTL.
+async function createCustomer(fields, deps) {
+  deps = deps || {};
+  const name = String((fields && fields.name) || '').replace(/\s+/g, ' ').trim();
+  if (!name) throw new Error('A customer name is required.');
+  const clean = (v) => String((v == null ? '' : v)).trim();
+  const created = await getClient(deps).createCustomer({ name, email: clean(fields.email), phone: clean(fields.phone), address: clean(fields.address) });
+  const row = { id: created.id, name: created.name, email: created.email || '' };
+  if (customerCache) customerCache.rows.push(row);
+  return row;
+}
+
+// Statuses at which patching is still safe. Wave's own words: DRAFT, SAVED (= approved), SENT, VIEWED,
+// UNPAID, OVERDUE stay editable and the client just sees the corrected invoice; PAID / PARTIAL have money
+// applied against the old total, so those are never rewritten automatically.
+const NON_PATCHABLE_STATUSES = ['PAID', 'PARTIAL'];
+
 async function getHstTaxId(deps) {
   if (taxIdCache) return taxIdCache;
   taxIdCache = await getClient(deps).findHstTaxId();
   return taxIdCache;
 }
 
-// Builds an invoice request from a job's pricing + selection and either creates a new DRAFT or
-// patches an existing one. `mode: 'patch'` requires `invoiceId` and `currentStatus` (the status
-// last saved in job.json) -- refuses (throws, caller catches) if currentStatus isn't 'DRAFT', so
-// an approved/sent/paid invoice is never silently rewritten; the caller (server.js) is expected to
-// check this BEFORE calling, this is a second guard, not the only one.
+// Builds an invoice request from a job's pricing + selection and either creates a new invoice or
+// patches an existing one.
+//   create: creates the DRAFT and approves it straight away (2026-09-23 decision -- no manual Approve
+//           step in Wave). If the approve call fails, the DRAFT is kept and returned with
+//           `approveError` set so the caller can flag it; the invoice is never lost or duplicated.
+//   patch:  needs `invoiceId`. Wave allows editing approved invoices too (verified 2026-09-23), so the
+//           guard is on the invoice's LIVE status (fetched here, not the possibly stale one saved in
+//           job.json): PAID/PARTIAL is refused (throws, caller catches). A still-DRAFT invoice (e.g. from
+//           before auto-approve existed, or a failed approve) is approved after the patch.
 async function buildAndSubmitInvoice(args, deps) {
   deps = deps || {};
   const c = config(deps.env);
   if (!c.token || !c.businessId) throw new Error('Wave is not configured.');
   const productMap = loadProductMap(deps.env);
   const client = getClient(deps);
-  const taxId = await getHstTaxId(deps);
 
+  let live = null;
+  if (args.mode === 'patch') {
+    if (!args.invoiceId) throw new Error('patch mode needs invoiceId');
+    live = await client.getInvoice(args.invoiceId);
+    if (!live) throw new Error('Wave invoice ' + args.invoiceId + ' no longer exists');
+    if (NON_PATCHABLE_STATUSES.includes(live.status)) throw new Error('refusing to change a Wave invoice that is ' + live.status + ' (payment already applied)');
+  }
+
+  const taxId = await getHstTaxId(deps);
   const request = buildInvoiceRequest({
     pricing: args.pricing,
     businessId: c.businessId,
@@ -151,12 +179,19 @@ async function buildAndSubmitInvoice(args, deps) {
   });
 
   if (args.mode === 'patch') {
-    if (!args.invoiceId) throw new Error('patch mode needs invoiceId');
-    if (args.currentStatus !== 'DRAFT') throw new Error('refusing to patch a Wave invoice that is not DRAFT any more (status: ' + args.currentStatus + ')');
     const { businessId, status, invoiceDate, ...patchFields } = request; // InvoicePatchInput has neither; status is never patched (see wave-client.js)
-    return client.patchInvoice(args.invoiceId, patchFields);
+    let inv = await client.patchInvoice(args.invoiceId, patchFields);
+    if (live.status === 'DRAFT') inv = await approveQuietly(client, inv);
+    return inv;
   }
-  return client.createDraftInvoice(request);
+  const draft = await client.createDraftInvoice(request);
+  return approveQuietly(client, draft);
+}
+
+// Approve, but never lose the just-created invoice if approving fails: return the DRAFT with the error attached.
+async function approveQuietly(client, invoice) {
+  try { return await client.approveInvoice(invoice.id); }
+  catch (err) { return Object.assign({}, invoice, { approveError: err.message }); }
 }
 
 function _resetCachesForTests() {
@@ -165,6 +200,6 @@ function _resetCachesForTests() {
 
 module.exports = {
   config, isConfigured, canBuildInvoices, loadProductMap,
-  listAllCustomers, searchCustomers, getHstTaxId, buildAndSubmitInvoice,
+  listAllCustomers, searchCustomers, createCustomer, getHstTaxId, buildAndSubmitInvoice,
   _resetCachesForTests,
 };

@@ -208,3 +208,79 @@ revoke all on function public.jg_peek_job_id(text, text, integer), public.jg_all
 grant execute on function public.jg_peek_job_id(text, text, integer), public.jg_allocate_job_id(text, text, integer),
   public.jg_upsert_job(text, jsonb), public.jg_get_job(text, text), public.jg_list_jobs(text, text, timestamptz),
   public.jg_delete_draft(text, text), public.jg_complete_job(text, text) to anon;
+
+-- ---------------------------------------------------------------------------
+-- Wave customer pairing history (2026-09-23)
+-- Remembers which Wave customer a job's "Client Name" ended up billed to, so the next job for the same
+-- client name gets that customer suggested (never auto-selected -- Franky confirms with one click). One row
+-- per (normalized client name, Wave customer); use_count grows every time that pairing is used on a
+-- Create/Update Job. Shared across machines like jg_jobs (same token-gated RPC access, no table policies).
+create table if not exists public.jg_wave_pairings (
+  client_key          text        not null,   -- lower-cased, whitespace-collapsed Client Name
+  wave_customer_id    text        not null,
+  client_name         text        not null,   -- last-seen display spelling
+  wave_customer_name  text        not null,
+  use_count           integer     not null default 1,
+  last_used_at        timestamptz not null default now(),
+  primary key (client_key, wave_customer_id)
+);
+alter table public.jg_wave_pairings enable row level security;
+revoke all on public.jg_wave_pairings from anon, authenticated;
+
+create or replace function public.jg_norm_client_name(p text) returns text
+language sql immutable as $$ select lower(regexp_replace(btrim(coalesce(p, '')), '\s+', ' ', 'g')) $$;
+
+create or replace function public.jg_record_wave_pairing(p_token text, p_client_name text, p_wave_customer_id text, p_wave_customer_name text)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare v_key text := public.jg_norm_client_name(p_client_name); v_row public.jg_wave_pairings;
+begin
+  perform public.jg_check_token(p_token);
+  if v_key = '' or coalesce(p_wave_customer_id, '') = '' then raise exception 'jg: client name and wave customer id required'; end if;
+  insert into public.jg_wave_pairings (client_key, wave_customer_id, client_name, wave_customer_name)
+  values (v_key, p_wave_customer_id, btrim(p_client_name), coalesce(p_wave_customer_name, ''))
+  on conflict (client_key, wave_customer_id) do update set
+    use_count = public.jg_wave_pairings.use_count + 1,
+    client_name = excluded.client_name,
+    wave_customer_name = excluded.wave_customer_name,
+    last_used_at = now()
+  returning * into v_row;
+  return to_jsonb(v_row);
+end $$;
+
+-- Exact (normalized) name matches first, then looser "one contains the other" matches (only for names of
+-- 3+ characters, to avoid junk hits on short strings); each group most-used then most-recent first.
+create or replace function public.jg_suggest_wave_pairings(p_token text, p_client_name text)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare v_key text := public.jg_norm_client_name(p_client_name);
+begin
+  perform public.jg_check_token(p_token);
+  if length(v_key) < 2 then return '[]'::jsonb; end if;
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'waveCustomerId', id, 'waveCustomerName', cname, 'clientName', client_name,
+             'useCount', use_count, 'lastUsedAt', last_used_at, 'match', kind) order by rank, use_count desc, last_used_at desc)
+    from (
+      select wave_customer_id as id, wave_customer_name as cname, client_name, use_count, last_used_at,
+             case when client_key = v_key then 'exact' else 'partial' end as kind,
+             case when client_key = v_key then 0 else 1 end as rank
+      from public.jg_wave_pairings
+      where client_key = v_key
+         or (length(v_key) >= 3 and length(client_key) >= 3 and (client_key like '%' || v_key || '%' or v_key like '%' || client_key || '%'))
+      order by rank, use_count desc, last_used_at desc
+      limit 5
+    ) s
+  ), '[]'::jsonb);
+end $$;
+
+-- One-time backfill from jobs already carrying a picked Wave customer (only when the table is still empty,
+-- so re-running this file never double-counts).
+insert into public.jg_wave_pairings (client_key, wave_customer_id, client_name, wave_customer_name, use_count, last_used_at)
+select public.jg_norm_client_name(client_name), data->'job'->>'waveCustomerId', max(client_name),
+       coalesce(max(data->'job'->>'waveCustomerName'), ''), count(*), max(updated_at)
+from public.jg_jobs
+where coalesce(data->'job'->>'waveCustomerId', '') <> '' and public.jg_norm_client_name(client_name) <> ''
+  and not exists (select 1 from public.jg_wave_pairings)
+group by 1, 2;
+
+revoke all on function public.jg_record_wave_pairing(text, text, text, text), public.jg_suggest_wave_pairings(text, text) from public;
+grant execute on function public.jg_record_wave_pairing(text, text, text, text), public.jg_suggest_wave_pairings(text, text) to anon;
