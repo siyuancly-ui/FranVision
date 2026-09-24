@@ -775,7 +775,7 @@
       const chip = document.createElement('button');
       chip.type = 'button';
       chip.className = 'wave-suggest-chip';
-      chip.textContent = sg.waveCustomerName + (sg.match === 'exact' ? '' : sg.match === 'name' ? '（Wave 里名字相同）' : '（相近的名字：' + sg.clientName + '）') + (sg.useCount > 1 ? ' · 用过 ' + sg.useCount + ' 次' : '');
+      chip.textContent = sg.waveCustomerName + (sg.match === 'partial' ? '（相近的名字：' + sg.clientName + '）' : '') + (sg.useCount > 1 ? ' · 用过 ' + sg.useCount + ' 次' : '');
       chip.addEventListener('click', () => selectWaveCustomer({ id: sg.waveCustomerId, name: sg.waveCustomerName }));
       box.appendChild(chip);
     });
