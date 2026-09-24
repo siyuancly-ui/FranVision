@@ -205,11 +205,11 @@ themes.
   `../Feature Sheet Template/` via `templates/fsb-v2/tools/idml_parse.py` — **not
   eyeballed**.
 - **7 themes, 2 layout families** (`themes.js`):
-  - **Standard** — `navy` / `marble` / `burgundy`. Share `geometry.js`. Support a
+  - **Standard** — `navy` / `marble` / `burgundy` / `emerald` (dropdown labels since 2026-09-24: 华邸藏蓝·Estate Navy / 大理石·Marble / 华邸酒红·Estate Burgundy / 华邸墨绿·Estate Emerald — the labels are cosmetic and deliberately NOT the layout family; ids are unchanged). Share `geometry.js`. Support a
     second co-listing agent, a bed/bath/garage icon row, and a
     description-present vs. 6-photo-collage left column (chosen automatically from
     what the agent fills in — see `modules.js` + `layout-engine.js`).
-  - **Estate ("华邸")** — `estate-navy` / `estate-burgundy` / `estate-emerald` /
+  - **Estate layout** (labelled 藏蓝·Navy / 酒红·Burgundy / 墨绿·Emerald / 深灰·Charcoal in the dropdown) — `estate-navy` / `estate-burgundy` / `estate-emerald` /
     `estate-charcoal`. Marked `layout: 'jason'`, use `geometry-estate.js`, single
     agent only, velvet-artwork background + metal chevron/bar, all-white copy.
 - **Page-1 slot id namespaces differ by layout** and this matters:
