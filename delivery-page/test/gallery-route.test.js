@@ -18,6 +18,7 @@ function setup() {
     calls.supabase.push(u);
     const json = (v) => new Response(JSON.stringify(v), { headers: { 'content-type': 'application/json' } });
     if (u.includes('/rest/v1/gallery_tokens')) return json(u.includes(`token=eq.${TOKEN}`) ? [{ job_id: JOB }] : []);
+    if (u.includes('/rest/v1/photo_render_pending')) return json(calls.pending || []);
     if (u.includes('/rest/v1/projects')) return json(u.includes(`id=eq.${JOB}`) ? [PROJECT] : []);
     return new Response('nf', { status: 404 });
   };
@@ -104,4 +105,25 @@ test('existing delivery routes are not shadowed by the gallery route', async () 
   assert.equal((await get(env, `/delivery/${JOB}`)).status, 200);          // old path
   assert.equal((await get(env, `/12-main-st-toronto/${JOB}`)).status, 200); // pretty path
   assert.equal((await get(env, `/delivery/${JOB}`)).headers.get('content-type').startsWith('text/html'), true);
+});
+
+test('zip mls: a copy still queued for generation -> friendly "preparing" page, photo-sync not called; queue drained -> ZIP flows with the MLS ids', async () => {
+  const { env, calls } = setup();
+  calls.pending = [{ source_path: '/j/01.jpg' }];
+  const res = await get(env, `/delivery/x/${TOKEN}/zip/mls`);
+  assert.equal(res.status, 503);
+  assert.match(await res.text(), /still being prepared/);
+  assert.equal(calls.photoSync.length, 0);
+  calls.pending = [];
+  const ok = await get(env, `/delivery/x/${TOKEN}/zip/mls`);
+  assert.equal(ok.status, 200);
+  assert.deepEqual(JSON.parse(calls.photoSync[0].body), { photoIds: ['p1'] });
+});
+
+test('gallery page shows the disabled "Preparing MLS Photos" button while a copy is queued, and the real one after', async () => {
+  const { env, calls } = setup();
+  calls.pending = [{ source_path: '/j/01.jpg' }];
+  assert.match(await (await get(env, `/delivery/x/${TOKEN}`)).text(), /is-disabled[^>]*>Preparing MLS Photos/);
+  calls.pending = [];
+  assert.match(await (await get(env, `/delivery/x/${TOKEN}`)).text(), /href="[^"]*\/zip\/mls"/);
 });

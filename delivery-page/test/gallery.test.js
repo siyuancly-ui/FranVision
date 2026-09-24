@@ -27,22 +27,45 @@ test('galleryPath: address slug + token, cosmetic slug falls back when no addres
   assert.equal(galleryPath(null, 'TOK'), '/delivery/photos/TOK');
 });
 
-test('buildGalleryModel: grid photos, aspect ratios, and which download buttons apply', () => {
-  const m = buildGalleryModel(project([ph(1), ph(2), ph(3), ph(4, { folder: 'Callout' })]), OPTS);
-  assert.equal(m.photos.length, 3); // Callout is not part of the grid
+test('buildGalleryModel: main photos then Callout photos in the grid; both ZIPs come from exactly those', () => {
+  const callout = (n, extra = {}) => ph(n, { folder: 'Callout', filename: `aerial-${n}.jpg`, dropboxPath: `/j/HDR Photos/Callout/${n}.jpg`, downloadDropboxPath: `/m/Callout/${n}.jpg`, ...extra });
+  const m = buildGalleryModel(project([callout(9), ph(1), ph(2), ph(3), callout(8)]), OPTS);
+  assert.equal(m.photos.length, 5);
+  assert.deepEqual(m.photos.map((p) => p.photoId), ['p1', 'p2', 'p3', 'p8', 'p9']);   // main first, then Callout (by filename)
   assert.equal(m.photos[0].aspect, 1024 / 683);
   assert.equal(m.photos[1].aspect, 1);
-  assert.deepEqual(m.photoIds, ['p1', 'p2', 'p3']);   // the grid decides the ZIP contents
+  assert.deepEqual(m.originalPhotoIds, ['p1', 'p2', 'p3', 'p8', 'p9']);
+  assert.deepEqual(m.mlsPhotoIds, ['p1', 'p2', 'p3', 'p8', 'p9']);
   assert.equal(m.originalReady, true);
   assert.equal(m.mlsReady, true);
   assert.ok(m.hero);
+});
 
-  // ONE photo without its 2048 copy -> the whole MLS ZIP is "not ready" (never a smaller archive)
-  const partial = buildGalleryModel(project([ph(1), ph(2, { downloadDropboxPath: undefined })]), OPTS);
-  assert.equal(partial.originalReady, true);
-  assert.equal(partial.mlsReady, false);
-  assert.equal(partial.photos[1].hasWeb, false);
+test('Callout photos from before 2026-09-23 (no MLS copy) are in the grid and the Original ZIP, left out of the MLS ZIP, and never block it', () => {
+  const oldCallout = ph(8, { folder: 'Callout', filename: 'aerial-8.jpg', downloadDropboxPath: undefined });
+  const m = buildGalleryModel(project([ph(1), ph(2), oldCallout]), OPTS);
+  assert.deepEqual(m.photos.map((p) => p.photoId), ['p1', 'p2', 'p8']);
+  assert.deepEqual(m.originalPhotoIds, ['p1', 'p2', 'p8']);
+  assert.deepEqual(m.mlsPhotoIds, ['p1', 'p2']);
+  assert.equal(m.originalReady, true);
+  assert.equal(m.mlsReady, true);                       // not stuck on "Preparing" because of an old Callout
+  assert.equal(m.photos[2].hasWeb, false);
+});
+
+test('MLS ZIP is "not ready" while any copy is still queued for generation, or a MAIN photo has no copy -- never a smaller archive', () => {
+  const pending = new Set(['/j/HDR Photos/2.jpg']);
+  const queued = buildGalleryModel(project([ph(1), ph(2)]), OPTS, pending);
+  assert.equal(queued.mlsReady, false);
+  assert.equal(queued.originalReady, true);
+  assert.equal(buildGalleryModel(project([ph(1), ph(2)]), OPTS, new Set()).mlsReady, true);        // queue drained -> turns on by itself
+  const mainNoCopy = buildGalleryModel(project([ph(1), ph(2, { downloadDropboxPath: undefined })]), OPTS);
+  assert.equal(mainNoCopy.mlsReady, false);
+  assert.equal(mainNoCopy.originalReady, true);
+  assert.equal(mainNoCopy.photos[1].hasWeb, false);
   assert.equal(buildGalleryModel(project([]), OPTS).originalReady, false);
+  // a queued copy for a Callout photo also holds the MLS ZIP back (it WILL have one)
+  const callQueued = buildGalleryModel(project([ph(1), ph(8, { folder: 'Callout', dropboxPath: '/j/HDR Photos/Callout/8.jpg', downloadDropboxPath: '/m/Callout/8.jpg' })]), OPTS, new Set(['/j/HDR Photos/Callout/8.jpg']));
+  assert.equal(callQueued.mlsReady, false);
 });
 
 test('buildGalleryModel copes with a missing project / missing dimensions', () => {

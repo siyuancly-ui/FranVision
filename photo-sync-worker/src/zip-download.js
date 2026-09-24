@@ -42,8 +42,13 @@ export function parseZipRequest(url) {
 const baseName = (p) => String(p || '').split('/').pop();
 
 // Pure. Resolves the requested ids against the Job's photo records.
-// -> { entries: [{ name, path }] (in the caller's order), notReady: [photoId] }
-export function pickZipEntries(photos, kind, photoIds) {
+// -> { entries: [{ photoId, name, path, sourcePath, filename }] in filename order,
+//      notReady: [photoId] }
+// A photo outside the main set (e.g. Callout) is placed in a sub-folder named
+// after its folder inside the ZIP, mirroring Dropbox, so it can't be mixed up
+// with (or overwrite) a main photo of the same file name.
+export function pickZipEntries(photos, kind, photoIds, mainFolders = []) {
+  const main = new Set(mainFolders.map((f) => f.trim().toLowerCase()));
   const byId = new Map((photos || []).filter((p) => p && !p.role).map((p) => [p.photoId, p]));
   const pathOf = (p) => (kind === 'mls' ? p.downloadDropboxPath : p.dropboxPath);
   const ready = [];
@@ -53,8 +58,31 @@ export function pickZipEntries(photos, kind, photoIds) {
     if (p && p.status === 'ok' && pathOf(p)) ready.push(p); else notReady.push(id);
   }
   ready.sort((a, b) => String(a.filename || '').localeCompare(String(b.filename || '')));
-  const names = dedupeNames(ready.map((p) => safeEntryName(baseName(pathOf(p)) || p.filename)));
-  return { entries: ready.map((p, i) => ({ name: names[i], path: pathOf(p) })), notReady };
+  const prefixed = ready.map((p) => {
+    const folder = String(p.folder || '').trim();
+    const dir = main.size > 0 && folder && !main.has(folder.toLowerCase()) ? safeEntryName(folder) + '/' : '';
+    return dir + safeEntryName(baseName(pathOf(p)) || p.filename);
+  });
+  const names = dedupeNames(prefixed);
+  return {
+    entries: ready.map((p, i) => ({ photoId: p.photoId, name: names[i], path: pathOf(p), sourcePath: p.dropboxPath, filename: p.filename })),
+    notReady,
+  };
+}
+
+// The MLS copy is written a little after a photo syncs (and retried by the cron if
+// that failed), and its path is recorded up front -- so "has a path" does not prove
+// the FILE exists. Ask Dropbox, ten at a time; a definite not_found means missing.
+// Any other error is treated as present (the download itself retries and, failing
+// that, aborts) so an API blip never blocks a good ZIP.
+async function findMissingCopies(dbx, entries) {
+  const missing = [];
+  for (let i = 0; i < entries.length; i += 10) {
+    await Promise.all(entries.slice(i, i + 10).map(async (e) => {
+      try { await dbx.getMetadata(e.path); } catch (err) { if (/not_found/.test(String((err && err.message) || err))) missing.push(e); }
+    }));
+  }
+  return missing;
 }
 
 const jsonRes = (status, obj) =>
@@ -85,10 +113,25 @@ export async function handleZip(request, env, deps, ctx, { jobId, kind }, log = 
     log({ evt: 'zip_lookup_failed', jobId, kind, error: String((err && err.message) || err) });
     return jsonRes(502, { error: 'lookup failed' });
   }
-  const { entries: picked, notReady } = pickZipEntries(photos, kind, photoIds);
+  const mainFolders = String(env.DOWNLOAD_SET_FOLDERS || 'MLS,HDR Photos').split(',');
+  const { entries: picked, notReady } = pickZipEntries(photos, kind, photoIds, mainFolders);
   if (notReady.length > 0) {
     log({ evt: 'zip_not_ready', jobId, kind, notReady });
     return jsonRes(409, { error: 'not ready', notReady });
+  }
+  if (kind === 'mls') {
+    const missing = await findMissingCopies(deps.dbx, picked);
+    if (missing.length > 0) {
+      // Self-heal: queue the missing copies for the 2-min cron (idempotent), and
+      // answer "not ready" -- the page retries later instead of a broken download.
+      log({ evt: 'zip_copies_missing', jobId, kind, count: missing.length });
+      for (const e of missing) {
+        try {
+          await deps.sb.insertPendingRender({ projectId: jobId, kind: 'download_copy', sourcePath: e.sourcePath, destPath: e.path, filename: e.filename, error: 'copy missing at zip time' });
+        } catch (err) { log({ evt: 'zip_requeue_failed', jobId, path: e.path, error: String((err && err.message) || err) }); }
+      }
+      return jsonRes(409, { error: 'not ready', notReady: missing.map((e) => e.photoId) });
+    }
   }
 
   const entries = picked.map((e) => ({

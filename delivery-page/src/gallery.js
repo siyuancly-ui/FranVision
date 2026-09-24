@@ -31,34 +31,46 @@ const DEFAULT_ASPECT = 1.5;
 
 // opts = the same folder config buildDeliveryModel takes (hero/address/photo
 // selection are reused as-is, so the Gallery hero always matches the delivery
-// page's), plus jobId/supabaseUrl.
-export function buildGalleryModel(project, opts) {
+// page's), plus jobId/supabaseUrl. `pendingCopySources` = source paths whose
+// 2048px MLS copy is still queued for generation (supabase.js#listPendingCopySources).
+//
+// The grid = the main photos followed by the Callout (aerial) photos, like the
+// delivery page's own order. Both ZIPs are built from exactly these photos.
+export function buildGalleryModel(project, opts, pendingCopySources = new Set()) {
   const base = buildDeliveryModel(project, opts);
   const raw = (project && project.data && project.data.photos) || [];
   const byId = new Map(raw.map((p) => [p.photoId, p]));
-  const inGrid = base.gallery.map((g) => byId.get(g.photoId)).filter(Boolean);
+  const calloutIds = new Set(base.aerial.map((a) => a.photoId));
+  const seen = new Set();
+  const grid = [...base.gallery, ...base.aerial].filter((g) => !seen.has(g.photoId) && seen.add(g.photoId));
+  const inGrid = grid.map((g) => byId.get(g.photoId)).filter(Boolean);
+
+  // Originals need only the synced source file. The MLS ZIP is the photos that
+  // HAVE a 2048px copy: an old Callout photo (synced before 2026-09-23, when
+  // Callout copies began) never got one and is simply left out; a MAIN photo with
+  // no copy, or any copy still queued for generation, means "not ready" -- the
+  // MLS ZIP is never a silently smaller archive, it turns on by itself later.
+  const mlsPhotos = inGrid.filter((p) => p.downloadDropboxPath);
+  const mainMissingCopy = inGrid.some((p) => !calloutIds.has(p.photoId) && !p.downloadDropboxPath);
+  const anyPending = mlsPhotos.some((p) => pendingCopySources.has(p.dropboxPath));
+
   return {
     found: base.found,
     jobId: opts.jobId,
     address: base.address,
     hero: base.hero,
-    photos: base.gallery.map((g) => ({
+    photos: grid.map((g) => ({
       photoId: g.photoId,
       url: g.url,
       aspect: g.width > 0 && g.height > 0 ? g.width / g.height : DEFAULT_ASPECT,
       hasWeb: Boolean((byId.get(g.photoId) || {}).downloadDropboxPath),
     })),
-    // The grid IS the source of truth for the ZIPs: the download route sends
-    // exactly these ids to photo-sync-worker, so a ZIP can never disagree with
-    // what the page shows (no second folder list to keep in sync).
-    photoIds: base.gallery.map((g) => g.photoId),
-    // A ZIP is offered only when EVERY photo in the grid can go into it -- never
-    // a silently smaller archive. Originals need just the synced file; the MLS
-    // ZIP also needs each photo's 2048px copy (written a little after the photo
-    // syncs, self-healing via photo-sync-worker's retry cron), so right after an
-    // upload the MLS button shows "preparing" and turns on by itself.
+    // The ids the download route sends to photo-sync-worker for each ZIP (the grid
+    // is the single source of truth for what a ZIP contains).
+    originalPhotoIds: inGrid.map((p) => p.photoId),
+    mlsPhotoIds: mlsPhotos.map((p) => p.photoId),
     originalReady: inGrid.length > 0 && inGrid.every((p) => p.dropboxPath),
-    mlsReady: inGrid.length > 0 && inGrid.every((p) => p.downloadDropboxPath),
+    mlsReady: mlsPhotos.length > 0 && !mainMissingCopy && !anyPending,
   };
 }
 

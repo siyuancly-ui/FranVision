@@ -60,26 +60,26 @@ async function handleGallery(parts, env) {
   const sb = createSupabase(env);
   const jobId = await sb.getGalleryJobId(parts[2]);
   if (!jobId) return notFound();
-  const project = await sb.getProject(jobId);
+  const [project, pendingCopies] = await Promise.all([sb.getProject(jobId), sb.listPendingCopySources(jobId)]);
   if (!project) return notFound();
 
   if (parts.length === 3) {
     const base = `/${parts.slice(0, 3).map(encodeURIComponent).join('/')}`;
-    return html(renderGalleryPage(buildGalleryModel(project, deliveryOpts(jobId, env)), { base }));
+    return html(renderGalleryPage(buildGalleryModel(project, deliveryOpts(jobId, env), pendingCopies), { base }));
   }
 
   if (parts.length === 5 && parts[3] === 'zip' && (parts[4] === 'original' || parts[4] === 'mls')) {
     const kind = parts[4];
     // The grid decides what is in the ZIP (see gallery.js): send exactly its
     // photo ids. Anything not ready yet -> a friendly page, never a short zip.
-    const model = buildGalleryModel(project, deliveryOpts(jobId, env));
+    const model = buildGalleryModel(project, deliveryOpts(jobId, env), pendingCopies);
     const ready = kind === 'mls' ? model.mlsReady : model.originalReady;
     const back = `/${parts.slice(0, 3).map(encodeURIComponent).join('/')}`;
     if (!ready) return html(renderGalleryPreparingPage(back), 503);
     const upstream = await callPhotoSync(env, `/zip/${encodeURIComponent(jobId)}?kind=${kind}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ photoIds: model.photoIds }),
+      body: JSON.stringify({ photoIds: kind === 'mls' ? model.mlsPhotoIds : model.originalPhotoIds }),
     });
     if (!upstream.ok) return html(renderGalleryPreparingPage(back), upstream.status === 409 ? 503 : 502);
     return new Response(upstream.body, {

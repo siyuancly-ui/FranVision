@@ -35,8 +35,8 @@ const mk = (token, body, method = 'POST') => new Request('https://w.test/zip/FVS
 });
 const IDS = { jobId: 'FVS-1', kind: 'original' };
 const deps = (over = {}) => ({
-  sb: { async getProjectPhotos() { return PHOTOS; } },
-  dbx: { async downloadFileStream(p) { return new Response('bytes:' + p); } },
+  sb: { async getProjectPhotos() { return PHOTOS; }, async insertPendingRender() {} },
+  dbx: { async downloadFileStream(p) { return new Response('bytes:' + p); }, async getMetadata() { return {}; } },
   ...over,
 });
 
@@ -87,4 +87,32 @@ test('handleZip accepts the dedicated GALLERY_TOKEN as well as RENDER_TOKEN, and
   assert.equal((await handleZip(mk('r', { photoIds: ['p_a'] }), env, deps(), null, IDS)).status, 200);
   assert.equal((await handleZip(mk('x', { photoIds: ['p_a'] }), env, deps(), null, IDS)).status, 401);
   assert.equal((await handleZip(mk('g', { photoIds: ['p_a'] }), { RENDER_TOKEN: 'r' }, deps(), null, IDS)).status, 401);
+});
+
+const CALLOUT = { photoId: 'p_call', filename: 'a.jpg', folder: 'Callout', status: 'ok', dropboxPath: '/j/HDR Photos/Callout/a.jpg', downloadDropboxPath: '/j/MLS for download/Callout/a.jpg' };
+
+test('pickZipEntries: a Callout photo goes in a Callout/ folder of the ZIP, so it never collides with a main photo of the same name', () => {
+  const photos = [...PHOTOS, CALLOUT];
+  const { entries } = pickZipEntries(photos, 'original', ['p_a', 'p_call'], ['MLS', 'HDR Photos']);
+  assert.deepEqual(entries.map((e) => e.name).sort(), ['Callout/a.jpg', 'a.jpg']);
+  const mls = pickZipEntries(photos, 'mls', ['p_a', 'p_call'], ['MLS', 'HDR Photos']).entries;
+  assert.deepEqual(mls.map((e) => e.name).sort(), ['Callout/a.jpg', 'a.jpg']);
+});
+
+test('handleZip (mls): a copy that is recorded but missing in Dropbox -> 409 and it is re-queued for the cron', async () => {
+  const queued = [];
+  const d = deps({
+    sb: { async getProjectPhotos() { return PHOTOS; }, async insertPendingRender(r) { queued.push(r); } },
+    dbx: { async getMetadata(p) { if (p.endsWith('/b.jpg')) throw new Error('dropbox files/get_metadata 409: {"error_summary":"path/not_found/.."}'); return {}; }, async downloadFileStream() { return new Response('x'); } },
+  });
+  const res = await handleZip(new Request('https://w.test/zip/FVS-1?kind=mls', { method: 'POST', headers: { Authorization: 'Bearer t' }, body: JSON.stringify({ photoIds: ['p_a', 'p_b'] }) }), ENV, d, null, { jobId: 'FVS-1', kind: 'mls' });
+  assert.equal(res.status, 409);
+  assert.deepEqual(await res.json(), { error: 'not ready', notReady: ['p_b'] });
+  assert.deepEqual(queued.map((q) => [q.kind, q.sourcePath, q.destPath]), [['download_copy', '/j/HDR Photos/b.jpg', '/j/MLS for download/b.jpg']]);
+});
+
+test('handleZip (mls): a Dropbox API blip while checking a copy does not block a good ZIP', async () => {
+  const d = deps({ dbx: { async getMetadata() { throw new Error('dropbox 500'); }, async downloadFileStream(p) { return new Response('bytes:' + p); } } });
+  const res = await handleZip(new Request('https://w.test/zip/FVS-1?kind=mls', { method: 'POST', headers: { Authorization: 'Bearer t' }, body: JSON.stringify({ photoIds: ['p_a'] }) }), ENV, d, null, { jobId: 'FVS-1', kind: 'mls' });
+  assert.equal(res.status, 200);
 });

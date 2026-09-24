@@ -39,6 +39,18 @@ export function createSupabase(env) {
       return Array.isArray(rows) && rows[0] ? rows[0].job_id : null;
     },
 
+    // Source paths (the photos' dropboxPath) of this Job's 2048px MLS copies that
+    // photo-sync-worker has queued for (re)generation -- i.e. recorded but not yet
+    // written. Empty (never throws) if the table can't be read.
+    async listPendingCopySources(jobId) {
+      try {
+        const res = await fetch(`${BASE}/rest/v1/photo_render_pending?project_id=eq.${encodeURIComponent(jobId)}&kind=eq.download_copy&select=source_path`, { headers: authHeaders });
+        return new Set(((await readJson(res)) || []).map((r) => r.source_path));
+      } catch {
+        return new Set();
+      }
+    },
+
     // Every Job's gallery token, { jobId: token } -- one query for the admin
     // directory. Empty (never throws) if the table isn't there yet
     // (job-generator/supabase/gallery.sql not run), so the directory still loads.
