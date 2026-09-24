@@ -37,6 +37,18 @@ const okFetch = (payload, calls) => async (url, opts) => {
       (e) => e.unreachable === true);
   });
 
+  await test('recordWavePairing / suggestWavePairings: call the token-gated RPCs with the right argument names', async () => {
+    const calls = [];
+    await backend.recordWavePairing({ clientName: 'Jane Smith', waveCustomerId: 'W1', waveCustomerName: 'Jane Realty' }, { env: ENV, fetchImpl: okFetch({}, calls) });
+    const rec = JSON.parse(calls[0].opts.body);
+    assert.ok(calls[0].url.endsWith('/rest/v1/rpc/jg_record_wave_pairing'));
+    assert.deepStrictEqual(rec, { p_token: 'secret-token', p_client_name: 'Jane Smith', p_wave_customer_id: 'W1', p_wave_customer_name: 'Jane Realty' });
+    const out = await backend.suggestWavePairings('Jane', { env: ENV, fetchImpl: okFetch([{ waveCustomerId: 'W1' }], calls) });
+    assert.ok(calls[1].url.endsWith('/rest/v1/rpc/jg_suggest_wave_pairings'));
+    assert.deepStrictEqual(JSON.parse(calls[1].opts.body), { p_token: 'secret-token', p_client_name: 'Jane' });
+    assert.deepStrictEqual(out, [{ waveCustomerId: 'W1' }]);
+  });
+
   await test('isConfigured: needs all three of url / anon key / token', () => {
     assert.strictEqual(backend.isConfigured(ENV), true);
     assert.strictEqual(backend.isConfigured({ ...ENV, JG_TOKEN: '' }), false);

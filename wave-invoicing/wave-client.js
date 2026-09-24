@@ -76,7 +76,9 @@ function createWaveClient({ token, businessId, fetchImpl = fetch, sleep = (ms) =
     // `fields` is an invoice's worth of line data (items/customerId/poNumber/memo/dueDate/...), same
     // shapes buildInvoiceRequest produces MINUS businessId/status -- InvoicePatchInput has no businessId
     // (the invoice already belongs to one) and this client never changes status via patch (DRAFT->SAVED
-    // is invoiceApprove only; the caller is expected to skip patching an invoice that's already past DRAFT).
+    // is invoiceApprove only). Verified against a real (Personal-business) invoice 2026-09-23: patching an
+    // already-APPROVED (SAVED) invoice works and keeps its status -- so approved invoices can be edited too;
+    // the caller decides which statuses are safe to touch (job-generator refuses PAID/PARTIAL).
     async patchInvoice(invoiceId, fields) {
       if ('businessId' in fields) throw new Error('patchInvoice fields must not include businessId');
       if ('status' in fields) throw new Error('patchInvoice never changes status -- use approveInvoice, or skip patching a non-DRAFT invoice');
@@ -94,9 +96,11 @@ function createWaveClient({ token, businessId, fetchImpl = fetch, sleep = (ms) =
       mustSucceed(d.invoiceDelete, 'invoiceDelete');
     },
 
-    async createCustomer({ name, email }) {
-      const i = { businessId, name, ...(email ? { email } : {}) };
-      const d = await gql('mutation($i:CustomerCreateInput!){ customerCreate(input:$i){ didSucceed inputErrors{ message } customer{ id name } } }', { i }, { mutation: true });
+    // Only `name` is required. `address` is a single free-text string (Franky types one line); it goes in
+    // addressLine1 -- Wave's structured city/province/postal fields are left for him to fill in Wave if ever needed.
+    async createCustomer({ name, email, phone, address }) {
+      const i = { businessId, name, ...(email ? { email } : {}), ...(phone ? { phone } : {}), ...(address ? { address: { addressLine1: address } } : {}) };
+      const d = await gql('mutation($i:CustomerCreateInput!){ customerCreate(input:$i){ didSucceed inputErrors{ message } customer{ id name email } } }', { i }, { mutation: true });
       return mustSucceed(d.customerCreate, 'customerCreate').customer;
     },
 
