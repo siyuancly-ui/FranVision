@@ -1096,6 +1096,7 @@ async function handleApi(req, res, urlPath) {
             jobId, jobFolderPath, folderName, clientName: body.clientName, address: body.address,
             order, componentFolders, totalCents: price.totalCents, preTaxCents: price.finalSubtotalCents,
             waveViewUrl: waveJson && waveJson.viewUrl,
+            getGalleryToken: jobBackend.isConfigured() ? (id) => jobBackend.getGalleryToken(id) : null,
           });
         } catch (err) {
           deliveryEmailResult = { attempted: true, success: false, error: 'Unexpected delivery-email failure: ' + err.message };

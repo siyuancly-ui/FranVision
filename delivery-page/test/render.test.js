@@ -410,3 +410,9 @@ test('renderNotFoundPage includes the requested jobId', () => {
   const out = renderNotFoundPage('FVS-BOGUS');
   assert.ok(out.includes('FVS-BOGUS'));
 });
+
+test('renderDeliveryPage ends with the "Photos by: FRANVISION MEDIA" credit, after the closing section', () => {
+  const html = renderDeliveryPage(buildDeliveryModel({ id: OPTS.jobId, data: { address: '1 Main St' } }, OPTS));
+  assert.match(html, /<footer class="credit">Photos by: FRANVISION MEDIA<\/footer>/);
+  assert.ok(html.indexOf('class="closing') < html.indexOf('class="credit"'));
+});

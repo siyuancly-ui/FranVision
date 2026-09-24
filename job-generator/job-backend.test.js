@@ -136,6 +136,17 @@ const okFetch = (payload, calls) => async (url, opts) => {
       (e) => e.name === 'BackendError' && e.notFound === true);
   });
 
+  await test('getGalleryToken: calls jg_gallery_token with the machine token + job id, returns the string (or null)', async () => {
+    const calls = [];
+    const f = async (url, opts) => { calls.push({ url, opts }); return { ok: true, status: 200, text: async () => '"8779efe254f329f0766d73328550ae62"' }; };
+    const t = await backend.getGalleryToken('FVS-20260924-001', { env: ENV, fetchImpl: f });
+    assert.strictEqual(t, '8779efe254f329f0766d73328550ae62');
+    assert.strictEqual(calls[0].url, 'https://x.supabase.co/rest/v1/rpc/jg_gallery_token');
+    assert.deepStrictEqual(JSON.parse(calls[0].opts.body), { p_token: 'secret-token', p_job_id: 'FVS-20260924-001' });
+    const none = await backend.getGalleryToken('F', { env: ENV, fetchImpl: async () => ({ ok: true, status: 200, text: async () => 'null' }) });
+    assert.strictEqual(none, null);
+  });
+
   console.log('\n' + passed + ' passed, ' + failed + ' failed');
   if (failed) process.exit(1);
 })();

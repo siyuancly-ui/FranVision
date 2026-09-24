@@ -75,3 +75,26 @@ test('original unreadable -> 502, and it does NOT fall back to a small render', 
   assert.equal(res.status, 502);
   assert.equal(d.calls.other.length, 0);
 });
+
+test('size=web serves the 2048 delivery copy, 404s when it does not exist', async () => {
+  const d = deps();
+  const ok = await handleRender(req('secret-token'), ENV, d, { jobId: 'FVS-1', photoId: 'abc', size: 'web' });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.headers.get('x-render-source'), 'web');
+  assert.equal(ok.headers.get('content-type'), 'image/jpeg');
+  assert.deepEqual(d.calls.stream, ['/j/MLS for download/a.jpg']);
+  const none = deps({ photos: [{ ...REC, downloadDropboxPath: undefined }] });
+  const miss = await handleRender(req('secret-token'), ENV, none, { jobId: 'FVS-1', photoId: 'abc', size: 'web' });
+  assert.equal(miss.status, 404);
+});
+
+test('GALLERY_TOKEN may fetch the web copy but never a true original; RENDER_TOKEN still works for both', async () => {
+  const env = { RENDER_TOKEN: 'secret-token', GALLERY_TOKEN: 'gallery-token' };
+  const ids = { jobId: 'FVS-1', photoId: 'abc' };
+  assert.equal((await handleRender(req('gallery-token'), env, deps(), { ...ids, size: 'web' })).status, 200);
+  assert.equal((await handleRender(req('gallery-token'), env, deps(), ids)).status, 401);          // original: refused
+  assert.equal((await handleRender(req('secret-token'), env, deps(), ids)).status, 200);
+  assert.equal((await handleRender(req('secret-token'), env, deps(), { ...ids, size: 'web' })).status, 200);
+  assert.equal((await handleRender(req('nope'), env, deps(), { ...ids, size: 'web' })).status, 401);
+  assert.equal((await handleRender(req('gallery-token'), { RENDER_TOKEN: 'secret-token' }, deps(), { ...ids, size: 'web' })).status, 401); // not configured
+});

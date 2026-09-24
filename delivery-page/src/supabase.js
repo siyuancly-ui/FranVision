@@ -28,6 +28,69 @@ export function createSupabase(env) {
       return Array.isArray(rows) ? rows[0] || null : rows;
     },
 
+    // Gallery page: the Job a random URL token was minted for (see
+    // job-generator/supabase/gallery.sql), or null. `token` must already have
+    // passed gallery.js#isGalleryToken.
+    async getGalleryJobId(token) {
+      const res = await fetch(`${BASE}/rest/v1/gallery_tokens?token=eq.${encodeURIComponent(token)}&select=job_id`, {
+        headers: authHeaders,
+      });
+      const rows = await readJson(res);
+      return Array.isArray(rows) && rows[0] ? rows[0].job_id : null;
+    },
+
+    // Source paths (the photos' dropboxPath) of this Job's 2048px MLS copies that
+    // photo-sync-worker has queued for (re)generation -- i.e. recorded but not yet
+    // written. Empty (never throws) if the table can't be read.
+    async listPendingCopySources(jobId) {
+      try {
+        const res = await fetch(`${BASE}/rest/v1/photo_render_pending?project_id=eq.${encodeURIComponent(jobId)}&kind=eq.download_copy&select=source_path`, { headers: authHeaders });
+        return new Set(((await readJson(res)) || []).map((r) => r.source_path));
+      } catch {
+        return new Set();
+      }
+    },
+
+    // Every Job's gallery token, { jobId: token } -- one query for the admin
+    // directory. Empty (never throws) if the table isn't there yet
+    // (job-generator/supabase/gallery.sql not run), so the directory still loads.
+    async listGalleryTokens() {
+      try {
+        const res = await fetch(`${BASE}/rest/v1/gallery_tokens?select=job_id,token`, { headers: authHeaders });
+        const rows = await readJson(res);
+        return Object.fromEntries((rows || []).map((r) => [r.job_id, r.token]));
+      } catch {
+        return {};
+      }
+    },
+
+    // Guarantees every given Job has a gallery token, minting random 128-bit
+    // hex ones (the same kind the job server's jg_gallery_token() mints) for
+    // those that don't -- one insert-ignore-duplicates for the whole batch, so
+    // it is idempotent and safe against a race with Job Generator (whoever gets
+    // there first wins; a link already emailed can never change). Returns the
+    // full { jobId: token } map afterwards. Never throws: if the table isn't
+    // there yet, returns whatever could be read (usually {}).
+    async ensureGalleryTokens(jobIds) {
+      const existing = await this.listGalleryTokens();
+      const missing = (jobIds || []).filter((id) => !existing[id]);
+      if (missing.length === 0) return existing;
+      const rows = missing.map((job_id) => ({
+        job_id,
+        token: Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join(''),
+      }));
+      try {
+        await readJson(await fetch(`${BASE}/rest/v1/gallery_tokens`, {
+          method: 'POST',
+          headers: { ...authHeaders, 'Content-Type': 'application/json', Prefer: 'resolution=ignore-duplicates,return=minimal' },
+          body: JSON.stringify(rows),
+        }));
+      } catch {
+        return existing; // table missing / transient -- the directory still loads, links just not there yet
+      }
+      return this.listGalleryTokens();
+    },
+
     // Every Job's projects row (id, data, updated_at), newest-updated first
     // -- the admin directory's one query (see src/admin.js). `projects` is
     // shared with Feature Sheet Builder, whose own projects today use a

@@ -123,6 +123,12 @@ async function peekJobId({ date, floor } = {}, deps) {
   return rpc('jg_peek_job_id', { p_day: dayStamp(date), p_floor: floor || 0 }, deps);
 }
 async function upsertJob(row, deps) { return rpc('jg_upsert_job', { p_row: row }, deps); }
+// Random per-Job token for the standalone Gallery page URL (see
+// supabase/gallery.sql). Idempotent: the same Job always gets the same token.
+async function getGalleryToken(jobId, deps) {
+  const t = await rpc('jg_gallery_token', { p_job_id: jobId }, deps);
+  return typeof t === 'string' && t ? t : null;
+}
 async function getJob(folderName, deps) { return rpc('jg_get_job', { p_folder_name: folderName }, deps); }
 async function listDrafts(deps) { return rpc('jg_list_jobs', { p_kind: 'drafts' }, deps); }
 // 'recent' used to mean "created in the last 3 days"; since 2026-09-22 it means "not yet marked
@@ -159,7 +165,7 @@ async function setWaveMap(map, deps) { return rpc('jg_set_wave_map', { p_map: ma
 
 module.exports = {
   uploadImage, publicImageUrl, IMAGE_BUCKET,
-  BackendError, isConfigured, rpc, dayStamp,
+  BackendError, isConfigured, rpc, dayStamp, getGalleryToken,
   allocateJobId, peekJobId, upsertJob, getJob, listDrafts, listRecentJobs, deleteDraft, completeJob,
   recordWavePairing, suggestWavePairings, getWaveMap, setWaveMap,
 };

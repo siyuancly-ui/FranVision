@@ -173,6 +173,7 @@ ${section('<section class="section-alt">', model.aerial.length > 0 && aerialHtml
 ${section('<section>', model.floorplan.length > 0 && floorplanHtml(model.floorplan))}
 ${section('<section class="section-alt">', model.localReport && localReportHtml(model.localReport))}
 ${closingHtml(model)}
+${creditHtml()}
 ${(model.aerial.length > 0 || model.floorplan.length > 0) ? lightboxHtml() : ''}`;
   return page(model.address ? `${model.address} — FranVision Media` : 'FranVision Delivery Page', body);
 }
@@ -187,13 +188,13 @@ function lightboxHtml() {
   </div>`;
 }
 
-function heroHtml(model) {
+export function heroHtml(model, extraInner = '') {
   if (!model.hero && !model.address) return '';
   const bg = model.hero ? `background-image:url('${escapeHtml(model.hero.url)}');background-size:cover;background-position:center;` : '';
   const addr = model.address
     ? `<p class="hero-address">${escapeHtml(model.address)}</p>`
     : '';
-  return `<section class="hero" style="${bg}">${addr}</section>`;
+  return `<section class="hero" style="${bg}">${addr}${extraInner}</section>`;
 }
 
 function videoHtml(video) {
@@ -324,7 +325,13 @@ function closingHtml(model) {
   return `<section class="closing-standalone">${card}</section>`;
 }
 
-function page(title, body, opts = {}) {
+// Small credit line at the very bottom of the delivery page AND the Gallery
+// page (shared so the wording can't drift between them).
+export function creditHtml() {
+  return '<footer class="credit">Photos by: FRANVISION MEDIA</footer>';
+}
+
+export function page(title, body, opts = {}) {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -335,11 +342,13 @@ function page(title, body, opts = {}) {
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Arima+Madurai:wght@400;500&display=swap" rel="stylesheet">
-<style>${CSS}</style>
+${opts.extraHead || ''}
+<style>${CSS}${opts.extraCss || ''}</style>
 </head>
 <body>
 ${body}
 ${opts.bare ? '' : SCRIPT}
+${opts.extraBody || ''}
 </body>
 </html>`;
 }
@@ -386,6 +395,7 @@ const CSS = `
   .lightbox img{max-width:92vw;max-height:92vh;object-fit:contain;border-radius:4px;}
   .lightbox-close{position:absolute;top:20px;right:24px;width:40px;height:40px;border-radius:50%;border:none;background:rgba(255,255,255,0.14);color:#fff;font-size:26px;line-height:1;cursor:pointer;}
   .lightbox-close:hover{background:rgba(255,255,255,0.24);}
+  .credit{padding:26px 24px 34px;text-align:center;font-family:Montserrat,-apple-system,"system-ui","Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:11px;font-weight:400;letter-spacing:.08em;color:#8a867b;}
   .closing{position:relative;height:92vh;min-height:560px;overflow:hidden;background-size:cover;background-position:center;}
   .closing-card{
     position:absolute;left:50%;bottom:10%;transform:translateX(-50%);

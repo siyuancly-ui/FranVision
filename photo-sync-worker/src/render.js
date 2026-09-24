@@ -1,4 +1,4 @@
-// GET /render/<jobId>/<photoId> -- the TRUE original of ONE synced photo (from
+// GET /render/<jobId>/<photoId>[?size=web] -- the TRUE original of ONE synced photo (from
 // its `HDR Photos` / `MLS` Dropbox path), for the Feature Sheet Builder's PDF
 // export.
 //
@@ -30,23 +30,32 @@ export function parseRenderPath(pathname) {
   return ID_RE.test(jobId) && ID_RE.test(photoId) ? { jobId, photoId } : null;
 }
 
-function authed(request, env) {
+// RENDER_TOKEN (the Feature Sheet Builder's PDF export) may fetch anything this
+// endpoint serves. GALLERY_TOKEN (the delivery-page Worker, for the Gallery
+// lightbox) is a separate, independently rotatable credential that may ONLY
+// fetch the 2048px web copy (`?size=web`) -- never a true original via /render.
+function authed(request, env, web) {
   const h = request.headers.get('Authorization') || '';
   const m = h.match(/^Bearer\s+(.+)$/i);
-  return !!m && !!env.RENDER_TOKEN && timingSafeEqual(m[1], env.RENDER_TOKEN);
+  if (!m) return false;
+  if (env.RENDER_TOKEN && timingSafeEqual(m[1], env.RENDER_TOKEN)) return true;
+  return web && !!env.GALLERY_TOKEN && timingSafeEqual(m[1], env.GALLERY_TOKEN);
 }
 
 const fail = (status, error) =>
   new Response(JSON.stringify({ error }), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
 export async function handleRender(request, env, deps, ids, log = () => {}) {
-  if (!authed(request, env)) return fail(401, 'unauthorized');
   const { jobId, photoId } = ids;
+  // size 'web' = the 2048px `MLS for download` copy (the standalone Gallery
+  // lightbox); anything else = the TRUE original (the FSB PDF export).
+  const web = ids.size === 'web';
+  if (!authed(request, env, web)) return fail(401, 'unauthorized');
 
   let rec;
   try {
     const photos = await deps.sb.getProjectPhotos(jobId);
-    rec = photos.find((p) => p.photoId === photoId && !p.role && p.dropboxPath);
+    rec = photos.find((p) => p.photoId === photoId && !p.role && (web ? p.downloadDropboxPath : p.dropboxPath));
   } catch (err) {
     log({ evt: 'render_lookup_failed', jobId, photoId, error: String((err && err.message) || err) });
     return fail(502, 'lookup failed');
@@ -55,16 +64,16 @@ export async function handleRender(request, env, deps, ids, log = () => {}) {
 
   let upstream;
   try {
-    upstream = await deps.dbx.downloadFileStream(rec.dropboxPath);
+    upstream = await deps.dbx.downloadFileStream(web ? rec.downloadDropboxPath : rec.dropboxPath);
   } catch (err) {
     log({ evt: 'render_failed', jobId, photoId, error: String((err && err.message) || err) });
     return fail(502, 'could not read the original');
   }
   const headers = {
     ...CORS,
-    'Content-Type': imageContentType(rec.filename || rec.dropboxPath),
+    'Content-Type': web ? 'image/jpeg' : imageContentType(rec.filename || rec.dropboxPath),
     'Cache-Control': 'private, max-age=3600',
-    'X-Render-Source': 'original',
+    'X-Render-Source': web ? 'web' : 'original',
   };
   const len = upstream.headers && upstream.headers.get && upstream.headers.get('Content-Length');
   if (len) headers['Content-Length'] = len;
