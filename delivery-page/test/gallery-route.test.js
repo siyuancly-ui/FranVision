@@ -123,7 +123,24 @@ test('zip mls: a copy still queued for generation -> friendly "preparing" page, 
 test('gallery page shows the disabled "Preparing MLS Photos" button while a copy is queued, and the real one after', async () => {
   const { env, calls } = setup();
   calls.pending = [{ source_path: '/j/01.jpg' }];
-  assert.match(await (await get(env, `/delivery/x/${TOKEN}`)).text(), /is-disabled[^>]*>Preparing MLS Photos/);
+  assert.match(await (await get(env, `/delivery/x/${TOKEN}`)).text(), /is-disabled[^>]*>[\s\S]*?Preparing MLS Photos/);
   calls.pending = [];
   assert.match(await (await get(env, `/delivery/x/${TOKEN}`)).text(), /href="[^"]*\/zip\/mls"/);
+});
+
+test('single-photo download: streams the original from photo-sync as an attachment named after the file; only for photos in the grid', async () => {
+  const { env, calls } = setup();
+  const res = await get(env, `/delivery/x/${TOKEN}/download/p1`);
+  assert.equal(res.status, 200);
+  assert.equal(await res.text(), 'ZIPBYTES');
+  assert.match(res.headers.get('content-disposition'), /^attachment; filename="01\.jpg"; filename\*=UTF-8''01\.jpg$/);
+  assert.equal(res.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(calls.photoSync.map((c) => [c.url, c.auth, c.method]), [[`https://photo-sync.internal/render/${JOB}/p1`, 'Bearer pst', undefined]]);
+  // not in the grid / bad token -> the same 404, photo-sync never called
+  const before = calls.photoSync.length;
+  assert.equal((await get(env, `/delivery/x/${TOKEN}/download/nope`)).status, 404);
+  assert.equal((await get(env, `/delivery/x/${'1'.repeat(32)}/download/p1`)).status, 404);
+  assert.equal(calls.photoSync.length, before);
+  calls.upstream = () => new Response('gone', { status: 404 });
+  assert.equal((await get(env, `/delivery/x/${TOKEN}/download/p1`)).status, 404);
 });
