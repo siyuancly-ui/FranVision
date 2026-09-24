@@ -533,7 +533,7 @@
     <div class="datepicker-header">
       <button type="button" class="datepicker-link" id="datepicker-cancel">Cancel</button>
       <div class="datepicker-title">Select Shoot Date</div>
-      <button type="button" class="datepicker-link datepicker-link-accent" id="datepicker-confirm">Done</button>
+      <span class="datepicker-link" aria-hidden="true">&nbsp;</span>
     </div>
     <div class="datepicker-month-row">
       <button type="button" class="datepicker-nav" id="datepicker-prev" aria-label="Previous month">&lsaquo;</button>
@@ -1816,7 +1816,7 @@
       btn.type = 'button';
       btn.className = 'datepicker-day' + (sameYmd(d, today) ? ' is-today' : '') + (sameYmd(d, dpSelected) ? ' is-selected' : '');
       btn.textContent = String(day);
-      btn.addEventListener('click', () => { dpSelected = d; renderDatePickerMonth(); renderDatePickerQuickpicks(); });
+      btn.addEventListener('click', () => commitDatePick(d)); // picking a day IS the confirmation (no Done button)
       grid.appendChild(btn);
     }
   }
@@ -1832,12 +1832,7 @@
       pill.type = 'button';
       pill.className = 'datepicker-pill' + (sameYmd(d, dpSelected) ? ' is-selected' : '');
       pill.textContent = label;
-      pill.addEventListener('click', () => {
-        dpSelected = d;
-        dpViewDate = new Date(d.getFullYear(), d.getMonth(), 1);
-        renderDatePickerMonth();
-        renderDatePickerQuickpicks();
-      });
+      pill.addEventListener('click', () => commitDatePick(d));
       row.appendChild(pill);
     });
   }
@@ -1862,14 +1857,14 @@
   el('datepicker-cancel').addEventListener('click', closeDatePicker);
   el('datepicker-overlay').addEventListener('click', (e) => { if (e.target === el('datepicker-overlay')) closeDatePicker(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && el('datepicker-overlay').style.display !== 'none') closeDatePicker(); });
-  el('datepicker-confirm').addEventListener('click', () => {
-    if (dpSelected) {
-      el('shootDate').value = formatYmd(dpSelected);
-      updateCreateButtonState();
-      refreshFolderPreview();
-    }
+  // Selecting a day (or a Today/Tomorrow quick pick) applies it and closes the picker immediately.
+  function commitDatePick(d) {
+    dpSelected = d;
+    el('shootDate').value = formatYmd(d);
+    updateCreateButtonState();
+    refreshFolderPreview();
     closeDatePicker();
-  });
+  }
 
   function updateShootTimeError() {
     const value = el('shootTime').value.trim();

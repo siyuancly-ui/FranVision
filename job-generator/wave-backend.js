@@ -145,7 +145,8 @@ async function getHstTaxId(deps) {
 //   create: creates the DRAFT and approves it straight away (2026-09-23 decision -- no manual Approve
 //           step in Wave). If the approve call fails, the DRAFT is kept and returned with
 //           `approveError` set so the caller can flag it; the invoice is never lost or duplicated.
-//   patch:  needs `invoiceId`. Wave allows editing approved invoices too (verified 2026-09-23), so the
+//   patch:  needs `invoiceId` (if that invoice no longer exists in Wave -- deleted there -- a new one is
+//           created instead and returned with `recreated: true`). Wave allows editing approved invoices too (verified 2026-09-23), so the
 //           guard is on the invoice's LIVE status (fetched here, not the possibly stale one saved in
 //           job.json): PAID/PARTIAL is refused (throws, caller catches). A still-DRAFT invoice (e.g. from
 //           before auto-approve existed, or a failed approve) is approved after the patch.
@@ -157,11 +158,19 @@ async function buildAndSubmitInvoice(args, deps) {
   const client = getClient(deps);
 
   let live = null;
+  let recreated = false;
   if (args.mode === 'patch') {
     if (!args.invoiceId) throw new Error('patch mode needs invoiceId');
-    live = await client.getInvoice(args.invoiceId);
-    if (!live) throw new Error('Wave invoice ' + args.invoiceId + ' no longer exists');
-    if (NON_PATCHABLE_STATUSES.includes(live.status)) throw new Error('refusing to change a Wave invoice that is ' + live.status + ' (payment already applied)');
+    try {
+      live = await client.getInvoice(args.invoiceId);
+    } catch (err) {
+      // Wave says "Node could not be found." / "Invoice '...' could not be found." for an invoice that was
+      // deleted in Wave after we saved its id (found in real use 2026-09-24). Nothing left to patch, so
+      // fall through to creating a fresh one (flagged via `recreated`); any OTHER error still throws.
+      if (!/could not be found/i.test(err && err.message || '')) throw err;
+    }
+    if (!live) { recreated = true; args = Object.assign({}, args, { mode: 'create' }); }
+    else if (NON_PATCHABLE_STATUSES.includes(live.status)) throw new Error('refusing to change a Wave invoice that is ' + live.status + ' (payment already applied)');
   }
 
   const taxId = await getHstTaxId(deps);
@@ -185,7 +194,8 @@ async function buildAndSubmitInvoice(args, deps) {
     return inv;
   }
   const draft = await client.createDraftInvoice(request);
-  return approveQuietly(client, draft);
+  const created = await approveQuietly(client, draft);
+  return recreated ? Object.assign({}, created, { recreated: true }) : created;
 }
 
 // Approve, but never lose the just-created invoice if approving fails: return the DRAFT with the error attached.

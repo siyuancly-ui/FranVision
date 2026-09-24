@@ -980,11 +980,12 @@ async function handleApi(req, res, urlPath) {
         try {
           if (previousWave && previousWave.invoiceId) {
             const inv = await waveBackend.buildAndSubmitInvoice({ ...invoiceArgs, mode: 'patch', invoiceId: previousWave.invoiceId });
-            waveResult = { success: true, action: 'patched', invoice: inv };
+            waveResult = { success: true, action: inv.recreated ? 'created' : 'patched', invoice: inv };
           } else {
             const inv = await waveBackend.buildAndSubmitInvoice({ ...invoiceArgs, mode: 'create' });
             waveResult = { success: true, action: 'created', invoice: inv };
           }
+          if (waveResult.invoice.recreated) waveNotes.push('The previous Wave invoice (' + previousWave.invoiceId + ') no longer exists in Wave (deleted?), so a new one was created.');
           if (waveResult.invoice.approveError) waveNotes.push('Wave invoice was created but could not be approved automatically (' + waveResult.invoice.approveError + ') -- approve it in Wave.');
         } catch (err) {
           waveResult = { success: false, error: err.message };
