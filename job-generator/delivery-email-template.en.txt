@@ -30,7 +30,7 @@ For the best experience, please open the links in a browser on PC or Mac. Thank 
 {{LINE:MLS}}MLS Photos:
 {{LINE:MLS}}{{MLS_LINK}}
 {{LINE:MLS}}
-{{LINE:VIDEO}}Video:
+{{LINE:VIDEO}}Video (ready in 24 hours):
 {{LINE:VIDEO}}{{VIDEO_LINK}}
 {{LINE:VIDEO}}
 {{LINE:FLOORPLAN}}Floor Plan / Site Plan:
