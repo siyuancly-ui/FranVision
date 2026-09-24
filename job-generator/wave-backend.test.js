@@ -1,7 +1,4 @@
 const assert = require('assert');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
 const backend = require('./wave-backend.js');
 
 let passed = 0, failed = 0;
@@ -19,30 +16,38 @@ const gqlFetch = (handlers) => async (url, opts) => {
   return h(body);
 };
 
-function writeProductMap(obj) {
-  const p = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'wave-map-')), 'map.json');
-  fs.writeFileSync(p, JSON.stringify(obj));
-  return p;
-}
+// Fake job server answering jg_get_wave_map (the map now lives in Supabase, not a local file).
+const JG_ENV = { JG_SUPABASE_URL: 'http://jg.test', JG_SUPABASE_ANON_KEY: 'k', JG_TOKEN: 'tok' };
+const mapFetch = (map, calls) => async (url) => {
+  if (calls) calls.push(url);
+  return { ok: true, status: 200, text: async () => JSON.stringify(map) };
+};
 
 (async () => {
-  await test('isConfigured: needs both token and business id; canBuildInvoices also needs a readable product map', () => {
+  await test('isConfigured: needs both token and business id; canBuildInvoices also needs a loadable product map', async () => {
+    backend._resetCachesForTests();
     assert.strictEqual(backend.isConfigured({}), false);
     assert.strictEqual(backend.isConfigured({ WAVE_TOKEN: 't' }), false);
     assert.strictEqual(backend.isConfigured(ENV), true);
-    // Explicit nonexistent path -- NOT relying on the default (job-generator/wave-product-map.json)
-    // being absent, since a real dev setup legitimately has that file in place.
-    assert.strictEqual(backend.canBuildInvoices({ ...ENV, WAVE_PRODUCT_MAP_PATH: '/does/not/exist-' + Date.now() + '.json' }), false);
-    const mapPath = writeProductMap({ standard_photo: 'P1' });
-    assert.strictEqual(backend.canBuildInvoices({ ...ENV, WAVE_PRODUCT_MAP_PATH: mapPath }), true);
+    assert.strictEqual(await backend.canBuildInvoices({ env: {} }), false); // Wave itself unconfigured
+    assert.strictEqual(await backend.canBuildInvoices({ env: { ...ENV, ...JG_ENV }, fetchImpl: mapFetch({}) }), false); // empty map
+    assert.strictEqual(await backend.canBuildInvoices({ env: { ...ENV, ...JG_ENV }, fetchImpl: mapFetch({ standard_photo: 'P1' }) }), true);
   });
 
-  await test('loadProductMap: parses the file; throws a clear error when missing or not an object', () => {
-    const mapPath = writeProductMap({ standard_photo: 'P1' });
-    assert.deepStrictEqual(backend.loadProductMap({ WAVE_PRODUCT_MAP_PATH: mapPath }), { standard_photo: 'P1' });
-    assert.throws(() => backend.loadProductMap({ WAVE_PRODUCT_MAP_PATH: '/does/not/exist.json' }), /ENOENT/);
-    const badPath = writeProductMap('not-an-object'); // valid JSON, wrong shape
-    assert.throws(() => backend.loadProductMap({ WAVE_PRODUCT_MAP_PATH: badPath }), /did not parse to an object/);
+  await test('loadProductMap: reads jg_get_wave_map, caches within the TTL, refetches after; throws on empty / job server unconfigured', async () => {
+    backend._resetCachesForTests();
+    const calls = [];
+    const deps = { env: JG_ENV, fetchImpl: mapFetch({ standard_photo: 'P1' }, calls), now: () => 1000 };
+    assert.deepStrictEqual(await backend.loadProductMap(deps), { standard_photo: 'P1' });
+    await backend.loadProductMap(deps);
+    assert.strictEqual(calls.length, 1);
+    assert.ok(calls[0].endsWith('/rest/v1/rpc/jg_get_wave_map'));
+    await backend.loadProductMap({ ...deps, now: () => 1000 + 6 * 60 * 1000 });
+    assert.strictEqual(calls.length, 2);
+    backend._resetCachesForTests();
+    await assert.rejects(backend.loadProductMap({ env: JG_ENV, fetchImpl: mapFetch({}) }), /empty/);
+    await assert.rejects(backend.loadProductMap({ env: {} }), /not configured/);
+    assert.deepStrictEqual(await backend.loadProductMap({ productMap: { x: 'y' } }), { x: 'y' }); // test seam
   });
 
   await test('searchCustomers: case-insensitive substring on name/email, name-starts-with sorts first, capped, cached across calls', async () => {
@@ -121,7 +126,7 @@ function writeProductMap(obj) {
   });
 
   const PRICING = { status: 'ok', lineItems: [{ id: 'standard_photo', type: 'base', label: 'Standard Photography', amountCents: 9800 }], manualAdjustmentCents: 0 };
-  const opts = (client) => ({ env: { ...ENV, WAVE_PRODUCT_MAP_PATH: writeProductMap({ standard_photo: 'P1', adjustment_discount: 'PD', custom_item: 'PC' }) }, client });
+  const opts = (client) => ({ env: ENV, client, productMap: { standard_photo: 'P1', adjustment_discount: 'PD', custom_item: 'PC' } });
 
   await test('buildAndSubmitInvoice: create mode builds the request, creates the DRAFT and approves it straight away', async () => {
     backend._resetCachesForTests();
@@ -229,11 +234,10 @@ function writeProductMap(obj) {
 
   await test('buildAndSubmitInvoice: missing product mapping surfaces the underlying error (never silently drops a line)', async () => {
     backend._resetCachesForTests();
-    const mapPath = writeProductMap({}); // empty -- standard_photo unmapped
     const client = { findHstTaxId: async () => 'TAX1' };
     const pricing = { status: 'ok', lineItems: [{ id: 'standard_photo', type: 'base', label: 'x', amountCents: 9800 }], manualAdjustmentCents: 0 };
     await assert.rejects(
-      backend.buildAndSubmitInvoice({ mode: 'create', pricing, customerId: 'C' }, { env: { ...ENV, WAVE_PRODUCT_MAP_PATH: mapPath }, client }),
+      backend.buildAndSubmitInvoice({ mode: 'create', pricing, customerId: 'C' }, { env: ENV, client, productMap: {} } /* empty -- standard_photo unmapped */),
       /no Wave product mapped/,
     );
   });
