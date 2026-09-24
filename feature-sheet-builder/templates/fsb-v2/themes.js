@@ -69,7 +69,7 @@
   // placed light-stone image, approximated. Endpoints tuned to the
   // sampled press-PDF colours.
   var THEMES = {
-    navy: theme('navy', '藏蓝 · Navy', {
+    navy: theme('navy', '华邸藏蓝 · Estate Navy', {
       bg: '#141b30',
       bgDeep: '#0d1220',
       ink: '#F4EFE6',
@@ -85,7 +85,7 @@
       css: 'linear-gradient(157deg, #1a2340 0%, #131a30 42%, #0c1120 100%)',
     }),
 
-    marble: theme('marble', '白大理石 · Marble', {
+    marble: theme('marble', '大理石 · Marble', {
       bg: '#F4F2EC',
       bgDeep: '#E7E3D8',
       ink: '#26292F',
@@ -104,7 +104,7 @@
       css: "#F4F2EC url('/template-assets/fsb-v2/assets/marble.jpg') center / cover no-repeat",
     }),
 
-    burgundy: theme('burgundy', '酒红 · Burgundy', {
+    burgundy: theme('burgundy', '华邸酒红 · Estate Burgundy', {
       bg: '#38151a',
       bgDeep: '#1a0708',
       ink: '#F4EFE6',
@@ -123,7 +123,7 @@
     // Same emerald green as the estate-emerald velvet artwork (sampled from
     // templates/fsb-v2/assets/estate-bg-emerald.jpg), rendered here as a
     // gradient background instead of an image, matching navy/burgundy.
-    emerald: theme('emerald', '墨绿 · Emerald', {
+    emerald: theme('emerald', '华邸墨绿 · Estate Emerald', {
       bg: '#153a2c',
       bgDeep: '#0a1911',
       ink: '#F4EFE6',
@@ -143,16 +143,16 @@
     // Same geometry / chevron / metalbar / white text for every colour;
     // only `bg.asset` (a recoloured velvet) changes. Add a colour = one
     // more line here.
-    'estate-navy': theme('estate-navy', '华邸藏蓝 · Estate Navy', ESTATE_INK, {
+    'estate-navy': theme('estate-navy', '藏蓝 · Navy', ESTATE_INK, {
       asset: '/template-assets/fsb-v2/assets/estate-bg-navy.jpg',
     }, 'jason'),
-    'estate-burgundy': theme('estate-burgundy', '华邸酒红 · Estate Burgundy', ESTATE_INK, {
+    'estate-burgundy': theme('estate-burgundy', '酒红 · Burgundy', ESTATE_INK, {
       asset: '/template-assets/fsb-v2/assets/estate-bg-burgundy.jpg',
     }, 'jason'),
-    'estate-emerald': theme('estate-emerald', '华邸墨绿 · Estate Emerald', ESTATE_INK, {
+    'estate-emerald': theme('estate-emerald', '墨绿 · Emerald', ESTATE_INK, {
       asset: '/template-assets/fsb-v2/assets/estate-bg-emerald.jpg',
     }, 'jason'),
-    'estate-charcoal': theme('estate-charcoal', '华邸深灰 · Estate Charcoal', ESTATE_INK, {
+    'estate-charcoal': theme('estate-charcoal', '深灰 · Charcoal', ESTATE_INK, {
       asset: '/template-assets/fsb-v2/assets/estate-bg-charcoal.jpg',
     }, 'jason'),
   };

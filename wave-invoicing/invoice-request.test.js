@@ -38,16 +38,22 @@ test('negative manual adjustment -> discount product; positive -> charge product
   const d = buildInvoiceRequest({ ...base, pricing: pricing([li('standard_photo', 9800)], -1000) });
   assert.equal(d.items[1].productId, 'PD');
   assert.equal(d.items[1].unitPrice, '-10.00');
-  const c = buildInvoiceRequest({ ...base, pricing: pricing([li('standard_photo', 9800)], 4500), adjustmentLabel: 'Road Fee' });
-  assert.equal(c.items[1].productId, 'PC');
-  assert.equal(c.items[1].description, 'Road Fee');
-  assert.equal(c.items[1].unitPrice, '45.00');
+  // 2026-09-23: a positive un-itemized adjustment is folded into the first line, not listed separately
+  const c = buildInvoiceRequest({ ...base, pricing: pricing([li('standard_photo', 9800), li('floor_plan', 3000)], 4500) });
+  assert.equal(c.items.length, 2);
+  assert.equal(c.items[0].unitPrice, '143.00');
+  assert.equal(c.items[1].unitPrice, '30.00');
+  assert.equal(c.items[0].description, '1 Main St, Toronto');
 });
 
-test('customItems: named lines; the remainder of the manual adjustment becomes one "Price adjustment" line', () => {
+test('customItems: named lines; a positive remainder folds into the first line, a negative one becomes a Discount line', () => {
   const p = pricing([li('standard_photo', 9800)], 6500);
   const r = buildInvoiceRequest({ ...base, pricing: p, customItems: [{ name: 'Road Fee', amountCents: 4500 }, { name: 'Rush delivery', amountCents: 2000 }] });
   assert.deepEqual(r.items.slice(1).map((i) => [i.productId, i.description, i.unitPrice]), [['PC', 'Road Fee', '45.00'], ['PC', 'Rush delivery', '20.00']]);
+  assert.equal(r.items[0].unitPrice, '98.00'); // no remainder here -> first line untouched
+  // remainder +10 on top of a named custom item -> first line absorbs it
+  const f = buildInvoiceRequest({ ...base, pricing: pricing([li('standard_photo', 9800)], 5500), customItems: [{ name: 'Road Fee', amountCents: 4500 }] });
+  assert.deepEqual(f.items.map((i) => i.unitPrice), ['108.00', '45.00']);
   // Road Fee 45 on top of an exact-price override that lowered the package by 10 -> adjustment 35
   const q = buildInvoiceRequest({ ...base, pricing: pricing([li('standard_photo', 9800)], 3500), customItems: [{ name: 'Road Fee', amountCents: 4500 }] });
   assert.deepEqual(q.items.slice(1).map((i) => [i.productId, i.description, i.unitPrice]), [['PC', 'Road Fee', '45.00'], ['PD', 'Discount', '-10.00']]);
@@ -62,7 +68,7 @@ test('customItems: named lines; the remainder of the manual adjustment becomes o
 
 test('missing product mapping throws and lists every missing id', () => {
   assert.throws(() => buildInvoiceRequest({ ...base, pricing: pricing([li('drone_photos', 5000), li('three_d_tour', 8000)]) }), /drone_photos, three_d_tour/);
-  assert.throws(() => buildInvoiceRequest({ ...base, productMap: { standard_photo: 'P1' }, pricing: pricing([li('standard_photo', 9800)], 100) }), /custom_item/);
+  assert.throws(() => buildInvoiceRequest({ ...base, productMap: { standard_photo: 'P1' }, pricing: pricing([li('standard_photo', 9800)], 100), customItems: [{ name: 'Road Fee', amountCents: 100 }] }), /custom_item/);
 });
 
 test('refuses non-ok / lineless pricing and missing required fields', () => {
@@ -82,6 +88,11 @@ test('optional invoiceNumber and memo pass through', () => {
 test('custom items always use the generic Other product, name in the description (2026-09-23 decision, no per-name product)', () => {
   const r = buildInvoiceRequest({ ...base, pricing: pricing([li('standard_photo', 9800)], 6500), customItems: [{ name: 'Road  Fee', amountCents: 4500 }, { name: 'Rush', amountCents: 2000 }] });
   assert.deepEqual(r.items.slice(1).map((i) => [i.productId, i.description]), [['PC', 'Road Fee'], ['PC', 'Rush']]);
+});
+
+test('positive remainder with no pricing lines at all falls back to its own line (nothing to fold into)', () => {
+  const r = buildInvoiceRequest({ ...base, pricing: pricing([], 2000) });
+  assert.deepEqual(r.items.map((i) => [i.productId, i.unitPrice]), [['PC', '20.00']]);
 });
 
 test('negative remainder is labelled Discount; taxId may only be omitted with allowNoTax', () => {

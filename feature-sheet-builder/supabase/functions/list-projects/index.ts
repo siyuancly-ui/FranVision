@@ -7,7 +7,7 @@
  * Request:  POST { "token": "<ADMIN_TOKEN>", "view"?: "trash" }
  *           view omitted -> active sheets; view:"trash" -> recycle bin
  * Response: 200 { projects: [ { id, address, city, agents, theme,
- *                       confirmed, createdAt, updatedAt, deletedAt } ] }
+ *                       brokerage, logo, confirmed, createdAt, updatedAt, deletedAt } ] }
  *           401 { error } on a bad / missing token
  *
  * Env (Supabase dashboard -> Edge Functions -> Secrets):
@@ -72,12 +72,19 @@ Deno.serve(async (req: Request) => {
 
   const wantTrash = view === "trash";
   const projects = (data ?? [])
+    // FVS-… rows are Jobs mirrored by the photo-sync-worker, not Feature Sheets: they have no
+    // agent/property info, so they used to show up here as blank sheets.
+    .filter((row: any) => !String(row.id).startsWith("FVS-"))
     .filter((row: any) => wantTrash ? !!row.data?.deletedAt : !row.data?.deletedAt)
     .map((row: any) => {
       const d = row.data ?? {};
       const pi = d.propertyInfo ?? {};
       const agents = [d.agentInfo?.name, d.agentInfo2?.name].filter(Boolean);
+      // the brokerage logo's photo meta, so the list can show it when the name field is blank
+      const logoMeta = (d.photos ?? []).find((p: any) => p.photoId === d.agentInfo?.brokerageLogoPhotoId);
       return {
+        brokerage: d.agentInfo?.brokerage ?? "",
+        logo: logoMeta ? { photoId: logoMeta.photoId, ext: logoMeta.ext, hasThumb: logoMeta.hasThumb } : null,
         id: row.id,
         address: pi.address ?? "",
         city: pi.city ?? "",

@@ -41,7 +41,7 @@ function qtyNote(label) {
  *                                     adjustment line: `adjustment_discount` (negative), `custom_item` (positive; the item's name goes in the line description).
  * @param {string} args.address        property address (description of the first line)
  * @param {string} args.invoiceDate    'YYYY-MM-DD'
- * @param {{name:string, amountCents:number}[]} [args.customItems]  free-form one-off lines (name in the description, generic 'custom_item'/'adjustment_discount' product); part of pricing.manualAdjustmentCents -- the rest becomes one 'Price adjustment' line
+ * @param {{name:string, amountCents:number}[]} [args.customItems]  free-form one-off lines (name in the description, generic 'custom_item'/'adjustment_discount' product); part of pricing.manualAdjustmentCents -- the rest: a positive remainder is folded into the FIRST line's price, a negative one becomes one 'Discount' line
  * @param {string} [args.adjustmentLabel]  label for the un-itemized remainder (default 'Price adjustment')
  * @param {string} [args.dueDate]      explicit 'YYYY-MM-DD' (monthly billing)
  * @param {number} [args.dueDays]      days after invoiceDate; ignored when dueDate is given (default 0 = due on receipt)
@@ -66,6 +66,7 @@ function buildInvoiceRequest(args) {
   const taxes = taxId ? [{ salesTaxId: taxId }] : undefined;
   const items = [];
   const missing = [];
+  const pricingLineCount = pricing.lineItems.length;
 
   const lookup = (key) => {
     const id = productMap && productMap[key];
@@ -99,7 +100,13 @@ function buildInvoiceRequest(args) {
     items.push({ productId, description: cname, quantity: 1, unitPrice: centsToDecimal(cents), ...(taxes ? { taxes } : {}), _note: null });
   }
   const remainder = adj - customs.reduce((t, c) => t + Math.round(c.amountCents), 0);
-  if (remainder !== 0) {
+  if (remainder > 0 && pricingLineCount > 0) {
+    // 2026-09-23 (user decision): an un-itemized price INCREASE is folded into the first line's price
+    // instead of getting its own "Price adjustment" line (the client just sees a slightly higher price
+    // for the first service). A decrease still gets its own visible Discount line below.
+    const first = items[0];
+    first.unitPrice = centsToDecimal(Math.round(Number(first.unitPrice) * 100) + remainder);
+  } else if (remainder !== 0) {
     const productId = lookup(remainder < 0 ? 'adjustment_discount' : 'custom_item');
     items.push({ productId, description: args.adjustmentLabel || (remainder < 0 ? 'Discount' : 'Price adjustment'), quantity: 1, unitPrice: centsToDecimal(remainder), ...(taxes ? { taxes } : {}), _note: null });
   }

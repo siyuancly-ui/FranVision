@@ -69,6 +69,16 @@ function writeProductMap(obj) {
     assert.strictEqual(calls.length, 1);
   });
 
+  await test('listAllCustomers: hides customers marked as duplicates with the [重复] prefix', async () => {
+    backend._resetCachesForTests();
+    const fetchImpl = gqlFetch([(b) => resp({ data: { business: { customers: { pageInfo: { totalPages: 1 }, edges: [
+      { node: { id: '1', name: 'Mo Zhang', email: '' } },
+      { node: { id: '2', name: '[重复] Mo Zhang', email: '' } },
+    ] } } } })]);
+    const rows = await backend.listAllCustomers({ env: ENV, fetchImpl, now: () => 0 });
+    assert.deepStrictEqual(rows.map((r) => r.id), ['1']);
+  });
+
   await test('searchCustomers: cache expires after the TTL and refetches', async () => {
     backend._resetCachesForTests();
     let now = 0;
@@ -110,54 +120,92 @@ function writeProductMap(obj) {
     assert.strictEqual(calls, 1);
   });
 
-  await test('buildAndSubmitInvoice: create mode builds the request and calls createDraftInvoice', async () => {
+  const PRICING = { status: 'ok', lineItems: [{ id: 'standard_photo', type: 'base', label: 'Standard Photography', amountCents: 9800 }], manualAdjustmentCents: 0 };
+  const opts = (client) => ({ env: { ...ENV, WAVE_PRODUCT_MAP_PATH: writeProductMap({ standard_photo: 'P1', adjustment_discount: 'PD', custom_item: 'PC' }) }, client });
+
+  await test('buildAndSubmitInvoice: create mode builds the request, creates the DRAFT and approves it straight away', async () => {
     backend._resetCachesForTests();
-    const mapPath = writeProductMap({ standard_photo: 'P1', adjustment_discount: 'PD', custom_item: 'PC' });
-    let created = null;
+    let created = null, approvedId = null;
     const client = {
       findHstTaxId: async () => 'TAX1',
       createDraftInvoice: async (req) => { created = req; return { id: 'INV1', status: 'DRAFT', viewUrl: 'https://x', invoiceNumber: '1' }; },
+      approveInvoice: async (id) => { approvedId = id; return { id, status: 'SAVED', viewUrl: 'https://x', invoiceNumber: '1' }; },
     };
-    const pricing = { status: 'ok', lineItems: [{ id: 'standard_photo', type: 'base', label: 'Standard Photography', amountCents: 9800 }], manualAdjustmentCents: 0 };
-    const out = await backend.buildAndSubmitInvoice(
-      { mode: 'create', pricing, customerId: 'CUST1', address: '1 Main St', jobId: 'FVS-1', invoiceDate: '2026-09-23' },
-      { env: { ...ENV, WAVE_PRODUCT_MAP_PATH: mapPath }, client },
-    );
+    const out = await backend.buildAndSubmitInvoice({ mode: 'create', pricing: PRICING, customerId: 'CUST1', address: '1 Main St', jobId: 'FVS-1', invoiceDate: '2026-09-23' }, opts(client));
     assert.strictEqual(out.id, 'INV1');
+    assert.strictEqual(out.status, 'SAVED');
+    assert.strictEqual(approvedId, 'INV1');
     assert.strictEqual(created.customerId, 'CUST1');
     assert.strictEqual(created.poNumber, 'FVS-1');
     assert.strictEqual(created.items[0].productId, 'P1');
   });
 
-  await test('buildAndSubmitInvoice: patch mode strips businessId/status/invoiceDate and calls patchInvoice', async () => {
+  await test('buildAndSubmitInvoice: a failed approve keeps the DRAFT (returned with approveError) instead of throwing', async () => {
     backend._resetCachesForTests();
-    const mapPath = writeProductMap({ standard_photo: 'P1', adjustment_discount: 'PD', custom_item: 'PC' });
-    let patchedId = null, patchedFields = null;
     const client = {
       findHstTaxId: async () => 'TAX1',
-      patchInvoice: async (id, fields) => { patchedId = id; patchedFields = fields; return { id, status: 'DRAFT' }; },
+      createDraftInvoice: async () => ({ id: 'INV1', status: 'DRAFT' }),
+      approveInvoice: async () => { throw new Error('approve boom'); },
     };
-    const pricing = { status: 'ok', lineItems: [{ id: 'standard_photo', type: 'base', label: 'Standard Photography', amountCents: 9800 }], manualAdjustmentCents: 0 };
-    await backend.buildAndSubmitInvoice(
-      { mode: 'patch', invoiceId: 'INV1', currentStatus: 'DRAFT', pricing, customerId: 'CUST1', address: '1 Main St', jobId: 'FVS-1' },
-      { env: { ...ENV, WAVE_PRODUCT_MAP_PATH: mapPath }, client },
-    );
+    const out = await backend.buildAndSubmitInvoice({ mode: 'create', pricing: PRICING, customerId: 'C' }, opts(client));
+    assert.strictEqual(out.id, 'INV1');
+    assert.strictEqual(out.status, 'DRAFT');
+    assert.strictEqual(out.approveError, 'approve boom');
+  });
+
+  await test('buildAndSubmitInvoice: patching an APPROVED (SAVED) invoice works, strips businessId/status/invoiceDate, does not re-approve', async () => {
+    backend._resetCachesForTests();
+    let patchedId = null, patchedFields = null, approves = 0;
+    const client = {
+      findHstTaxId: async () => 'TAX1',
+      getInvoice: async () => ({ id: 'INV1', status: 'SAVED' }),
+      patchInvoice: async (id, fields) => { patchedId = id; patchedFields = fields; return { id, status: 'SAVED' }; },
+      approveInvoice: async () => { approves++; },
+    };
+    const out = await backend.buildAndSubmitInvoice({ mode: 'patch', invoiceId: 'INV1', pricing: PRICING, customerId: 'CUST1', address: '1 Main St', jobId: 'FVS-1' }, opts(client));
+    assert.strictEqual(out.status, 'SAVED');
     assert.strictEqual(patchedId, 'INV1');
+    assert.strictEqual(approves, 0);
     assert.strictEqual('businessId' in patchedFields, false);
     assert.strictEqual('status' in patchedFields, false);
     assert.strictEqual('invoiceDate' in patchedFields, false);
     assert.strictEqual(patchedFields.poNumber, 'FVS-1');
   });
 
-  await test('buildAndSubmitInvoice: patch mode refuses when currentStatus is not DRAFT (never silently rewrites an approved/sent invoice)', async () => {
+  await test('buildAndSubmitInvoice: patching a still-DRAFT invoice approves it afterwards', async () => {
     backend._resetCachesForTests();
-    const mapPath = writeProductMap({ standard_photo: 'P1' });
-    const client = { findHstTaxId: async () => 'TAX1', patchInvoice: async () => { throw new Error('must not be called'); } };
-    const pricing = { status: 'ok', lineItems: [{ id: 'standard_photo', type: 'base', label: 'x', amountCents: 9800 }], manualAdjustmentCents: 0 };
-    await assert.rejects(
-      backend.buildAndSubmitInvoice({ mode: 'patch', invoiceId: 'INV1', currentStatus: 'SAVED', pricing, customerId: 'C' }, { env: { ...ENV, WAVE_PRODUCT_MAP_PATH: mapPath }, client }),
-      /not DRAFT/,
-    );
+    const client = {
+      findHstTaxId: async () => 'TAX1',
+      getInvoice: async () => ({ id: 'INV1', status: 'DRAFT' }),
+      patchInvoice: async (id) => ({ id, status: 'DRAFT' }),
+      approveInvoice: async (id) => ({ id, status: 'SAVED' }),
+    };
+    const out = await backend.buildAndSubmitInvoice({ mode: 'patch', invoiceId: 'INV1', pricing: PRICING, customerId: 'C' }, opts(client));
+    assert.strictEqual(out.status, 'SAVED');
+  });
+
+  await test('buildAndSubmitInvoice: patch refuses a PAID or PARTIAL invoice (checked against the LIVE status in Wave)', async () => {
+    for (const status of ['PAID', 'PARTIAL']) {
+      backend._resetCachesForTests();
+      const client = { findHstTaxId: async () => 'TAX1', getInvoice: async () => ({ id: 'INV1', status }), patchInvoice: async () => { throw new Error('must not be called'); } };
+      await assert.rejects(backend.buildAndSubmitInvoice({ mode: 'patch', invoiceId: 'INV1', pricing: PRICING, customerId: 'C' }, opts(client)), new RegExp(status));
+    }
+  });
+
+  await test('createCustomer: trims/validates, sends optional fields, and shows up in the cached list right away', async () => {
+    backend._resetCachesForTests();
+    const fetchImpl = gqlFetch([
+      () => resp({ data: { business: { customers: { pageInfo: { totalPages: 1 }, edges: [{ node: { id: '1', name: 'Old One', email: '' } }] } } } }),
+    ]);
+    const deps = { env: ENV, fetchImpl, now: () => 0 };
+    await backend.listAllCustomers(deps); // prime the cache
+    let input = null;
+    const client = { createCustomer: async (i) => { input = i; return { id: '2', name: i.name, email: i.email }; } };
+    const row = await backend.createCustomer({ name: '  Jane   Smith ', email: ' j@x.com ', phone: '', address: '1 Main St' }, { ...deps, client });
+    assert.deepStrictEqual(input, { name: 'Jane Smith', email: 'j@x.com', phone: '', address: '1 Main St' });
+    assert.deepStrictEqual(row, { id: '2', name: 'Jane Smith', email: 'j@x.com' });
+    assert.deepStrictEqual((await backend.listAllCustomers(deps)).map((r) => r.id), ['1', '2']); // cache hit, includes the new one
+    await assert.rejects(backend.createCustomer({ name: '   ' }, { client }), /name is required/);
   });
 
   await test('buildAndSubmitInvoice: missing product mapping surfaces the underlying error (never silently drops a line)', async () => {

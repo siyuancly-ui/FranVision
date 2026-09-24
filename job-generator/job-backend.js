@@ -142,8 +142,19 @@ async function completeJob(folderName, deps) {
   }
 }
 
+// Wave customer pairing history (2026-09-23, see supabase/schema.sql jg_wave_pairings): which Wave
+// customer a Client Name ended up billed to. record = +1 use of that pairing; suggest = ranked matches
+// ([{waveCustomerId, waveCustomerName, clientName, useCount, lastUsedAt, match:'exact'|'partial'}]).
+async function recordWavePairing({ clientName, waveCustomerId, waveCustomerName }, deps) {
+  return rpc('jg_record_wave_pairing', { p_client_name: clientName, p_wave_customer_id: waveCustomerId, p_wave_customer_name: waveCustomerName || '' }, deps);
+}
+async function suggestWavePairings(clientName, deps) {
+  return rpc('jg_suggest_wave_pairings', { p_client_name: clientName }, deps);
+}
+
 module.exports = {
   uploadImage, publicImageUrl, IMAGE_BUCKET,
   BackendError, isConfigured, rpc, dayStamp,
   allocateJobId, peekJobId, upsertJob, getJob, listDrafts, listRecentJobs, deleteDraft, completeJob,
+  recordWavePairing, suggestWavePairings,
 };

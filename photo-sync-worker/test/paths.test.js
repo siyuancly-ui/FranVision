@@ -12,6 +12,7 @@ import {
   folderMatches,
   matchAncestorFolder,
   downloadCopyPath,
+  downloadSubdirFor,
   parseAddressFromJobFolder,
   isTourLinkCandidate,
   imageContentType,
@@ -185,4 +186,19 @@ test('isTourLinkCandidate: only matches the exact filename directly at the job f
   assert.ok(!isTourLinkCandidate('/JobA/HDR Photos/Tour Link.txt', cfg)); // nested -- not the job root
   assert.ok(!isTourLinkCandidate('/JobA/Notes.txt', cfg)); // different filename
   assert.ok(!isTourLinkCandidate('/Tour Link.txt', cfg)); // no job folder segment at all
+});
+
+test('downloadCopyPath: optional sub-directory mirrors a nested source folder', () => {
+  assert.equal(downloadCopyPath('/JobA', 'MLS for download', 'c.png', 'Callout'), '/JobA/MLS for download/Callout/c.jpg');
+});
+
+test('downloadSubdirFor: HDR Photos/MLS files -> flat; Callout nested under them -> Callout; Callout directly under the job folder -> none', () => {
+  const cfg = { downloadSetFolders: ['MLS', 'HDR Photos'], downloadNestedFolders: ['Callout'] };
+  const it = (subFolder, relPathFromJob) => ({ subFolder, relPathFromJob });
+  assert.equal(downloadSubdirFor(it('HDR Photos', 'HDR Photos/a.jpg'), cfg), '');
+  assert.equal(downloadSubdirFor(it('Callout', 'HDR Photos/Callout/a.jpg'), cfg), 'Callout');
+  assert.equal(downloadSubdirFor(it('Callout', 'MLS/callout/a.jpg'), cfg), 'callout');
+  assert.equal(downloadSubdirFor(it('Callout', 'Callout/a.jpg'), cfg), null);
+  assert.equal(downloadSubdirFor(it('Floorplan', 'Floorplan/a.jpg'), cfg), null);
+  assert.equal(downloadSubdirFor(it('Callout', 'HDR Photos/Callout/a.jpg'), { downloadSetFolders: ['HDR Photos'] }), null);
 });

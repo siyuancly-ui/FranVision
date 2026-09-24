@@ -478,6 +478,33 @@ async function handleApi(req, res, urlPath) {
       }
     }
 
+    // Create a brand-new Wave customer from the picker's "New customer" form (2026-09-23). Name is
+    // required, email/phone/address optional. Returns the same {id,name,email} row the picker lists so the
+    // page can select it immediately.
+    if (urlPath === '/api/wave-customers' && req.method === 'POST') {
+      if (!waveBackend.isConfigured()) return sendJson(res, 400, { success: false, error: 'Wave is not configured on this machine.' });
+      const body = await readJsonBody(req);
+      try {
+        const customer = await waveBackend.createCustomer({ name: body.name, email: body.email, phone: body.phone, address: body.address });
+        return sendJson(res, 200, { success: true, customer });
+      } catch (err) {
+        return sendJson(res, 200, { success: false, error: err.message });
+      }
+    }
+
+    // Suggested Wave customers for a Client Name, from the shared pairing history (2026-09-23, see
+    // job-backend.js#suggestWavePairings). Purely advisory and best-effort: unconfigured job server or any
+    // failure -> an empty list, never an error the page has to handle.
+    if (urlPath === '/api/wave-suggest' && req.method === 'GET') {
+      const clientName = new URL(req.url, 'http://localhost').searchParams.get('clientName') || '';
+      if (!waveBackend.isConfigured() || !jobBackend.isConfigured() || clientName.trim().length < 2) return sendJson(res, 200, { suggestions: [] });
+      try {
+        return sendJson(res, 200, { suggestions: await jobBackend.suggestWavePairings(clientName) });
+      } catch (err) {
+        return sendJson(res, 200, { suggestions: [] });
+      }
+    }
+
     // Loads a job folder's full record back into the Create Job form --
     // for re-opening a Draft OR a Recent Job (neither had this before
     // 2026-09-13; Drafts had their own separate loader, Recent Jobs is
@@ -978,15 +1005,14 @@ async function handleApi(req, res, urlPath) {
       // accident before the job is ever finalized. Runs on the one call
       // that assigns the real ID (finalizedFromDraft) same as any other
       // create/update.
-      // Wave draft invoice (2026-09-23, optional -- see wave-backend.js). Only when WAVE_AUTO_INVOICE
-      // is on AND a Wave customer was picked in the form. No invoiceId saved yet -> create; one saved
-      // AND its last-known status is still DRAFT -> patch (line items may have changed); anything else
-      // (SAVED/approved, sent, paid) -> never touched automatically, per Franky's confirmed flow (he
-      // reviews/approves the draft in Wave himself before sending the delivery email) -- flagged in
-      // pendingConfirmation instead so a real price change doesn't go unnoticed. Best-effort like every
-      // other real-ID-only side effect below: never blocks Create/Update Job. Runs BEFORE the delivery
-      // email block below so a freshly-created invoice's link can be auto-filled into it the same call
-      // (see waveViewUrl passed to generateDeliveryEmails).
+      // Wave invoice (2026-09-23, optional -- see wave-backend.js). Only when WAVE_AUTO_INVOICE is on AND
+      // a Wave customer was picked in the form. No invoiceId saved yet -> create AND approve straight away
+      // (no manual Approve step in Wave any more); one already saved -> patch it in place, approved or not
+      // (Wave allows editing approved invoices; wave-backend.js checks the LIVE status and refuses only
+      // PAID/PARTIAL, which we flag in pendingConfirmation instead so a real price change doesn't go
+      // unnoticed). Best-effort like every other real-ID-only side effect below: never blocks
+      // Create/Update Job. Runs BEFORE the delivery email block below so a freshly-created invoice's link
+      // can be auto-filled into it the same call (see waveViewUrl passed to generateDeliveryEmails).
       let waveResult = null;
       const waveNotes = []; // merged into pendingConfirmation once it exists, below
       const waveCustomerId = body.waveCustomerId || null;
@@ -998,20 +1024,25 @@ async function handleApi(req, res, urlPath) {
           invoiceDate: nowIso.slice(0, 10), customItems,
         };
         try {
-          if (previousWave && previousWave.invoiceId && previousWave.status === 'DRAFT') {
-            const inv = await waveBackend.buildAndSubmitInvoice({ ...invoiceArgs, mode: 'patch', invoiceId: previousWave.invoiceId, currentStatus: previousWave.status });
+          if (previousWave && previousWave.invoiceId) {
+            const inv = await waveBackend.buildAndSubmitInvoice({ ...invoiceArgs, mode: 'patch', invoiceId: previousWave.invoiceId });
             waveResult = { success: true, action: 'patched', invoice: inv };
-          } else if (previousWave && previousWave.invoiceId) {
-            waveResult = { success: true, action: 'skipped', invoice: previousWave, reason: 'Wave invoice is ' + previousWave.status + ', not DRAFT -- not updated automatically.' };
-            waveNotes.push('Wave invoice ' + previousWave.invoiceId + ' is already ' + previousWave.status + ' -- the price may have changed since; update it by hand in Wave if needed.');
           } else {
             const inv = await waveBackend.buildAndSubmitInvoice({ ...invoiceArgs, mode: 'create' });
             waveResult = { success: true, action: 'created', invoice: inv };
           }
+          if (waveResult.invoice.approveError) waveNotes.push('Wave invoice was created but could not be approved automatically (' + waveResult.invoice.approveError + ') -- approve it in Wave.');
         } catch (err) {
           waveResult = { success: false, error: err.message };
-          waveNotes.push('Wave draft invoice not created/updated (' + err.message + ').');
+          waveNotes.push('Wave invoice not created/updated (' + err.message + ').' + (previousWave && previousWave.invoiceId ? ' The existing invoice ' + previousWave.invoiceId + ' was left as it was -- fix it by hand in Wave if the price changed.' : ''));
         }
+      }
+      // Remember which Wave customer this Client Name was billed to (shared pairing history behind the
+      // "Suggested" chip in the picker). Only for real jobs (not Drafts, which are saved repeatedly) and
+      // best-effort -- never blocks Create/Update Job.
+      if (waveCustomerId && jobId && body.clientName && jobBackend.isConfigured()) {
+        try { await jobBackend.recordWavePairing({ clientName: body.clientName, waveCustomerId, waveCustomerName }); }
+        catch (err) { /* advisory history only */ }
       }
       // Whatever we ended up with (freshly created/patched, skipped-because-not-DRAFT, a failure, or
       // simply nothing attempted) is what gets carried into job.json -- see previousWave above for why

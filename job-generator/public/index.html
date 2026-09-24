@@ -264,6 +264,17 @@
   .wave-dropdown-item .name { font-weight: 600; }
   .wave-dropdown-item .email { color: var(--muted); font-size: 12px; }
   .wave-dropdown-empty { padding: 8px 10px; font-size: 13px; color: var(--muted); }
+  .wave-dropdown-new { padding: 8px 10px; cursor: pointer; font-size: 13.5px; font-weight: 600; color: var(--accent); border-top: 1px solid var(--border); }
+  .wave-dropdown-new:hover { background: var(--bg); }
+  .wave-suggest { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; font-size: 12.5px; color: var(--muted); }
+  .wave-suggest-chip {
+    padding: 3px 10px; border: 1px solid var(--accent); border-radius: 999px; background: #fff;
+    color: var(--accent); font-size: 12.5px; cursor: pointer;
+  }
+  .wave-suggest-chip:hover { background: var(--accent); color: #fff; }
+  .wave-new-form { margin-top: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+  .wave-new-form .field-row { margin-bottom: 8px; }
+  .wave-new-form .wave-new-error { color: #7a1f1f; font-size: 12.5px; margin-top: 6px; }
 
   /* ---- Custom Items (2026-09-23) ---- */
   .custom-item-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
@@ -324,8 +335,21 @@
           <div class="stub-row">
             <input type="text" id="wave-customer-search" placeholder="Type to search Wave customers…" autocomplete="off">
             <button class="browse-btn" type="button" id="wave-customer-clear-btn" style="display:none;">Clear</button>
+            <button class="browse-btn" type="button" id="wave-customer-new-btn">+ New</button>
           </div>
           <div id="wave-customer-dropdown" class="wave-dropdown" style="display:none;"></div>
+        </div>
+        <div class="wave-suggest" id="wave-customer-suggest" style="display:none;"></div>
+        <div class="wave-new-form" id="wave-new-form" style="display:none;">
+          <div class="field-row"><label class="field-label" for="wave-new-name">Name</label><input type="text" id="wave-new-name" autocomplete="off"></div>
+          <div class="field-row"><label class="field-label" for="wave-new-email">Email (optional)</label><input type="text" id="wave-new-email" autocomplete="off"></div>
+          <div class="field-row"><label class="field-label" for="wave-new-phone">Phone (optional)</label><input type="text" id="wave-new-phone" autocomplete="off"></div>
+          <div class="field-row"><label class="field-label" for="wave-new-address">Address (optional)</label><input type="text" id="wave-new-address" autocomplete="off"></div>
+          <div class="stub-row">
+            <button class="browse-btn" type="button" id="wave-new-create-btn">Create Wave customer</button>
+            <button class="browse-btn" type="button" id="wave-new-cancel-btn">Cancel</button>
+          </div>
+          <div class="wave-new-error" id="wave-new-error"></div>
         </div>
         <div class="field-hint" id="wave-customer-hint">No Wave customer selected -- no invoice will be created for this job.</div>
       </div>
@@ -663,12 +687,15 @@
     selectedWaveCustomer = { id: customer.id, name: customer.name };
     el('wave-customer-search').value = customer.name;
     hideWaveDropdown();
+    hideWaveNewForm();
     updateWaveCustomerHint();
+    renderWaveSuggestions([]);
   }
   function clearWaveCustomer() {
     selectedWaveCustomer = null;
     el('wave-customer-search').value = '';
     updateWaveCustomerHint();
+    refreshWaveSuggestions();
   }
   function hideWaveDropdown() {
     el('wave-customer-dropdown').style.display = 'none';
@@ -690,7 +717,80 @@
         box.appendChild(item);
       });
     }
+    // No match (or the right one isn't listed) -> offer to create the customer in Wave, pre-filled with what was typed.
+    if (!customers.length) {
+      const nu = document.createElement('div');
+      nu.className = 'wave-dropdown-new';
+      nu.textContent = '+ New customer' + (el('wave-customer-search').value.trim() ? ' "' + el('wave-customer-search').value.trim() + '"' : '');
+      nu.addEventListener('click', () => showWaveNewForm());
+      box.appendChild(nu);
+    }
     box.style.display = '';
+  }
+
+  // ---- New Wave customer form + history-based suggestions (2026-09-23) ----
+  function showWaveNewForm() {
+    hideWaveDropdown();
+    el('wave-new-name').value = el('wave-customer-search').value.trim() || el('clientName').value.trim();
+    ['wave-new-email', 'wave-new-phone', 'wave-new-address'].forEach((id) => { el(id).value = ''; });
+    el('wave-new-error').textContent = '';
+    el('wave-new-form').style.display = '';
+    el('wave-new-name').focus();
+  }
+  function hideWaveNewForm() { el('wave-new-form').style.display = 'none'; }
+  el('wave-customer-new-btn').addEventListener('click', showWaveNewForm);
+  el('wave-new-cancel-btn').addEventListener('click', hideWaveNewForm);
+  el('wave-new-create-btn').addEventListener('click', async () => {
+    const name = el('wave-new-name').value.trim();
+    if (!name) { el('wave-new-error').textContent = 'Name is required.'; return; }
+    el('wave-new-create-btn').disabled = true;
+    el('wave-new-error').textContent = '';
+    try {
+      const res = await fetch('/api/wave-customers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+        name, email: el('wave-new-email').value.trim(), phone: el('wave-new-phone').value.trim(), address: el('wave-new-address').value.trim(),
+      }) });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Could not create the customer.');
+      selectWaveCustomer(data.customer);
+    } catch (err) {
+      el('wave-new-error').textContent = err.message;
+    } finally {
+      el('wave-new-create-btn').disabled = false;
+    }
+  });
+
+  // Suggested Wave customers for the current Client Name, ranked by past pairings (shared history in
+  // Supabase). Advisory only: a click on a chip selects it, nothing is ever auto-selected. Hidden once a
+  // customer is picked. Stale responses (typing continued) are dropped by comparing the name asked for.
+  let waveSuggestTimer = null;
+  function renderWaveSuggestions(list) {
+    const box = el('wave-customer-suggest');
+    box.innerHTML = '';
+    if (!list.length || selectedWaveCustomer) { box.style.display = 'none'; return; }
+    const label = document.createElement('span');
+    label.textContent = 'Suggested:';
+    box.appendChild(label);
+    list.forEach((sg) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'wave-suggest-chip';
+      chip.textContent = sg.waveCustomerName + (sg.match === 'exact' ? '' : ' (similar name: ' + sg.clientName + ')') + (sg.useCount > 1 ? ' · ' + sg.useCount + '×' : '');
+      chip.addEventListener('click', () => selectWaveCustomer({ id: sg.waveCustomerId, name: sg.waveCustomerName }));
+      box.appendChild(chip);
+    });
+    box.style.display = '';
+  }
+  function refreshWaveSuggestions() {
+    clearTimeout(waveSuggestTimer);
+    const asked = el('clientName').value.trim();
+    if (el('wave-customer-row').style.display === 'none' || selectedWaveCustomer || asked.length < 2) { renderWaveSuggestions([]); return; }
+    waveSuggestTimer = setTimeout(async () => {
+      try {
+        const res = await fetch('/api/wave-suggest?clientName=' + encodeURIComponent(asked));
+        const data = await res.json();
+        if (el('clientName').value.trim() === asked) renderWaveSuggestions(data.suggestions || []);
+      } catch (err) { renderWaveSuggestions([]); }
+    }, 400);
   }
 
   el('wave-customer-search').addEventListener('input', () => {
@@ -925,6 +1025,8 @@
   // button so re-opening a draft never leaves stale fields behind.
   function resetForm() {
     clearCurrentDraft();
+    clearWaveCustomer();
+    hideWaveNewForm();
     el('clientName').value = '';
     el('photographerName').value = '';
     el('address').value = '';
@@ -1055,6 +1157,10 @@
     updateIdentityLockUI();
 
     el('clientName').value = data.clientName || '';
+    // Restore the Wave customer this job was billed to -- otherwise an Update would send no customer and
+    // silently skip re-syncing the invoice.
+    if (data.waveCustomerId) selectWaveCustomer({ id: data.waveCustomerId, name: data.waveCustomerName || '' });
+    else clearWaveCustomer();
     el('photographerName').value = data.photographerName || '';
     el('address').value = data.address || '';
     el('shootDate').value = data.shootDate || '';
@@ -1574,16 +1680,15 @@
         ? '<div>Folder renamed from <code>' + result.renamedFrom + '</code> to <code>' + result.folderName + '</code> (same Job ID)'
           + (result.dropboxRename && result.dropboxRename.success === false ? ', but the Dropbox-side rename failed -- see below' : ', including on Dropbox') + '.</div>'
         : '';
-      // Wave draft invoice (2026-09-23, see wave-backend.js) -- result.wave is null whenever
-      // auto-invoice is off or no Wave customer was picked (the common case), so nothing shows then.
+      // Wave invoice (2026-09-23, see wave-backend.js) -- result.wave is null whenever auto-invoice is
+      // off or no Wave customer was picked (the common case), so nothing shows then. New invoices are
+      // approved automatically; an existing one is edited in place (even if already approved).
       const wv = result.wave;
       const waveHtml = !wv ? '' : !wv.success
-        ? '<div style="color:#7a1f1f;">Wave draft invoice not created/updated: ' + wv.error + '</div>'
-        : wv.action === 'skipped'
-          ? '<div style="color:#6b510f;">' + wv.reason + ' <a href="' + wv.invoice.viewUrl + '" target="_blank" rel="noopener">View in Wave</a></div>'
-          : '<div>Wave draft invoice ' + (wv.action === 'created' ? 'created' : 'updated') + ': '
-            + '<a href="' + wv.invoice.viewUrl + '" target="_blank" rel="noopener">#' + wv.invoice.invoiceNumber + '</a>'
-            + ' -- review it in Wave, then Approve before sending the delivery email.</div>';
+        ? '<div style="color:#7a1f1f;">Wave invoice not created/updated: ' + wv.error + '</div>'
+        : '<div>Wave invoice ' + (wv.action === 'created' ? 'created' : 'updated')
+          + (wv.invoice.approveError ? ' (NOT approved -- approve it in Wave)' : (wv.invoice.status === 'DRAFT' ? '' : ' and approved')) + ': '
+          + '<a href="' + wv.invoice.viewUrl + '" target="_blank" rel="noopener">#' + wv.invoice.invoiceNumber + '</a>.</div>';
       el('create-result').innerHTML =
         '<div class="result-box success">' +
         '<div><strong>Job ' + jobStatusLabel + ': ' + result.jobId + '</strong></div>' +

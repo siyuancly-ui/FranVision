@@ -53,7 +53,7 @@
     var rows = [];
 
     var titleEl = el('span', { text: 'All Feature Sheets · 全部' });
-    var search = el('input', { id: 'fsb-admin-search', type: 'search', placeholder: 'Filter by address / agent 筛选…' });
+    var search = el('input', { id: 'fsb-admin-search', type: 'search', placeholder: 'Filter by address / agent / company 筛选…' });
     var binLink = el('button', { class: 'fsb-btn fsb-btn--ghost', text: 'Recycle bin 回收站' });
     var newBtn = el('button', { class: 'fsb-btn fsb-btn--primary', text: '+ New feature sheet 新建' });
     var emptyBtn = el('button', { class: 'fsb-btn fsb-btn--sm fsb-btn--danger', text: 'Empty bin 清空回收站' });
@@ -93,6 +93,32 @@
       emptyBtn.hidden = !trash || !rows.length;
     }
 
+    // full-size logo in a simple overlay; click anywhere or press Esc to close
+    function enlarge(src, label) {
+      var box = el('img', { class: 'fsb-lightbox-img', alt: label || 'logo', src: src });
+      var ov = el('div', { class: 'fsb-lightbox', title: 'Click to close 点击关闭' }, [box]);
+      function close() { document.removeEventListener('keydown', onKey); ov.remove(); }
+      function onKey(e) { if (e.key === 'Escape') close(); }
+      ov.addEventListener('click', close);
+      document.addEventListener('keydown', onKey);
+      document.body.appendChild(ov);
+    }
+
+    // the typed brokerage name, else the uploaded brokerage logo (which usually spells the name)
+    function companyCell(r) {
+      var name = (r.brokerage || '').trim();
+      if (name) return el('span', { text: name });
+      if (r.logo && r.logo.photoId) {
+        var meta = { photoId: r.logo.photoId, ext: r.logo.ext, hasThumb: r.logo.hasThumb };
+        var urls = store.photoUrls(r.id, meta);
+        var img = el('img', { class: 'fsb-admin-logo', alt: 'brokerage logo', title: 'Click to enlarge 点击放大',
+          loading: 'lazy', src: urls.thumb });
+        img.addEventListener('click', function () { enlarge(urls.full || urls.thumb, r.brokerage || r.address); });
+        return img;
+      }
+      return el('span', { text: '—' });
+    }
+
     function render() {
       body.innerHTML = '';
       reflectView();
@@ -100,7 +126,7 @@
       var q = (search.value || '').trim().toLowerCase();
       var shown = rows.filter(function (r) {
         if (!q) return true;
-        return (r.address + ' ' + r.city + ' ' + (r.agents || []).join(' ')).toLowerCase().indexOf(q) >= 0;
+        return (r.address + ' ' + r.city + ' ' + (r.agents || []).join(' ') + ' ' + (r.brokerage || '')).toLowerCase().indexOf(q) >= 0;
       });
       if (!shown.length) {
         body.appendChild(el('div', { class: 'fsb-admin-empty',
@@ -112,6 +138,7 @@
       table.appendChild(el('thead', {}, [el('tr', {}, [
         el('th', { text: 'Address 地址' }),
         el('th', { text: 'Agent 经纪' }),
+        el('th', { text: 'Company 公司' }),
         el('th', { text: 'Theme 主题' }),
         el('th', { text: trash ? 'Deleted 删除时间' : 'Status 状态' }),
         el('th', { text: trash ? '' : 'Updated 更新' }),
@@ -127,6 +154,7 @@
           r.city ? el('div', { class: 'fsb-admin-sub', text: r.city }) : null,
         ]));
         tr.appendChild(el('td', { text: (r.agents || []).filter(Boolean).join(' & ') || '—' }));
+        tr.appendChild(el('td', {}, [companyCell(r)]));
         tr.appendChild(el('td', { text: r.theme || 'navy' }));
         if (trash) {
           tr.appendChild(el('td', { class: 'fsb-admin-time', text: fmtTime(r.deletedAt) }));

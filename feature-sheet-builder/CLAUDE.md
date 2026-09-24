@@ -130,7 +130,12 @@ One Postgres table + one storage bucket + two edge functions. Project ref
   refused anon writes — the path is just never shown in the UI).
 - **Edge function `list-projects`** (`supabase/functions/list-projects/index.ts`)
   — powers `admin.js`. Gated by a shared `ADMIN_TOKEN` secret, reads with the
-  service role. `view:"trash"` returns the recycle bin. Redeploy on change:
+  service role. `view:"trash"` returns the recycle bin. Skips `FVS-…` rows (Jobs the
+  photo-sync-worker mirrors into `projects` -- they have no agent/property info and used to
+  appear as blank sheets in the list; `store.js#listAllProjects` filters them too). Returns
+  `brokerage` + `logo` (the brokerage logo's photo meta) for the admin list's **Company**
+  column: typed brokerage name, else the logo thumbnail (a human reads the name off it; no
+  OCR). Redeploy on change:
   `supabase functions deploy list-projects --project-ref papaswihicvajzcubbri`.
 - **Edge function `notify-submission`**
   (`supabase/functions/notify-submission/index.ts`) — called by `submit.js` after
@@ -147,8 +152,10 @@ clicks Connect; that stores `jobId` on the sheet (`store.js` `DATA_KEYS`). The J
 photo-sync-worker / delivery-page (`photos[]`, `videos[]`, `address`, `tourUrl`) and the FSB **only reads it**
 (`store.getJobGallery`, cached in `photo-source.js`); every FSB write path refuses an `FVS-` id (a whole-blob save would
 wipe the worker's keys), and opening `?p=FVS-…` shows an explanatory card instead of a sheet.
-- Once connected the picker/library list that Job's `HDR Photos`/`MLS` photos, read-only, in natural filename order
-  (`job-gallery.js`). **The editor, preview and picker all use the 1024 `_thumb.jpg`** (the preview keeps its watermark),
+- Once connected the picker/library list that Job's `HDR Photos`/`MLS` photos (plus a `Callout` folder nested under them; a
+  `Callout` directly under the job folder isn't listed -- Job Generator only creates `HDR Photos/Callout`), read-only, in natural filename order (`job-gallery.js`). The admin
+  library keeps its **Upload** button for one-off photos that aren't in Dropbox: they're the sheet's own uploads (listed after
+  the gallery, `own: true`, the only ones with a delete button / cleared by Clear). **The editor, preview and picker all use the 1024 `_thumb.jpg`** (the preview keeps its watermark),
   read from the Job's folder in the `photos` bucket; the sheet's own headshot/logo stay under the sheet's folder.
   Nothing larger goes in Supabase on purpose: the 2048 set and the originals are the paid deliverable. Placed photos are
   stored only as ids in `pages.*.slots`. The Job's address fills a blank street-address field on connect.
@@ -198,11 +205,11 @@ themes.
   `../Feature Sheet Template/` via `templates/fsb-v2/tools/idml_parse.py` — **not
   eyeballed**.
 - **7 themes, 2 layout families** (`themes.js`):
-  - **Standard** — `navy` / `marble` / `burgundy`. Share `geometry.js`. Support a
+  - **Standard** — `navy` / `marble` / `burgundy` / `emerald` (dropdown labels since 2026-09-24: 华邸藏蓝·Estate Navy / 大理石·Marble / 华邸酒红·Estate Burgundy / 华邸墨绿·Estate Emerald — the labels are cosmetic and deliberately NOT the layout family; ids are unchanged). Share `geometry.js`. Support a
     second co-listing agent, a bed/bath/garage icon row, and a
     description-present vs. 6-photo-collage left column (chosen automatically from
     what the agent fills in — see `modules.js` + `layout-engine.js`).
-  - **Estate ("华邸")** — `estate-navy` / `estate-burgundy` / `estate-emerald` /
+  - **Estate layout** (labelled 藏蓝·Navy / 酒红·Burgundy / 墨绿·Emerald / 深灰·Charcoal in the dropdown) — `estate-navy` / `estate-burgundy` / `estate-emerald` /
     `estate-charcoal`. Marked `layout: 'jason'`, use `geometry-estate.js`, single
     agent only, velvet-artwork background + metal chevron/bar, all-white copy.
 - **Page-1 slot id namespaces differ by layout** and this matters:

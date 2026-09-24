@@ -77,7 +77,7 @@
       return (project && project.photos ? project.photos : [])
         .filter(function (p) { return !p.role; })
         .map(function (p) {
-          return { id: p.photoId, filename: p.filename, width: p.width || 0, height: p.height || 0 };
+          return { id: p.photoId, filename: p.filename, width: p.width || 0, height: p.height || 0, own: true };
         });
     },
 
@@ -247,10 +247,13 @@
     list: function (project) {
       var j = jobOf(project);
       if (!j) return uploadSource.list(project);
-      return J.galleryPhotos(j.data ? j.data.photos : []).map(function (p) {
+      // the job's Dropbox gallery (read-only) followed by anything the admin uploaded
+      // straight into the sheet for photos that aren't in Dropbox
+      var synced = J.galleryPhotos(j.data ? j.data.photos : []).map(function (p) {
         var d = dimsOf(p);
-        return { id: p.photoId, filename: p.filename, width: d.width, height: d.height };
+        return { id: p.photoId, filename: p.filename, width: d.width, height: d.height, own: false };
       });
+      return synced.concat(uploadSource.list(project));
     },
     getMeta: function (project, id) {
       var f = metaFor(project, id);
@@ -271,8 +274,10 @@
     preparePrint: preparePrint,
     releasePrint: releasePrint,
 
-    // the photo LIBRARY (grid upload / delete / clear-all): read-only once connected to a job
-    supportsUpload: function (project) { return !J.jobIdOf(project); },
+    // the photo LIBRARY (upload / delete / clear-all). Stays available once connected so the
+    // admin can add a photo that isn't in the Job's Dropbox; only the sheet's OWN uploads
+    // (`own: true`) can be deleted -- the Dropbox-synced ones are read-only.
+    supportsUpload: function () { return true; },
     // headshot / logo uploads (info form) are always allowed
     supportsAssetUpload: function () { return true; },
     upload: uploadSource.upload,
