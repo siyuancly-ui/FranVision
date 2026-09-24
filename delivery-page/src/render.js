@@ -431,7 +431,7 @@ const SCRIPT = `<script src="https://embed.cloudflarestream.com/embed/sdk.latest
     // on the middle copy; once scrolling settles anywhere in an outer copy we
     // jump by exactly one set width (invisible, the copies are identical), so
     // there's never a blank edge left of the first / right of the last photo.
-    var setWidth = 0;
+    var setWidth = 0, recenter = function(){};
     if(loop && track.children.length > 1){
       var originals = Array.prototype.slice.call(track.children);
       var before = document.createDocumentFragment(), after = document.createDocumentFragment();
@@ -447,19 +447,20 @@ const SCRIPT = `<script src="https://embed.cloudflarestream.com/embed/sdk.latest
       park();
       window.addEventListener('resize', park);
       var settle = null;
+      recenter = function(){
+        if(!setWidth) return;
+        if(track.scrollLeft < setWidth * 0.5) track.scrollLeft += setWidth;
+        else if(track.scrollLeft > setWidth * 1.5) track.scrollLeft -= setWidth;
+      };
       track.addEventListener('scroll', function(){
         clearTimeout(settle);
-        settle = setTimeout(function(){
-          if(!setWidth) return;
-          if(track.scrollLeft < setWidth * 0.5) track.scrollLeft += setWidth;
-          else if(track.scrollLeft > setWidth * 1.5) track.scrollLeft -= setWidth;
-        }, 120);
+        settle = setTimeout(recenter, 120);
       });
     }
     var slideWidth = function(){ return track.firstElementChild ? track.firstElementChild.getBoundingClientRect().width + 16 : 0; };
     var atEnd = function(){ return track.scrollLeft + track.clientWidth >= track.scrollWidth - 4; };
-    function goNext(){ (!setWidth && atEnd()) ? track.scrollTo({left:0, behavior:'smooth'}) : track.scrollBy({left:slideWidth(), behavior:'smooth'}); }
-    function goPrev(){ track.scrollBy({left:-slideWidth(), behavior:'smooth'}); }
+    function goNext(){ recenter(); (!setWidth && atEnd()) ? track.scrollTo({left:0, behavior:'smooth'}) : track.scrollBy({left:slideWidth(), behavior:'smooth'}); }
+    function goPrev(){ recenter(); track.scrollBy({left:-slideWidth(), behavior:'smooth'}); }
 
     var prev = document.getElementById(prevId), next = document.getElementById(nextId);
     var timer = null;
