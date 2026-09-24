@@ -15,8 +15,8 @@
 // friendly "still preparing" message and the copy self-heals via the 2-min
 // render-retry cron.
 //
-// Same bearer gate as /render (RENDER_TOKEN): only the delivery-page Worker,
-// which resolves the Gallery URL token first, ever calls this. Files stream
+// Bearer gate: GALLERY_TOKEN (a credential dedicated to the delivery-page
+// Worker, which resolves the Gallery URL token first) or RENDER_TOKEN. Files stream
 // Dropbox -> zip -> client one at a time, never buffered (see zip.js). A file
 // that still can't be read after retries ABORTS the stream, so the browser
 // reports a failed download (retry works) instead of handing over a zip that is
@@ -65,7 +65,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export async function handleZip(request, env, deps, ctx, { jobId, kind }, log = () => {}) {
   const h = request.headers.get('Authorization') || '';
   const m = h.match(/^Bearer\s+(.+)$/i);
-  if (!(m && env.RENDER_TOKEN && timingSafeEqual(m[1], env.RENDER_TOKEN))) return jsonRes(401, { error: 'unauthorized' });
+  const ok = !!m && ((!!env.RENDER_TOKEN && timingSafeEqual(m[1], env.RENDER_TOKEN)) || (!!env.GALLERY_TOKEN && timingSafeEqual(m[1], env.GALLERY_TOKEN)));
+  if (!ok) return jsonRes(401, { error: 'unauthorized' });
   if (request.method !== 'POST') return jsonRes(405, { error: 'POST only' });
 
   let photoIds;

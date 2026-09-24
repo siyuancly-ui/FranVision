@@ -21,7 +21,7 @@
   // Standalone Gallery page (src/gallery.js): ZIP + 2048px lightbox images are
   // streamed from photo-sync-worker, which owns the Dropbox credentials. A
   // service binding keeps that call off the public internet.
-  //   secret:  PHOTO_SYNC_TOKEN (= photo-sync-worker's RENDER_TOKEN)
+  //   secret:  PHOTO_SYNC_TOKEN (= photo-sync-worker's GALLERY_TOKEN)
   //   (the per-Job URL token lives in Supabase's gallery_tokens table --
   //    job-generator/supabase/gallery.sql -- so there is no signing secret)
   //   local `wrangler dev`: no binding -> set PHOTO_SYNC_URL in .dev.vars instead.

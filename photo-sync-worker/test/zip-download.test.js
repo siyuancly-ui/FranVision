@@ -80,3 +80,11 @@ test('handleZip: a file that stays unreadable aborts the stream (failed download
   assert.equal(res.status, 200);
   await assert.rejects(res.arrayBuffer());
 });
+
+test('handleZip accepts the dedicated GALLERY_TOKEN as well as RENDER_TOKEN, and nothing else', async () => {
+  const env = { RENDER_TOKEN: 'r', GALLERY_TOKEN: 'g' };
+  assert.equal((await handleZip(mk('g', { photoIds: ['p_a'] }), env, deps(), null, IDS)).status, 200);
+  assert.equal((await handleZip(mk('r', { photoIds: ['p_a'] }), env, deps(), null, IDS)).status, 200);
+  assert.equal((await handleZip(mk('x', { photoIds: ['p_a'] }), env, deps(), null, IDS)).status, 401);
+  assert.equal((await handleZip(mk('g', { photoIds: ['p_a'] }), { RENDER_TOKEN: 'r' }, deps(), null, IDS)).status, 401);
+});

@@ -30,21 +30,27 @@ export function parseRenderPath(pathname) {
   return ID_RE.test(jobId) && ID_RE.test(photoId) ? { jobId, photoId } : null;
 }
 
-function authed(request, env) {
+// RENDER_TOKEN (the Feature Sheet Builder's PDF export) may fetch anything this
+// endpoint serves. GALLERY_TOKEN (the delivery-page Worker, for the Gallery
+// lightbox) is a separate, independently rotatable credential that may ONLY
+// fetch the 2048px web copy (`?size=web`) -- never a true original via /render.
+function authed(request, env, web) {
   const h = request.headers.get('Authorization') || '';
   const m = h.match(/^Bearer\s+(.+)$/i);
-  return !!m && !!env.RENDER_TOKEN && timingSafeEqual(m[1], env.RENDER_TOKEN);
+  if (!m) return false;
+  if (env.RENDER_TOKEN && timingSafeEqual(m[1], env.RENDER_TOKEN)) return true;
+  return web && !!env.GALLERY_TOKEN && timingSafeEqual(m[1], env.GALLERY_TOKEN);
 }
 
 const fail = (status, error) =>
   new Response(JSON.stringify({ error }), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
 export async function handleRender(request, env, deps, ids, log = () => {}) {
-  if (!authed(request, env)) return fail(401, 'unauthorized');
   const { jobId, photoId } = ids;
   // size 'web' = the 2048px `MLS for download` copy (the standalone Gallery
   // lightbox); anything else = the TRUE original (the FSB PDF export).
   const web = ids.size === 'web';
+  if (!authed(request, env, web)) return fail(401, 'unauthorized');
 
   let rec;
   try {
