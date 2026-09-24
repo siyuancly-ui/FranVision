@@ -93,14 +93,28 @@
       emptyBtn.hidden = !trash || !rows.length;
     }
 
+    // full-size logo in a simple overlay; click anywhere or press Esc to close
+    function enlarge(src, label) {
+      var box = el('img', { class: 'fsb-lightbox-img', alt: label || 'logo', src: src });
+      var ov = el('div', { class: 'fsb-lightbox', title: 'Click to close 点击关闭' }, [box]);
+      function close() { document.removeEventListener('keydown', onKey); ov.remove(); }
+      function onKey(e) { if (e.key === 'Escape') close(); }
+      ov.addEventListener('click', close);
+      document.addEventListener('keydown', onKey);
+      document.body.appendChild(ov);
+    }
+
     // the typed brokerage name, else the uploaded brokerage logo (which usually spells the name)
     function companyCell(r) {
       var name = (r.brokerage || '').trim();
       if (name) return el('span', { text: name });
       if (r.logo && r.logo.photoId) {
         var meta = { photoId: r.logo.photoId, ext: r.logo.ext, hasThumb: r.logo.hasThumb };
-        return el('img', { class: 'fsb-admin-logo', alt: 'brokerage logo', title: 'Brokerage logo 公司 logo',
-          loading: 'lazy', src: store.photoUrls(r.id, meta).thumb });
+        var urls = store.photoUrls(r.id, meta);
+        var img = el('img', { class: 'fsb-admin-logo', alt: 'brokerage logo', title: 'Click to enlarge 点击放大',
+          loading: 'lazy', src: urls.thumb });
+        img.addEventListener('click', function () { enlarge(urls.full || urls.thumb, r.brokerage || r.address); });
+        return img;
       }
       return el('span', { text: '—' });
     }
