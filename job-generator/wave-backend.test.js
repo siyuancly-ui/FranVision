@@ -69,6 +69,16 @@ function writeProductMap(obj) {
     assert.strictEqual(calls.length, 1);
   });
 
+  await test('listAllCustomers: hides customers marked as duplicates with the [重复] prefix', async () => {
+    backend._resetCachesForTests();
+    const fetchImpl = gqlFetch([(b) => resp({ data: { business: { customers: { pageInfo: { totalPages: 1 }, edges: [
+      { node: { id: '1', name: 'Mo Zhang', email: '' } },
+      { node: { id: '2', name: '[重复] Mo Zhang', email: '' } },
+    ] } } } })]);
+    const rows = await backend.listAllCustomers({ env: ENV, fetchImpl, now: () => 0 });
+    assert.deepStrictEqual(rows.map((r) => r.id), ['1']);
+  });
+
   await test('searchCustomers: cache expires after the TTL and refetches', async () => {
     backend._resetCachesForTests();
     let now = 0;

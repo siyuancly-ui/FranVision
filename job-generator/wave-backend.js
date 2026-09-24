@@ -26,6 +26,9 @@ const { buildInvoiceRequest } = require(path.join(__dirname, '..', 'wave-invoici
 
 const CUSTOMER_CACHE_TTL_MS = 5 * 60 * 1000; // Wave's customer list changes rarely; avoid refetching every keystroke
 const MAX_SEARCH_RESULTS = 20;
+// Wave can't delete a customer that has invoices, so duplicates are marked in Wave by renaming them
+// with this prefix (2026-09-23 cleanup, scripts/wave-customer-dedupe.js) and hidden from the picker here.
+const DUPLICATE_PREFIX = '[重复]';
 
 function config(env) {
   env = env || process.env;
@@ -89,7 +92,10 @@ async function listAllCustomers(deps) {
       { b: businessId, p: page },
     );
     const c = d.business.customers;
-    c.edges.forEach((e) => rows.push({ id: e.node.id, name: e.node.name, email: e.node.email || '' }));
+    c.edges.forEach((e) => {
+      if (String(e.node.name || '').trim().startsWith(DUPLICATE_PREFIX)) return;
+      rows.push({ id: e.node.id, name: e.node.name, email: e.node.email || '' });
+    });
     if (page >= c.pageInfo.totalPages) break;
   }
   customerCache = { at: now, rows };
