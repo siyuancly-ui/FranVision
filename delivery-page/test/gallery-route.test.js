@@ -1,0 +1,107 @@
+// Worker-level routing for the Gallery page, with Supabase (global fetch) and
+// photo-sync-worker (service binding) faked.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import worker from '../src/index.js';
+
+const TOKEN = '8779efe254f329f0766d73328550ae62';
+const JOB = 'FVS-20260924-001';
+const PROJECT = { id: JOB, data: { address: '12 Main St, Toronto', photos: [{
+  photoId: 'p1', filename: '01.jpg', folder: 'HDR Photos', status: 'ok', hasThumb: true, width: 1024, height: 683,
+  dropboxPath: '/j/01.jpg', downloadDropboxPath: '/m/01.jpg',
+}] } };
+
+function setup() {
+  const calls = { supabase: [], photoSync: [] };
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    calls.supabase.push(u);
+    const json = (v) => new Response(JSON.stringify(v), { headers: { 'content-type': 'application/json' } });
+    if (u.includes('/rest/v1/gallery_tokens')) return json(u.includes(`token=eq.${TOKEN}`) ? [{ job_id: JOB }] : []);
+    if (u.includes('/rest/v1/projects')) return json(u.includes(`id=eq.${JOB}`) ? [PROJECT] : []);
+    return new Response('nf', { status: 404 });
+  };
+  const env = {
+    SUPABASE_URL: 'https://sb.test', SUPABASE_SERVICE_ROLE_KEY: 'k', PHOTO_SYNC_TOKEN: 'pst', GALLERY_FOLDERS: 'HDR Photos,MLS',
+    PHOTO_SYNC: { fetch: async (url, init) => { calls.photoSync.push({ url: String(url), auth: init.headers.authorization, method: init.method, body: init.body }); return calls.upstream ? calls.upstream() : new Response('ZIPBYTES', { status: 200 }); } },
+  };
+  return { env, calls };
+}
+const get = (env, path) => worker.fetch(new Request('https://realgta.ca' + path), env);
+
+test('gallery page: 200 for a valid token, slug is cosmetic, both zip links rendered', async () => {
+  const { env } = setup();
+  for (const slug of ['12-main-st-toronto', 'anything-at-all']) {
+    const res = await get(env, `/delivery/${slug}/${TOKEN}`);
+    assert.equal(res.status, 200);
+    const html = await res.text();
+    assert.match(html, /Download All Original Photos/);
+    assert.match(html, new RegExp(`/delivery/${slug}/${TOKEN}/zip/mls`));
+  }
+});
+
+test('gallery page: unknown token, raw jobId, malformed token -> identical 404, no Supabase lookup for malformed', async () => {
+  const { env, calls } = setup();
+  const unknown = await get(env, `/delivery/x/${'0'.repeat(32)}`);
+  const raw = await get(env, `/delivery/x/${JOB}`);
+  const junk = await get(env, `/delivery/x/${TOKEN}%27or%271`);
+  assert.deepEqual([unknown.status, raw.status, junk.status], [404, 404, 404]);
+  assert.equal(await unknown.text(), await raw.text());
+  assert.equal(calls.supabase.filter((u) => u.includes('gallery_tokens')).length, 1); // only the well-formed one hit the DB
+});
+
+test('zip: POSTs exactly the grid photo ids to photo-sync with the bearer token, named after the address', async () => {
+  const { env, calls } = setup();
+  const res = await get(env, `/delivery/x/${TOKEN}/zip/original`);
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('content-type'), 'application/zip');
+  assert.equal(res.headers.get('content-disposition'), 'attachment; filename="12-main-st-toronto-original-photos.zip"');
+  assert.equal(await res.text(), 'ZIPBYTES');
+  assert.equal(calls.photoSync.length, 1);
+  assert.deepEqual({ ...calls.photoSync[0], body: JSON.parse(calls.photoSync[0].body) },
+    { url: `https://photo-sync.internal/zip/${JOB}?kind=original`, auth: 'Bearer pst', method: 'POST', body: { photoIds: ['p1'] } });
+});
+
+test('zip: photo-sync says not ready (409) or is down -> friendly page, not a raw error', async () => {
+  const { env, calls } = setup();
+  calls.upstream = () => new Response('{"error":"not ready"}', { status: 409 });
+  const res = await get(env, `/delivery/x/${TOKEN}/zip/original`);
+  assert.equal(res.status, 503);
+  const html = await res.text();
+  assert.match(html, /still being prepared/);
+  assert.match(html, new RegExp(`href="/delivery/x/${TOKEN}"`));
+  calls.upstream = () => new Response('boom', { status: 500 });
+  assert.equal((await get(env, `/delivery/x/${TOKEN}/zip/mls`)).status, 502);
+});
+
+test('zip: MLS copies not all written yet -> friendly page WITHOUT calling photo-sync', async () => {
+  const { env, calls } = setup();
+  PROJECT.data.photos[0].downloadDropboxPath = undefined;
+  try {
+    const res = await get(env, `/delivery/x/${TOKEN}/zip/mls`);
+    assert.equal(res.status, 503);
+    assert.match(await res.text(), /still being prepared/);
+    assert.equal(calls.photoSync.length, 0);
+    assert.equal((await get(env, `/delivery/x/${TOKEN}/zip/original`)).status, 200); // originals unaffected
+  } finally {
+    PROJECT.data.photos[0].downloadDropboxPath = '/m/01.jpg';
+  }
+});
+
+test('zip/photo: bad token never reaches photo-sync; unknown kind is a 404', async () => {
+  const { env, calls } = setup();
+  assert.equal((await get(env, `/delivery/x/${'1'.repeat(32)}/zip/mls`)).status, 404);
+  assert.equal((await get(env, `/delivery/x/${TOKEN}/zip/raw`)).status, 404);
+  assert.equal((await get(env, `/delivery/x/${'1'.repeat(32)}/photo/p1`)).status, 404);
+  assert.equal(calls.photoSync.length, 0);
+  const ok = await get(env, `/delivery/x/${TOKEN}/photo/p1`);
+  assert.equal(ok.status, 200);
+  assert.equal(calls.photoSync[0].url, `https://photo-sync.internal/render/${JOB}/p1?size=web`);
+});
+
+test('existing delivery routes are not shadowed by the gallery route', async () => {
+  const { env } = setup();
+  assert.equal((await get(env, `/delivery/${JOB}`)).status, 200);          // old path
+  assert.equal((await get(env, `/12-main-st-toronto/${JOB}`)).status, 200); // pretty path
+  assert.equal((await get(env, `/delivery/${JOB}`)).headers.get('content-type').startsWith('text/html'), true);
+});

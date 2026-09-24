@@ -7,3 +7,9 @@ SUPABASE_SERVICE_ROLE_KEY=
 
 # Guards POST /admin/jobs/<jobId> (sets address/tourUrl/tourType).
 ADMIN_TOKEN=
+
+# Standalone Gallery page (src/gallery.js). PHOTO_SYNC_TOKEN is
+# photo-sync-worker's RENDER_TOKEN. Locally there is no service binding, so
+# point PHOTO_SYNC_URL at a running/deployed photo-sync-worker.
+PHOTO_SYNC_TOKEN=
+PHOTO_SYNC_URL=

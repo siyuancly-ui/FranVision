@@ -1,6 +1,9 @@
 import { createSupabase } from './supabase.js';
 import { buildDeliveryModel, renderDeliveryPage, renderNotFoundPage } from './render.js';
 import { buildAdminModel, renderAdminPage } from './admin.js';
+import {
+  buildGalleryModel, renderGalleryPage, renderGalleryNotFoundPage, renderGalleryPreparingPage, isGalleryToken, galleryPath, zipFilename,
+} from './gallery.js';
 
 function html(body, status = 200) {
   return new Response(body, { status, headers: { 'content-type': 'text/html; charset=utf-8' } });
@@ -19,7 +22,12 @@ async function handleDelivery(jobId, env) {
   const project = await sb.getProject(jobId);
   if (!project) return html(renderNotFoundPage(jobId), 404);
 
-  const model = buildDeliveryModel(project, {
+  const model = buildDeliveryModel(project, deliveryOpts(jobId, env));
+  return html(renderDeliveryPage(model));
+}
+
+function deliveryOpts(jobId, env) {
+  return {
     jobId,
     supabaseUrl: String(env.SUPABASE_URL || '').replace(/\/+$/, ''),
     galleryFolders: folderList(env, 'GALLERY_FOLDERS'),
@@ -28,8 +36,70 @@ async function handleDelivery(jobId, env) {
     coverClosingFolder: env.COVER_CLOSING_FOLDER || 'Cover&Closing',
     droneCalloutFolder: env.DRONE_CALLOUT_FOLDER || 'Callout',
     floorplanFolder: env.FLOORPLAN_FOLDER || 'Floorplan',
-  });
-  return html(renderDeliveryPage(model));
+  };
+}
+
+// Calls photo-sync-worker (which owns the Dropbox credentials) -- over a
+// service binding in production (never reachable from the internet with this
+// token), or PHOTO_SYNC_URL for local `wrangler dev`.
+function callPhotoSync(env, path, extra = {}) {
+  const init = { ...extra, headers: { authorization: `Bearer ${env.PHOTO_SYNC_TOKEN || ''}`, ...(extra.headers || {}) } };
+  if (env.PHOTO_SYNC) return env.PHOTO_SYNC.fetch(`https://photo-sync.internal${path}`, init);
+  if (env.PHOTO_SYNC_URL) return fetch(`${String(env.PHOTO_SYNC_URL).replace(/\/+$/, '')}${path}`, init);
+  return Promise.resolve(new Response('photo sync not configured', { status: 503 }));
+}
+
+// GET /delivery/<address-slug>/<token>[/zip/<original|mls> | /photo/<photoId>]
+// parts[1] (the slug) is cosmetic and never inspected; parts[2] is the signed
+// random token minted per Job (see gallery.js). A wrong token is
+// indistinguishable from a missing Job (same 404 page) so the route can't be
+// used to probe which Jobs exist.
+async function handleGallery(parts, env) {
+  const notFound = () => html(renderGalleryNotFoundPage(), 404);
+  if (!isGalleryToken(parts[2])) return notFound();
+  const sb = createSupabase(env);
+  const jobId = await sb.getGalleryJobId(parts[2]);
+  if (!jobId) return notFound();
+  const project = await sb.getProject(jobId);
+  if (!project) return notFound();
+
+  if (parts.length === 3) {
+    const base = `/${parts.slice(0, 3).map(encodeURIComponent).join('/')}`;
+    return html(renderGalleryPage(buildGalleryModel(project, deliveryOpts(jobId, env)), { base }));
+  }
+
+  if (parts.length === 5 && parts[3] === 'zip' && (parts[4] === 'original' || parts[4] === 'mls')) {
+    const kind = parts[4];
+    // The grid decides what is in the ZIP (see gallery.js): send exactly its
+    // photo ids. Anything not ready yet -> a friendly page, never a short zip.
+    const model = buildGalleryModel(project, deliveryOpts(jobId, env));
+    const ready = kind === 'mls' ? model.mlsReady : model.originalReady;
+    const back = `/${parts.slice(0, 3).map(encodeURIComponent).join('/')}`;
+    if (!ready) return html(renderGalleryPreparingPage(back), 503);
+    const upstream = await callPhotoSync(env, `/zip/${encodeURIComponent(jobId)}?kind=${kind}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ photoIds: model.photoIds }),
+    });
+    if (!upstream.ok) return html(renderGalleryPreparingPage(back), upstream.status === 409 ? 503 : 502);
+    return new Response(upstream.body, {
+      headers: {
+        'content-type': 'application/zip',
+        'content-disposition': `attachment; filename="${zipFilename(project.data && project.data.address, jobId, kind)}"`,
+        'cache-control': 'no-store',
+      },
+    });
+  }
+
+  if (parts.length === 5 && parts[3] === 'photo') {
+    const upstream = await callPhotoSync(env, `/render/${encodeURIComponent(jobId)}/${encodeURIComponent(parts[4])}?size=web`);
+    if (!upstream.ok) return new Response('not found', { status: 404 });
+    return new Response(upstream.body, {
+      headers: { 'content-type': 'image/jpeg', 'cache-control': 'private, max-age=3600' },
+    });
+  }
+
+  return notFound();
 }
 
 // GET /admin?admin=<ADMIN_TOKEN> -- read-only directory of every Job's
@@ -40,9 +110,25 @@ async function handleAdmin(url, env) {
   if (!env.ADMIN_TOKEN || token !== env.ADMIN_TOKEN) return html('unauthorized', 401);
 
   const sb = createSupabase(env);
-  const rows = await sb.listProjects();
-  const model = buildAdminModel(rows);
+  const [rows, galleryTokens] = await Promise.all([sb.listProjects(), sb.listGalleryTokens()]);
+  const model = buildAdminModel(rows, galleryTokens);
   return html(renderAdminPage(model, { origin: url.origin }));
+}
+
+// POST /admin/gallery-link/<jobId>?admin=<ADMIN_TOKEN> -- the directory's
+// "Create Gallery link" button: returns the Job's Gallery path, minting its
+// token first if Job Generator never did (e.g. a Job from before the Gallery
+// existed). Idempotent: an existing token is returned unchanged.
+async function handleAdminGalleryLink(jobId, url, env) {
+  const token = url.searchParams.get('admin') || '';
+  if (!env.ADMIN_TOKEN || token !== env.ADMIN_TOKEN) return json({ error: 'unauthorized' }, 401);
+  if (!/^FVS-\d{8}-\d{3,}$/.test(jobId)) return json({ error: 'not a job id' }, 400);
+  const sb = createSupabase(env);
+  const project = await sb.getProject(jobId);
+  if (!project) return json({ error: 'job not found' }, 404);
+  const galleryToken = await sb.ensureGalleryToken(jobId);
+  if (!galleryToken) return json({ error: 'could not create link' }, 500);
+  return json({ jobId, path: galleryPath(project.data && project.data.address, galleryToken) });
 }
 
 async function handleAdminSetJob(jobId, request, env) {
@@ -77,6 +163,20 @@ export default {
       return new Response('franvision-delivery-page: ok', { headers: { 'content-type': 'text/plain' } });
     }
 
+    // Standalone Gallery page: /delivery/<address-slug>/<token>[/...] -- 3+
+    // segments under /delivery, so it can't collide with the delivery page's
+    // own /delivery/<jobId> (2 segments) -- but must be checked BEFORE that
+    // route, which would otherwise take the slug for a jobId. Not linked from the delivery page;
+    // the link goes in the Delivery Email.
+    if (request.method === 'GET' && parts[0] === 'delivery' && parts.length >= 3) {
+      try {
+        return await handleGallery(parts.map(decodeURIComponent), env);
+      } catch (err) {
+        console.log('gallery_error', { error: String(err) });
+        return html(renderGalleryNotFoundPage(), 500);
+      }
+    }
+
     if (request.method === 'GET' && parts[0] === 'delivery' && parts[1]) {
       try {
         return await handleDelivery(decodeURIComponent(parts[1]), env);
@@ -109,6 +209,15 @@ export default {
       } catch (err) {
         console.log('admin_list_error', { error: String(err) });
         return html('error loading admin directory', 500);
+      }
+    }
+
+    if (request.method === 'POST' && parts[0] === 'admin' && parts[1] === 'gallery-link' && parts[2]) {
+      try {
+        return await handleAdminGalleryLink(decodeURIComponent(parts[2]), url, env);
+      } catch (err) {
+        console.log('admin_gallery_link_error', { jobId: parts[2], error: String(err) });
+        return json({ error: String(err) }, 500);
       }
     }
 

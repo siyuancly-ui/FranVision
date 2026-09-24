@@ -9,6 +9,7 @@
 // touching Supabase.
 
 import { escapeHtml, deliveryPath } from './render.js';
+import { galleryPath } from './gallery.js';
 
 // agentInfo/agentInfo2 are Feature Sheet Builder's fields (this system's
 // `projects` table is shared with it -- see supabase.js#listProjects). Not
@@ -41,7 +42,7 @@ function agentFirstName(job) {
 // Sort order matches FSB admin.js#sortRows() exactly: primary agent's first
 // name A-Z (a job with no agent sinks to the bottom), then newest-updated
 // first within the same name.
-export function buildAdminModel(rows) {
+export function buildAdminModel(rows, galleryTokens = {}) {
   const jobs = (rows || []).map((row) => {
     const data = (row && row.data) || {};
     const photos = Array.isArray(data.photos) ? data.photos : [];
@@ -54,6 +55,9 @@ export function buildAdminModel(rows) {
       hasVideo: videos.length > 0,
       hasTour: typeof data.tourUrl === 'string' && !!data.tourUrl.trim(),
       updatedAt: row.updated_at || null,
+      // null until one is minted (job server at Create/Update Job, or the
+      // directory's own "Create gallery link" button).
+      galleryToken: (galleryTokens && galleryTokens[row.id]) || null,
     };
   });
 
@@ -99,6 +103,13 @@ const CSS = `
   .copy-btn{padding:5px 10px;border:1px solid #d1d1d6;border-radius:6px;background:#fff;color:#1c1c1e;font-size:12.5px;cursor:pointer;white-space:nowrap;}
   .copy-btn:hover{border-color:#8e8e93;}
   .copy-btn.done{border-color:#1f8b3a;color:#1f8b3a;}
+  .copy-btn.err{border-color:#c0392b;color:#c0392b;}
+  .open-link{color:#0a5cd8;text-decoration:none;font-size:12.5px;}
+  .open-link:hover{text-decoration:underline;}
+  .open-link.is-off{color:#c7c7cc;cursor:default;pointer-events:none;}  /* greyed until the Gallery link exists */
+  .create-btn{background:#1f8b3a;border-color:#1f8b3a;color:#fff;}
+  .create-btn:hover{background:#187030;border-color:#187030;}
+  .btns{display:flex;flex-direction:column;gap:6px;align-items:flex-start;}
   @media (prefers-color-scheme: dark){
     body{background:#000;color:#f2f2f7;}
     header{border-color:#2c2c2e;}
@@ -107,6 +118,8 @@ const CSS = `
     td{border-color:#1c1c1e;}
     tr:hover td{background:#1c1c1e;}
     .copy-btn{background:#1c1c1e;border-color:#3a3a3c;color:#f2f2f7;}
+    .open-link.is-off{color:#48484a;}
+    .create-btn{background:#248a3d;border-color:#248a3d;color:#fff;}
   }
 `;
 
@@ -121,6 +134,10 @@ export function renderAdminPage(model, { origin = '' } = {}) {
   const rows = jobs.map((j) => {
     const path = deliveryPath(j.jobId, j.address);
     const fullLink = base + path;
+    // Two columns per Job: All in One (agent-facing preview) and Gallery (the
+    // client's post-payment download page, its own URL with a random token).
+    const gPath = j.galleryToken ? galleryPath(j.address, j.galleryToken) : '';
+    const gFull = gPath ? base + gPath : '';
     return `
     <tr data-search="${escapeHtml((j.address || '') + ' ' + j.jobId + ' ' + j.agents.join(' ')).toLowerCase()}">
       <td><a class="addr" href="${path}" target="_blank" rel="noopener">${escapeHtml(j.address || '(no address yet)')}</a><div class="jobid">${escapeHtml(j.jobId)}</div></td>
@@ -129,7 +146,14 @@ export function renderAdminPage(model, { origin = '' } = {}) {
       <td class="${j.hasVideo ? 'yes' : 'no'}">${j.hasVideo ? '✓' : '—'}</td>
       <td class="${j.hasTour ? 'yes' : 'no'}">${j.hasTour ? '✓' : '—'}</td>
       <td>${fmtTime(j.updatedAt)}</td>
-      <td><button class="copy-btn" type="button" data-link="${escapeHtml(fullLink)}">Copy agent link 复制经纪链接</button></td>
+      <td><div class="btns">
+        <a class="open-link" href="${path}" target="_blank" rel="noopener">Open 打开</a>
+        <button class="copy-btn" type="button" data-link="${escapeHtml(fullLink)}">Copy link 复制链接</button>
+      </div></td>
+      <td><div class="btns">
+        <a class="open-link gallery-open${gPath ? '' : ' is-off'}"${gPath ? ` href="${escapeHtml(gPath)}" target="_blank" rel="noopener"` : ' aria-disabled="true"'}>Open 打开</a>
+        <button class="copy-btn gallery-btn${gFull ? '' : ' create-btn'}" type="button" data-job="${escapeHtml(j.jobId)}" data-link="${escapeHtml(gFull)}">${gFull ? 'Copy link 复制链接' : 'Create link 生成链接'}</button>
+      </div></td>
     </tr>`;
   }).join('');
 
@@ -144,7 +168,7 @@ export function renderAdminPage(model, { origin = '' } = {}) {
 </header>
 <main>
   ${jobs.length ? `<table>
-    <thead><tr><th>Address 地址</th><th>Agent 经纪</th><th>Photos 照片</th><th>Video 视频</th><th>Tour 全景</th><th>Updated 更新时间</th><th></th></tr></thead>
+    <thead><tr><th>Address 地址</th><th>Agent 经纪</th><th>Photos 照片</th><th>Video 视频</th><th>Tour 全景</th><th>Updated 更新时间</th><th>All in One</th><th>Gallery</th></tr></thead>
     <tbody id="rows">${rows}</tbody>
   </table>` : '<div class="empty">No jobs yet 还没有任何 job</div>'}
 </main>
@@ -155,20 +179,42 @@ export function renderAdminPage(model, { origin = '' } = {}) {
       tr.hidden = q && tr.dataset.search.indexOf(q) === -1;
     });
   });
+  function flash(btn, text, cls) {
+    var label = btn.dataset.label || btn.textContent;
+    btn.dataset.label = label;
+    btn.textContent = text;
+    btn.classList.add(cls);
+    setTimeout(function () { btn.textContent = btn.dataset.label; btn.classList.remove(cls); }, 1500);
+  }
+  function copy(btn, link) {
+    var done = function () { flash(btn, 'Copied 已复制', 'done'); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(link).then(done, function () { prompt('Copy link:', link); });
+    } else {
+      prompt('Copy link:', link);
+    }
+  }
   document.querySelectorAll('.copy-btn').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      var link = btn.dataset.link;
-      var done = function () {
-        var label = btn.textContent;
-        btn.textContent = 'Copied 已复制';
-        btn.classList.add('done');
-        setTimeout(function () { btn.textContent = label; btn.classList.remove('done'); }, 1500);
-      };
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(link).then(done, function () { prompt('Copy link:', link); });
-      } else {
-        prompt('Copy link:', link);
-      }
+      if (btn.dataset.link) return copy(btn, btn.dataset.link);
+      // Gallery link doesn't exist yet for this Job: mint it here, then copy.
+      btn.disabled = true;
+      fetch('/admin/gallery-link/' + encodeURIComponent(btn.dataset.job) + location.search, { method: 'POST' })
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(function (j) {
+          var full = location.origin + j.path;
+          btn.dataset.link = full;
+          btn.dataset.label = 'Copy link 复制链接';
+          btn.textContent = btn.dataset.label;
+          var tr = btn.closest('tr');
+          var open = tr.querySelector('.gallery-open');
+          open.href = j.path; open.target = '_blank'; open.rel = 'noopener';
+          open.removeAttribute('aria-disabled'); open.classList.remove('is-off');
+          btn.classList.remove('create-btn');
+          btn.disabled = false;
+          copy(btn, full);
+        })
+        .catch(function () { btn.disabled = false; flash(btn, 'Failed 失败，请重试', 'err'); });
     });
   });
 </script>

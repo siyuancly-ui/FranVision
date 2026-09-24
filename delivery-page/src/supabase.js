@@ -28,6 +28,46 @@ export function createSupabase(env) {
       return Array.isArray(rows) ? rows[0] || null : rows;
     },
 
+    // Gallery page: the Job a random URL token was minted for (see
+    // job-generator/supabase/gallery.sql), or null. `token` must already have
+    // passed gallery.js#isGalleryToken.
+    async getGalleryJobId(token) {
+      const res = await fetch(`${BASE}/rest/v1/gallery_tokens?token=eq.${encodeURIComponent(token)}&select=job_id`, {
+        headers: authHeaders,
+      });
+      const rows = await readJson(res);
+      return Array.isArray(rows) && rows[0] ? rows[0].job_id : null;
+    },
+
+    // Every Job's gallery token, { jobId: token } -- one query for the admin
+    // directory. Empty (never throws) if the table isn't there yet
+    // (job-generator/supabase/gallery.sql not run), so the directory still loads.
+    async listGalleryTokens() {
+      try {
+        const res = await fetch(`${BASE}/rest/v1/gallery_tokens?select=job_id,token`, { headers: authHeaders });
+        const rows = await readJson(res);
+        return Object.fromEntries((rows || []).map((r) => [r.job_id, r.token]));
+      } catch {
+        return {};
+      }
+    },
+
+    // The Job's gallery token, minting one if it has none yet (same random
+    // 128-bit hex the job server's jg_gallery_token() mints; whichever gets
+    // there first wins and the other reads it back, so links never change).
+    // Lets the admin directory heal Jobs created before the Gallery existed.
+    async ensureGalleryToken(jobId) {
+      const bytes = crypto.getRandomValues(new Uint8Array(16));
+      const fresh = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+      await readJson(await fetch(`${BASE}/rest/v1/gallery_tokens`, {
+        method: 'POST',
+        headers: { ...authHeaders, 'Content-Type': 'application/json', Prefer: 'resolution=ignore-duplicates,return=minimal' },
+        body: JSON.stringify({ job_id: jobId, token: fresh }),
+      }));
+      const rows = await readJson(await fetch(`${BASE}/rest/v1/gallery_tokens?job_id=eq.${encodeURIComponent(jobId)}&select=token`, { headers: authHeaders }));
+      return Array.isArray(rows) && rows[0] ? rows[0].token : null;
+    },
+
     // Every Job's projects row (id, data, updated_at), newest-updated first
     // -- the admin directory's one query (see src/admin.js). `projects` is
     // shared with Feature Sheet Builder, whose own projects today use a

@@ -29,10 +29,10 @@ test('buildAdminModel: pulls address/agents/photoCount/hasVideo/hasTour off each
   assert.equal(model.jobs.length, 2);
   assert.deepEqual(model.jobs[0], {
     jobId: 'FVS-1', address: '48 Red Ash Dr', agents: ['Jane Doe', 'John Roe'],
-    photoCount: 2, hasVideo: true, hasTour: true, updatedAt: '2026-09-17T12:00:00Z',
+    photoCount: 2, hasVideo: true, hasTour: true, updatedAt: '2026-09-17T12:00:00Z', galleryToken: null,
   });
   assert.deepEqual(model.jobs[1], {
-    jobId: 'FVS-2', address: null, agents: [], photoCount: 0, hasVideo: false, hasTour: false, updatedAt: '2026-09-17T12:00:00Z',
+    jobId: 'FVS-2', address: null, agents: [], photoCount: 0, hasVideo: false, hasTour: false, updatedAt: '2026-09-17T12:00:00Z', galleryToken: null,
   });
 });
 
@@ -82,7 +82,40 @@ test('renderAdminPage: copy-link button carries the full absolute URL when an or
   const model = buildAdminModel([row('FVS-1', { data: {} })]);
   const out = renderAdminPage(model, { origin: 'https://real.gta3d.ca' });
   assert.ok(out.includes('data-link="https://real.gta3d.ca/delivery/FVS-1"'));
-  assert.ok(out.includes('Copy agent link'));
+  assert.ok(out.includes('Copy link 复制链接'));
+});
+
+const TOK = '8779efe254f329f0766d73328550ae62';
+
+test('buildAdminModel: attaches each Job\'s gallery token (null when it has none yet)', () => {
+  const model = buildAdminModel([row('FVS-1', { data: {} }), row('FVS-2', { data: {} })], { 'FVS-1': TOK });
+  assert.equal(model.jobs.find((j) => j.jobId === 'FVS-1').galleryToken, TOK);
+  assert.equal(model.jobs.find((j) => j.jobId === 'FVS-2').galleryToken, null);
+});
+
+test('renderAdminPage: All in One and Gallery are two separate columns, each with Open + Copy (address slug + token)', () => {
+  const model = buildAdminModel([row('FVS-1', { data: { address: '12 Main St, Toronto' } })], { 'FVS-1': TOK });
+  const out = renderAdminPage(model, { origin: 'https://realgta.ca' });
+  assert.ok(out.includes('data-link="https://realgta.ca/12-main-st-toronto/FVS-1"'));
+  assert.ok(out.includes(`data-link="https://realgta.ca/delivery/12-main-st-toronto/${TOK}"`));
+  assert.ok(out.includes('<th>All in One</th><th>Gallery</th>'));
+  const cells = out.split('<td><div class="btns">').slice(1);
+  assert.equal(cells.length, 2);                                  // one cell per column
+  assert.ok(cells[0].includes('data-link="https://realgta.ca/12-main-st-toronto/FVS-1"'));
+  assert.ok(!cells[0].includes('/delivery/12-main-st-toronto/'));   // All in One cell has no gallery link
+  assert.ok(cells[1].includes(`data-link="https://realgta.ca/delivery/12-main-st-toronto/${TOK}"`));
+  assert.ok(out.includes(`class="open-link gallery-open" href="/delivery/12-main-st-toronto/${TOK}"`));
+  assert.ok(!out.includes('gallery-open is-off'));
+  assert.ok(!out.includes('create-btn"'));
+});
+
+test('renderAdminPage: a Job without a gallery token gets a "Create link" button in the Gallery column (no dead link)', () => {
+  const out = renderAdminPage(buildAdminModel([row('FVS-1', { data: { address: '1 A St' } })]), { origin: 'https://realgta.ca' });
+  assert.ok(out.includes('Create link 生成链接'));
+  assert.ok(out.includes('data-job="FVS-1" data-link=""'));
+  assert.ok(/class="open-link gallery-open is-off" aria-disabled="true"/.test(out)); // greyed, and no href to click
+  assert.ok(!/gallery-open is-off"[^>]*href/.test(out));
+  assert.ok(out.includes('gallery-btn create-btn'));                              // green Create button
 });
 
 test('renderAdminPage: escapes address and agent content', () => {
