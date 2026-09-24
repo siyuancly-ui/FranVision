@@ -6,19 +6,19 @@
 // unset, isConfigured() is false and every caller in server.js skips Wave entirely.
 //
 // What this owns that the shared library doesn't:
-//   - reading WAVE_* env vars + the local product-id map (wave-product-map.json, gitignored --
-//     see wave-product-map.example.json; built by wave-probe/setup-real-products.js in the
-//     core-schema branch, see its CLAUDE.md)
+//   - reading WAVE_* env vars + the product-id map, which lives in the shared Supabase job server
+//     (table jg_wave_map, see supabase/schema.sql; loaded via job-backend.js, cached briefly; filled
+//     once by scripts/import-wave-map.js) so every machine uses the same one
 //   - an in-memory cache of Wave's customer list (Wave has no server-side name search -- see the
 //     2026-09-23 introspection in project history -- so the picker fetches the full list, small,
 //     ~300 rows, and searches client-side/here) and of the HST tax id (rarely changes)
 //   - turning a job's pricing + selected customer into a create-and-approve or patch call (see
 //     buildAndSubmitInvoice; only PAID/PARTIAL invoices are refused, per the live status in Wave)
 
-const fs = require('fs');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env'), quiet: true });
 
+const jobBackend = require('./job-backend.js');
 const { createWaveClient } = require(path.join(__dirname, '..', 'wave-invoicing', 'wave-client.js'));
 const { buildInvoiceRequest } = require(path.join(__dirname, '..', 'wave-invoicing', 'invoice-request.js'));
 
@@ -34,30 +34,37 @@ function config(env) {
     token: env.WAVE_TOKEN || '',
     businessId: env.WAVE_BUSINESS_ID || '',
     autoInvoice: /^(1|true)$/i.test(env.WAVE_AUTO_INVOICE || ''),
-    productMapPath: env.WAVE_PRODUCT_MAP_PATH || path.join(__dirname, 'wave-product-map.json'),
   };
 }
 
 // Token + business id present -- enough to show the customer picker and search customers.
 // Does NOT check the product map (see canBuildInvoices) so the picker still works even before
-// that file exists.
+// the map has been loaded into the job server.
 function isConfigured(env) {
   const c = config(env);
   return !!(c.token && c.businessId);
 }
 
-function loadProductMap(env) {
-  const c = config(env);
-  const raw = fs.readFileSync(c.productMapPath, 'utf8'); // throws with a clear ENOENT if missing -- caller decides how to report it
-  const map = JSON.parse(raw);
-  if (!map || typeof map !== 'object') throw new Error('wave-product-map.json did not parse to an object');
+// Product map from the shared job server (jg_wave_map), cached so a burst of invoices doesn't refetch;
+// short TTL so a changed map reaches every machine within minutes. deps.productMap is a test seam.
+const PRODUCT_MAP_TTL_MS = 5 * 60 * 1000;
+let productMapCache = null;
+async function loadProductMap(deps) {
+  deps = deps || {};
+  if (deps.productMap) return deps.productMap;
+  const now = (deps.now || Date.now)();
+  if (productMapCache && now - productMapCache.at < PRODUCT_MAP_TTL_MS) return productMapCache.map;
+  const map = await jobBackend.getWaveMap(deps); // throws BackendError when the job server is unconfigured/unreachable -- caller reports it
+  if (!map || typeof map !== 'object' || Array.isArray(map)) throw new Error('Wave product map from the job server is not an object');
+  if (!Object.keys(map).length) throw new Error('Wave product map is empty -- run scripts/import-wave-map.js once');
+  productMapCache = { at: now, map };
   return map;
 }
 
-// Configured AND the product map file is readable -- everything buildAndSubmitInvoice needs.
-function canBuildInvoices(env) {
-  if (!isConfigured(env)) return false;
-  try { loadProductMap(env); return true; } catch (err) { return false; }
+// Configured AND the product map is loadable -- everything buildAndSubmitInvoice needs.
+async function canBuildInvoices(deps) {
+  if (!isConfigured(deps && deps.env)) return false;
+  try { await loadProductMap(deps); return true; } catch (err) { return false; }
 }
 
 let cachedClient = null, cachedClientKey = null;
@@ -154,7 +161,7 @@ async function buildAndSubmitInvoice(args, deps) {
   deps = deps || {};
   const c = config(deps.env);
   if (!c.token || !c.businessId) throw new Error('Wave is not configured.');
-  const productMap = loadProductMap(deps.env);
+  const productMap = await loadProductMap(deps);
   const client = getClient(deps);
 
   let live = null;
@@ -205,7 +212,7 @@ async function approveQuietly(client, invoice) {
 }
 
 function _resetCachesForTests() {
-  cachedClient = null; cachedClientKey = null; customerCache = null; taxIdCache = null;
+  cachedClient = null; cachedClientKey = null; customerCache = null; taxIdCache = null; productMapCache = null;
 }
 
 module.exports = {
