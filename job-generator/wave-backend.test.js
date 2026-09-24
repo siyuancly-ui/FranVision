@@ -192,6 +192,25 @@ function writeProductMap(obj) {
     }
   });
 
+  await test('buildAndSubmitInvoice: patch of an invoice that no longer exists in Wave creates a new one (recreated:true); other lookup errors still throw', async () => {
+    backend._resetCachesForTests();
+    let created = 0;
+    const client = {
+      findHstTaxId: async () => 'TAX1',
+      getInvoice: async () => { throw new Error('Node could not be found.'); },
+      patchInvoice: async () => { throw new Error('must not be called'); },
+      createDraftInvoice: async () => { created++; return { id: 'NEW1', status: 'DRAFT' }; },
+      approveInvoice: async (id) => ({ id, status: 'SAVED' }),
+    };
+    const out = await backend.buildAndSubmitInvoice({ mode: 'patch', invoiceId: 'GONE', pricing: PRICING, customerId: 'C' }, opts(client));
+    assert.strictEqual(created, 1);
+    assert.strictEqual(out.id, 'NEW1');
+    assert.strictEqual(out.status, 'SAVED');
+    assert.strictEqual(out.recreated, true);
+    const flaky = { ...client, getInvoice: async () => { throw new Error('HTTP 500'); } };
+    await assert.rejects(backend.buildAndSubmitInvoice({ mode: 'patch', invoiceId: 'X', pricing: PRICING, customerId: 'C' }, opts(flaky)), /HTTP 500/);
+  });
+
   await test('createCustomer: trims/validates, sends optional fields, and shows up in the cached list right away', async () => {
     backend._resetCachesForTests();
     const fetchImpl = gqlFetch([
