@@ -382,3 +382,61 @@ runAsyncTests().then(() => {
   console.log('\n' + passed + ' passed, ' + failed + ' failed');
   if (failed > 0) process.exit(1);
 });
+
+// ---- Gallery link (2026-09-24) ----
+
+test('buildGalleryLink: /delivery/<address-slug>/<token>; no token -> null; no address -> /photos/', () => {
+  assert.strictEqual(deliveryEmail.buildGalleryLink('513-872 Sheppard Ave W, North York', '8779efe254f329f0766d73328550ae62'),
+    'https://realgta.ca/delivery/513-872-sheppard-ave-w-north-york/8779efe254f329f0766d73328550ae62');
+  assert.strictEqual(deliveryEmail.buildGalleryLink('', 'abc'), 'https://realgta.ca/delivery/photos/abc');
+  assert.strictEqual(deliveryEmail.buildGalleryLink('1 Main St', null), null);
+  assert.strictEqual(deliveryEmail.buildGalleryLink('1 Main St', ''), null);
+});
+
+test('buildTokens: the HDR line becomes the Gallery link when a token exists; other lines keep their Dropbox links', () => {
+  for (const lang of ['en', 'zh']) {
+    const t = buildTokens({ lang, clientName: 'C', address: '1 Main St', totalCents: 1, preTaxCents: 1, jobId: 'FVS-20260924-001', galleryToken: 'tok123',
+      linkByKey: { HDR: 'https://dropbox.com/hdr', MLS: 'https://dropbox.com/mls' } });
+    assert.strictEqual(t.HDR_LINK, 'https://realgta.ca/delivery/1-main-st/tok123');
+    assert.strictEqual(t.MLS_LINK, 'https://dropbox.com/mls');
+    assert.ok(!t.HDR_LINK.includes('FVS-'), 'the raw Job ID must not appear in the URL');
+  }
+});
+
+test('buildTokens: no Gallery token -> the HDR line keeps its Dropbox link (or the usual placeholder), never a broken Gallery link', () => {
+  const withDropbox = buildTokens({ lang: 'en', clientName: 'C', address: '1 Main St', totalCents: 1, preTaxCents: 1, jobId: 'FVS-1', linkByKey: { HDR: 'https://dropbox.com/hdr' } });
+  assert.strictEqual(withDropbox.HDR_LINK, 'https://dropbox.com/hdr');
+  const neither = buildTokens({ lang: 'en', clientName: 'C', address: '1 Main St', totalCents: 1, preTaxCents: 1, jobId: 'FVS-1', linkByKey: { HDR: null } });
+  assert.ok(neither.HDR_LINK.includes('not available'));
+});
+
+test('generateDeliveryEmails: HDR line uses the job server token; failure/absence/draft falls back safely, never throws', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'jg-gallery-'));
+  const base = { jobId: 'FVS-20260924-001', jobFolderPath: tmp, folderName: 'x', clientName: 'C', address: '1 Main St', order: { addons: {} }, componentFolders: [], totalCents: 1000, preTaxCents: 885 };
+  const read = () => fs.readFileSync(path.join(tmp, deliveryEmail.OUTPUT_FILENAME_EN), 'utf8');
+
+  const seen = [];
+  const ok = await deliveryEmail.generateDeliveryEmails({ ...base, getGalleryToken: async (id) => { seen.push(id); return 'tok123'; } });
+  assert.strictEqual(ok.galleryLink, true);
+  assert.deepStrictEqual(seen, ['FVS-20260924-001']);
+  const text = read();
+  assert.ok(text.includes('High-Resolution Photos:\nhttps://realgta.ca/delivery/1-main-st/tok123'));
+  assert.strictEqual((text.match(/realgta\.ca\/delivery\/1-main-st\/tok123/g) || []).length, 1, 'only the HDR line, no separate Gallery block');
+
+  const failed = await deliveryEmail.generateDeliveryEmails({ ...base, getGalleryToken: async () => { throw new Error('unreachable'); } });
+  assert.strictEqual(failed.galleryLink, false);
+  assert.ok(!read().includes('/delivery/1-main-st/'));
+  assert.ok(read().includes('High-Resolution Photos:'));
+
+  assert.strictEqual((await deliveryEmail.generateDeliveryEmails({ ...base })).galleryLink, false);
+
+  let called = false;
+  await deliveryEmail.generateDeliveryEmails({ ...base, jobId: null, getGalleryToken: async () => { called = true; return 't'; } });
+  assert.strictEqual(called, false, 'no token request without a real Job ID');
+});
+
+test('templates no longer carry a separate Gallery block (the HDR line is the Gallery link)', () => {
+  for (const f of ['delivery-email-template.zh.txt', 'delivery-email-template.en.txt']) {
+    assert.ok(!fs.readFileSync(path.join(__dirname, f), 'utf8').includes('GALLERY_LINK'));
+  }
+});

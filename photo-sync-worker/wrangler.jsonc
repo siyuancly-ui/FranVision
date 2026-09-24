@@ -22,6 +22,10 @@
   "main": "src/index.js",
   "compatibility_date": "2025-06-01",
 
+  // GET /zip streams a whole Job's photos through the CRC-32 in zip.js; the
+  // 30s default CPU budget is too tight for a few hundred MB of originals.
+  "limits": { "cpu_ms": 300000 },
+
   "triggers": {
     // Reconciliation sweep -- catches Dropbox webhook notifications that
     // were lost (Dropbox drops them occasionally, or the Worker was mid-

@@ -14,6 +14,7 @@ import { runDelta, processPhotoBatch, runBackfill, processRenderRetryPoll } from
 import { processVideoBatch, processVideoPoll } from './video-sync.js';
 import { processTourLinkBatch } from './tour-link-sync.js';
 import { CORS, parseRenderPath, handleRender } from './render.js';
+import { parseZipRequest, handleZip } from './zip-download.js';
 
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } });
@@ -80,7 +81,16 @@ export default {
       if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
       const ids = parseRenderPath(pathname);
       if (request.method !== 'GET' || !ids) return json({ error: 'not found' }, 404);
+      if (url.searchParams.get('size') === 'web') ids.size = 'web';
       return handleRender(request, env, makeDeps(env), ids, log);
+    }
+
+    // Streaming ZIP of a Job's main photo set for the standalone Gallery page
+    // (token-gated like /render; see zip-download.js)
+    if (pathname.startsWith('/zip/')) {
+      const req = request.method === 'POST' ? parseZipRequest(url) : null;
+      if (!req) return json({ error: 'not found' }, 404);
+      return handleZip(request, env, makeDeps(env), ctx, req, log);
     }
 
     // Manual backfill (cursor-independent)

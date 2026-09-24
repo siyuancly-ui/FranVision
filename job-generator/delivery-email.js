@@ -73,6 +73,20 @@ function buildAllInOneLink(jobId, address) {
   return DELIVERY_BASE_URL + (slug ? '/' + slug : '/delivery') + '/' + encodeURIComponent(jobId);
 }
 
+// The standalone photo Gallery page (delivery-page/src/gallery.js), served at
+// "/delivery/<address-slug>/<token>". It sits behind payment, so the URL must
+// not be guessable from the sequential Job ID: `token` is a random value minted
+// by the job server (Supabase jg_gallery_token(), job-generator/supabase/
+// gallery.sql -- stable per Job, so a re-generated email keeps the same link)
+// and fetched by generateDeliveryEmails() with this machine's own JG_TOKEN --
+// no signing secret lives on any machine. It replaces the HDR line's Dropbox link
+// in the email (see buildTokens); null token (draft, job server not configured/
+// unreachable/SQL not run) -> null, and that line keeps its Dropbox link.
+function buildGalleryLink(address, token) {
+  if (!token) return null;
+  return DELIVERY_BASE_URL + '/delivery/' + (slugifyAddress(address) || 'photos') + '/' + token;
+}
+
 const PLACEHOLDERS = {
   zh: {
     ALL_IN_ONE_LINK: '[请手动填入 All-in-One 链接]',
@@ -178,7 +192,7 @@ function formatPreTaxAmount(cents) {
 // ---- Pure: builds the {{TOKEN}} -> value map for one language, given the
 // already-resolved links (linkByKey: {HDR: 'https://...'|null, ...}) and
 // the manual-fill-in fields, which are always the placeholder for now. ----
-function buildTokens({ lang, clientName, address, totalCents, preTaxCents, linkByKey, jobId, waveViewUrl }) {
+function buildTokens({ lang, clientName, address, totalCents, preTaxCents, linkByKey, jobId, waveViewUrl, galleryToken }) {
   const ph = PLACEHOLDERS[lang];
   const tokens = {
     CLIENT_NAME: clientName || '',
@@ -199,6 +213,11 @@ function buildTokens({ lang, clientName, address, totalCents, preTaxCents, linkB
   for (const [key, url] of Object.entries(linkByKey || {})) {
     tokens[key + '_LINK'] = url || ph.linkUnavailable;
   }
+  // The "High-Resolution Photos" line points at the Gallery page instead of a
+  // Dropbox folder (2026-09-24, Franky); MLS/Video/etc. stay Dropbox links.
+  // No Gallery link available -> that line keeps its Dropbox link (above).
+  const galleryLink = buildGalleryLink(address, galleryToken);
+  if (galleryLink) tokens.HDR_LINK = galleryLink;
   return tokens;
 }
 
@@ -213,7 +232,7 @@ function writeDeliveryEmailFiles(jobFolderAbsolutePath, { zhContent, enContent }
 // ---- The one function server.js calls. NEVER throws -- same contract as
 // dropbox-sync.js. `client` is a test-only seam (delivery-email.test.js
 // injects a fake Dropbox client so the suite never hits the real API). ----
-async function generateDeliveryEmails({ jobId, jobFolderPath, folderName, clientName, address, order, componentFolders, totalCents, preTaxCents, client, waveViewUrl }) {
+async function generateDeliveryEmails({ jobId, jobFolderPath, folderName, clientName, address, order, componentFolders, totalCents, preTaxCents, client, waveViewUrl, getGalleryToken }) {
   try {
     const lines = getDeliverableLines(order, componentFolders);
     const includedKeys = new Set(lines.filter((l) => l.include).map((l) => l.key));
@@ -231,13 +250,20 @@ async function generateDeliveryEmails({ jobId, jobFolderPath, folderName, client
       if (!result.success) linkErrors.push({ key: line.key, dropboxPath, error: result.error });
     }
 
+    // Gallery link token from the job server (best-effort like every other link
+    // here: any failure just leaves the placeholder, never blocks job creation).
+    let galleryToken = null;
+    if (jobId && typeof getGalleryToken === 'function') {
+      try { galleryToken = (await getGalleryToken(jobId)) || null; } catch (err) { galleryToken = null; }
+    }
+
     const zhTemplate = fs.readFileSync(TEMPLATE_ZH_PATH, 'utf8');
     const enTemplate = fs.readFileSync(TEMPLATE_EN_PATH, 'utf8');
-    const zhContent = renderTemplate(zhTemplate, buildTokens({ lang: 'zh', clientName, address, totalCents, preTaxCents, linkByKey, jobId, waveViewUrl }), includedKeys);
-    const enContent = renderTemplate(enTemplate, buildTokens({ lang: 'en', clientName, address, totalCents, preTaxCents, linkByKey, jobId, waveViewUrl }), includedKeys);
+    const zhContent = renderTemplate(zhTemplate, buildTokens({ lang: 'zh', clientName, address, totalCents, preTaxCents, linkByKey, jobId, waveViewUrl, galleryToken }), includedKeys);
+    const enContent = renderTemplate(enTemplate, buildTokens({ lang: 'en', clientName, address, totalCents, preTaxCents, linkByKey, jobId, waveViewUrl, galleryToken }), includedKeys);
 
     const written = writeDeliveryEmailFiles(jobFolderPath, { zhContent, enContent });
-    return { attempted: true, success: linkErrors.length === 0, ...written, linkByKey, linkErrors };
+    return { attempted: true, success: linkErrors.length === 0, ...written, linkByKey, linkErrors, galleryLink: !!galleryToken };
   } catch (err) {
     return { attempted: true, success: false, error: 'Unexpected delivery-email generation failure: ' + err.message };
   }
@@ -250,6 +276,7 @@ module.exports = {
   renderTemplate,
   buildTokens,
   buildAllInOneLink,
+  buildGalleryLink,
   slugifyAddress,
   formatPreTaxAmount,
   writeDeliveryEmailFiles,
