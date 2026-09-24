@@ -40,6 +40,7 @@ const crypto = require('crypto');
 const jobBackend = require('./job-backend.js');
 const jobSync = require('./job-sync.js');
 const waveBackend = require('./wave-backend.js');
+const waveMatch = require('./wave-match.js');
 
 // Windows can reserve whole port ranges (Hyper-V / WSL / Docker), which makes
 // listen() fail with EACCES on a port nothing is using -- so on EACCES we try
@@ -456,16 +457,17 @@ async function handleApi(req, res, urlPath) {
       if (jobBackend.isConfigured()) {
         try { suggestions = await jobBackend.suggestWavePairings(clientName); } catch (err) { suggestions = []; }
       }
-      // Fallback for clients with no history yet: a Wave customer whose name is EXACTLY the Client Name
-      // (case/whitespace-insensitive) is suggested too, marked match:'name'. Uses the cached customer list.
+      // Also match the Client Name against Wave's own customer list, fuzzily (wave-match.js: same name,
+      // containment, reordered words, small typos) -- so clients with no history yet still get suggestions,
+      // at the price of the odd inaccurate one (user OK'd that, 2026-09-24). History matches stay first.
+      // Uses the cached customer list; Wave unreachable -> history-only.
       try {
-        const norm = (x) => String(x || '').replace(/\s+/g, ' ').trim().toLowerCase();
-        const want = norm(clientName);
         const have = new Set(suggestions.map((sg) => sg.waveCustomerId));
-        (await waveBackend.listAllCustomers()).forEach((c) => {
-          if (norm(c.name) === want && !have.has(c.id)) suggestions.push({ waveCustomerId: c.id, waveCustomerName: c.name, clientName, useCount: 0, match: 'name' });
+        const rows = (await waveBackend.listAllCustomers()).filter((c) => !have.has(c.id));
+        waveMatch.rankMatches(clientName, rows, 5).forEach((c) => {
+          suggestions.push({ waveCustomerId: c.id, waveCustomerName: c.name, clientName, useCount: 0, match: 'name' });
         });
-      } catch (err) { /* Wave unreachable -- history-only is fine */ }
+      } catch (err) { /* history-only is fine */ }
       return sendJson(res, 200, { suggestions: suggestions.slice(0, 5) });
     }
 
