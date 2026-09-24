@@ -460,6 +460,10 @@ body.fsb-modal-open { overflow: hidden; }
 .fsb-admin-table td { padding: 10px 12px; border-bottom: 1px solid #eee; vertical-align: top; }
 .fsb-admin-addr { font-weight: 600; color: #1f5fd6; text-decoration: none; }
 .fsb-admin-addr:hover { text-decoration: underline; }
+.fsb-admin-logo { cursor: zoom-in; }
+.fsb-lightbox { position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,.78); display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
+.fsb-lightbox-img { max-width: 90vw; max-height: 85vh; background: #fff; padding: 12px; border-radius: 6px; object-fit: contain; }
+.fsb-admin-logo { display: block; max-width: 110px; max-height: 34px; object-fit: contain; background: #f4f4f4; border-radius: 3px; }
 .fsb-admin-sub { color: #8a94a3; font-size: 12px; margin-top: 2px; }
 .fsb-admin-time { white-space: nowrap; color: #667; }
 .fsb-admin-status { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
