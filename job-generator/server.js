@@ -985,11 +985,11 @@ async function handleApi(req, res, urlPath) {
             const inv = await waveBackend.buildAndSubmitInvoice({ ...invoiceArgs, mode: 'create' });
             waveResult = { success: true, action: 'created', invoice: inv };
           }
-          if (waveResult.invoice.recreated) waveNotes.push('The previous Wave invoice (' + previousWave.invoiceId + ') no longer exists in Wave (deleted?), so a new one was created.');
-          if (waveResult.invoice.approveError) waveNotes.push('Wave invoice was created but could not be approved automatically (' + waveResult.invoice.approveError + ') -- approve it in Wave.');
+          if (waveResult.invoice.recreated) waveNotes.push('Wave 里原来的那张发票已经不存在了（可能被删除了），所以已重新建了一张新发票。');
+          if (waveResult.invoice.approveError) waveNotes.push('Wave 发票已建好，但自动 Approve 失败了（' + waveResult.invoice.approveError + '）—— 请到 Wave 里手动点一下 Approve。');
         } catch (err) {
           waveResult = { success: false, error: err.message };
-          waveNotes.push('Wave invoice not created/updated (' + err.message + ').' + (previousWave && previousWave.invoiceId ? ' The existing invoice ' + previousWave.invoiceId + ' was left as it was -- fix it by hand in Wave if the price changed.' : ''));
+          waveNotes.push('Wave 发票没有建成 / 没有更新成功（' + err.message + '）。' + (previousWave && previousWave.invoiceId ? '原来的发票保持没动，如果价格变了，请到 Wave 里手动修改。' : ''));
         }
       }
       // Remember which Wave customer this Client Name was billed to (shared pairing history behind the
@@ -1098,7 +1098,7 @@ async function handleApi(req, res, urlPath) {
           backendSync = { success: true };
         } catch (err) {
           backendSync = { success: false, error: err.message };
-          pendingConfirmation.push('Job server not updated (' + err.message + ') -- the other machine won\'t see this job/draft until you click Update/Save again with a connection.');
+          pendingConfirmation.push('Job 服务器没有更新成功（' + err.message + '）—— 另一台电脑暂时看不到这个 Job / 草稿，请联网后再点一次 Update / Save。');
         }
       }
       // A failed Dropbox-side rename leaves local and Dropbox folder names
@@ -1108,8 +1108,8 @@ async function handleApi(req, res, urlPath) {
       // silently create a duplicate folder on Dropbox under the new name.
       if (dropboxRenameResult && !dropboxRenameResult.success && !dropboxRenameResult.skipped) {
         pendingConfirmation.push(
-          'Local folder renamed to "' + folderName + '", but the matching Dropbox rename failed: ' + dropboxRenameResult.error
-          + ' -- rename it by hand in Dropbox (from "' + renamedFrom + '") before the next Sync to Dropbox, or it will create a duplicate.'
+          '本地文件夹已改名为「' + folderName + '」，但 Dropbox 上的改名失败了：' + dropboxRenameResult.error
+          + ' —— 下次同步到 Dropbox 之前，请先在 Dropbox 里手动把「' + renamedFrom + '」改成新名字，否则会多出一个重复的文件夹。'
         );
       }
 
