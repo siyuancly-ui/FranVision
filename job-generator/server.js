@@ -451,12 +451,22 @@ async function handleApi(req, res, urlPath) {
     // failure -> an empty list, never an error the page has to handle.
     if (urlPath === '/api/wave-suggest' && req.method === 'GET') {
       const clientName = new URL(req.url, 'http://localhost').searchParams.get('clientName') || '';
-      if (!waveBackend.isConfigured() || !jobBackend.isConfigured() || clientName.trim().length < 2) return sendJson(res, 200, { suggestions: [] });
-      try {
-        return sendJson(res, 200, { suggestions: await jobBackend.suggestWavePairings(clientName) });
-      } catch (err) {
-        return sendJson(res, 200, { suggestions: [] });
+      if (!waveBackend.isConfigured() || clientName.trim().length < 2) return sendJson(res, 200, { suggestions: [] });
+      let suggestions = [];
+      if (jobBackend.isConfigured()) {
+        try { suggestions = await jobBackend.suggestWavePairings(clientName); } catch (err) { suggestions = []; }
       }
+      // Fallback for clients with no history yet: a Wave customer whose name is EXACTLY the Client Name
+      // (case/whitespace-insensitive) is suggested too, marked match:'name'. Uses the cached customer list.
+      try {
+        const norm = (x) => String(x || '').replace(/\s+/g, ' ').trim().toLowerCase();
+        const want = norm(clientName);
+        const have = new Set(suggestions.map((sg) => sg.waveCustomerId));
+        (await waveBackend.listAllCustomers()).forEach((c) => {
+          if (norm(c.name) === want && !have.has(c.id)) suggestions.push({ waveCustomerId: c.id, waveCustomerName: c.name, clientName, useCount: 0, match: 'name' });
+        });
+      } catch (err) { /* Wave unreachable -- history-only is fine */ }
+      return sendJson(res, 200, { suggestions: suggestions.slice(0, 5) });
     }
 
     // Loads a job folder's full record back into the Create Job form --
