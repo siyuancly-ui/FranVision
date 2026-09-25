@@ -192,7 +192,7 @@ export function renderHubPage(model, { base, openKey = '' }) {
     ? `<p class="mail-fee">Fee 费用: <strong>${preTaxMoney(model.preTaxCents)} + HST = ${money(model.totalCents)}</strong></p>` : '';
   // A partial Wave payment does NOT unlock; the page says what came in and what is still owed.
   const partial = model.remainingCents != null
-    ? `<p class="mail-partial">Partial payment received${model.partialPaidCents != null ? ` (${money(model.partialPaidCents)})` : ''} — <strong>${money(model.remainingCents)} still owed</strong> to unlock the downloads.<span class="mail-zh">已收到部分付款${model.partialPaidCents != null ? `（${money(model.partialPaidCents)}）` : ''}，还需支付 <strong>${money(model.remainingCents)}</strong> 才能解锁下载。</span></p>` : '';
+    ? `<p class="mail-partial">${model.partialPaidCents != null ? `Paid ${money(model.partialPaidCents)}, ` : ''}<strong>${money(model.remainingCents)} more</strong> to unlock downloads.<span class="mail-zh">${model.partialPaidCents != null ? `已付 ${money(model.partialPaidCents)}，` : ''}还需支付 <strong>${money(model.remainingCents)}</strong> 才能解锁下载。</span></p>` : '';
 
   // ONE blue button for everything money-related: it opens the Wave invoice page (the customer link
   // `viewUrl`, which lands on Wave's public invoice page) where the client can pay by card / bank, print,

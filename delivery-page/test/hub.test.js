@@ -144,11 +144,11 @@ test('partial payment (safety net): the page shows what came in and what is stil
   assert.equal(remainingCents({ ...partialRow, unlocked: true }), null);      // unlocked: nothing to show
   assert.equal(remainingCents({ ...ROW, wave_remaining_cents: 0 }), null);
   const html = renderHubPage(buildHubModel(partialRow, PROJECT, GTOKEN), { base: '/deliver/x/y' });
-  assert.match(html, /Partial payment received \(\$50\.00\) — <strong>\$63\.00 still owed<\/strong>/);
-  assert.match(html, /还需支付 <strong>\$63\.00<\/strong>/);
+  assert.match(html, /Paid \$50\.00, <strong>\$63\.00 more<\/strong> to unlock downloads\./);
+  assert.match(html, /已付 \$50\.00，还需支付 <strong>\$63\.00<\/strong> 才能解锁下载/);
   assert.match(html, /hub-fee">\$63\.00 <span>remaining/);                     // dialog: the remainder, not the $113 total again
   assert.match(html, /class="hub-btn is-locked"/);                              // still locked
   const plain = renderHubPage(buildHubModel({ ...ROW, pretax_cents: 10000 }, PROJECT, GTOKEN), { base: '/deliver/x/y' });
-  assert.doesNotMatch(plain, /Partial payment received|still owed/);
+  assert.doesNotMatch(plain, /to unlock downloads|才能解锁下载/);
   assert.match(plain, /hub-fee">\$113\.00 <span>incl\. HST/);
 });
