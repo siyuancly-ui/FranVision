@@ -159,7 +159,6 @@ export function renderHubPage(model, { base, openKey = '' }) {
       <p class="hub-after">Then let Franky know or send a screenshot — we'll unlock this page. 付款后请告知 Franky 或发截图。</p>
       <button class="hub-back" id="hubBack" type="button">&larr; Back 返回</button>
     </div>
-    <p class="hub-refresh">Already paid? <a href="" onclick="location.reload();return false;">Refresh 已付款？刷新页面</a></p>
     <button class="hub-close" id="hubClose" type="button" aria-label="Close">&times;</button>
   </div>
 </div>`;
@@ -179,7 +178,7 @@ ${dialog}`;
     bare: true,
     extraHead: HUB_HEAD,
     extraCss: HUB_CSS,
-    extraBody: model.unlocked ? '' : `<script>${hubScript(openKey)}</script>`,
+    extraBody: model.unlocked ? '' : `<script>${hubScript(openKey, base)}</script>`,
   });
 }
 
@@ -222,8 +221,6 @@ const HUB_CSS = `
   .hub-copy,.hub-back{border:1px solid #c9c9d0;background:#fff;color:#3a3a40;border-radius:10px;padding:9px 16px;font:inherit;font-size:13px;cursor:pointer;}
   .hub-back{border:0;color:#6b665b;margin-top:6px;}
   .hub-after{font-size:12px;line-height:1.5;color:#8a867b;margin:14px 0 4px;}
-  .hub-refresh{margin:12px 0 0;font-size:11.5px;color:#a09b90;}
-  .hub-refresh a{color:#6b665b;}
   .hub-close{position:absolute;top:8px;right:12px;border:0;background:none;color:#8a867b;font-size:26px;line-height:1;cursor:pointer;}
   @media (prefers-color-scheme: dark){
     body{background:#0d0d10;}
@@ -234,12 +231,12 @@ const HUB_CSS = `
   }
 `;
 
-function hubScript(openKey) {
+function hubScript(openKey, base) {
   return `
 (function(){
   var modal=document.getElementById('hubModal'), choose=document.getElementById('hubChoose'), emt=document.getElementById('hubEmtPanel');
   function show(panel){ choose.hidden=panel!=='choose'; emt.hidden=panel!=='emt'; }
-  function open(){ show('choose'); modal.hidden=false; }
+  function open(){ show('choose'); modal.hidden=false; watch(); }
   function close(){ modal.hidden=true; }
   document.querySelectorAll('.hub-btn.is-locked').forEach(function(b){ b.addEventListener('click', open); });
   document.getElementById('hubClose').addEventListener('click', close);
@@ -249,6 +246,16 @@ function hubScript(openKey) {
     var b=this, t=document.getElementById('hubMail').textContent, done=function(){ b.textContent='Copied 已复制'; };
     if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(done,function(){}); }
   });
+  // Auto-unlock: once the visitor has opened the pay dialog (i.e. is about to pay), ask the server
+  // every 5s whether the Job is paid/unlocked, and check at once whenever they switch back to this
+  // tab -- when it is, go to the hub itself (now unlocked). No manual refresh, no "go back to the old tab".
+  var statusUrl=${JSON.stringify(base + '/status').replace(/</g, '\\u003c')}, timer=null;
+  function check(){
+    fetch(statusUrl,{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){ if(j&&j.unlocked) location.replace(${JSON.stringify(base).replace(/</g, '\\u003c')}); }).catch(function(){});
+  }
+  function watch(){ if(!timer){ timer=setInterval(check,5000); } check(); }
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden && timer) check(); });
+  window.addEventListener('focus', function(){ if(timer) check(); });
   modal.addEventListener('click', function(e){ if(e.target===modal) close(); });
   document.addEventListener('keydown', function(e){ if(e.key==='Escape') close(); });
   ${openKey ? 'open();' : ''}

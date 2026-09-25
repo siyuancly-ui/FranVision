@@ -110,3 +110,24 @@ test('admin directory: Delivery + Payment columns show for a Job with a hub row'
   assert.match(html, /data-flag="paid" checked/);
   assert.match(html, /data-flag="unlocked">/);
 });
+
+test('status: a tiny no-store {unlocked} the locked page polls; flips as soon as Franky marks the Job paid; wrong token = 404', async () => {
+  const { env } = setup();
+  let r = await get(env, `/deliver/x/${TOKEN}/status`);
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(await r.json(), { unlocked: false });
+  await post(env, `/admin/hub/${JOB}`, { paid: true });
+  assert.deepEqual(await (await get(env, `/deliver/x/${TOKEN}/status`)).json(), { unlocked: true });
+  assert.equal((await get(env, `/deliver/x/${'e'.repeat(32)}/status`)).status, 404);
+});
+
+test('locked page polls its own status URL after the dialog opens; unlocked page carries no script', async () => {
+  const { env } = setup();
+  const locked = await (await get(env, `/deliver/x/${TOKEN}`)).text();
+  assert.match(locked, new RegExp(`/deliver/x/${TOKEN}/status`));
+  assert.doesNotMatch(locked, /Already paid|Refresh/);
+  const { env: env2 } = setup({ paid: true });
+  const open = await (await get(env2, `/deliver/x/${TOKEN}`)).text();
+  assert.doesNotMatch(open, /\/status/);
+});

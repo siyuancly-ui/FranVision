@@ -12,8 +12,8 @@ function html(body, status = 200, extraHeaders = {}) {
   return new Response(body, { status, headers: { 'content-type': 'text/html; charset=utf-8', ...extraHeaders } });
 }
 
-function json(obj, status = 200) {
-  return new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json' } });
+function json(obj, status = 200, extraHeaders = {}) {
+  return new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json', ...extraHeaders } });
 }
 
 function folderList(env, key) {
@@ -140,6 +140,12 @@ async function handleHub(parts, env) {
 
   if (parts.length === 3) {
     return html(renderHubPage(buildHubModel(row, project, galleryToken), { base }), 200, { 'cache-control': 'no-store' });
+  }
+
+  // Polled by the locked page after the visitor opens the pay dialog, so it can unlock itself the
+  // moment the Job is paid / unlocked (no manual refresh). Carries nothing but that one boolean.
+  if (parts.length === 4 && parts[3] === 'status') {
+    return json({ unlocked: isUnlocked(row) }, 200, { 'cache-control': 'no-store' });
   }
 
   if (parts.length === 5 && parts[3] === 'go' && isLineKey(parts[4])) {
