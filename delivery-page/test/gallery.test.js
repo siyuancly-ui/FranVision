@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildDeliveryModel, renderDeliveryPage } from '../src/render.js';
-import { isGalleryToken, galleryPath, buildGalleryModel, renderGalleryPage, zipFilename } from '../src/gallery.js';
+import { buildDeliveryModel, renderDeliveryPage, isDerivedCopy } from '../src/render.js';
+import { attachmentDisposition, isGalleryToken, galleryPath, buildGalleryModel, renderGalleryPage, zipFilename } from '../src/gallery.js';
 
 const OPTS = {
   jobId: 'FVS-20260924-001', supabaseUrl: 'https://sb.test', galleryFolders: ['HDR Photos', 'MLS'],
@@ -101,7 +101,7 @@ test('renderGalleryPage: a ZIP that is not ready shows a disabled "Preparing" bu
   const html = renderGalleryPage(m, { base: '/delivery/x/TOK' });
   assert.match(html, /href="\/delivery\/x\/TOK\/zip\/original"/);
   assert.doesNotMatch(html, /zip\/mls/);
-  assert.match(html, /is-disabled[^>]*>Preparing MLS Photos/);
+  assert.match(html, /is-disabled[^>]*>[\s\S]*?Preparing MLS Photos/);
   const empty = renderGalleryPage(buildGalleryModel(project([]), OPTS), { base: '/delivery/x/TOK' });
   assert.match(empty, /still being prepared/);
   assert.doesNotMatch(empty, /class="dl-btn/);
@@ -144,4 +144,78 @@ test('Gallery hero photo === delivery page hero photo, in every selection scenar
     assert.equal(fromGallery, fromDelivery, name);
   }
   assert.equal(heroUrl(renderGalleryPage(buildGalleryModel(project([]), OPTS), { base: '/delivery/x/TOK' })), heroUrl(renderDeliveryPage(buildDeliveryModel(project([]), OPTS)))); // both null with no photos
+});
+
+test('the two big buttons use the tray-arrow icon instead of the word "Download" in their visible label (aria-label keeps the full name)', () => {
+  const html = renderGalleryPage(buildGalleryModel(project([ph(1), ph(2)]), OPTS), { base: '/delivery/x/TOK' });
+  const btns = [...html.matchAll(/<a class="dl-btn"[^>]*>([\s\S]*?)<\/a>/g)].map((m) => m[0]);
+  assert.equal(btns.length, 2);
+  for (const b of btns) {
+    assert.match(b, /<svg class="dl-ico"/);
+    assert.doesNotMatch(b.replace(/aria-label="[^"]*"/, ''), /Download/);       // no "Download" word on the button face
+  }
+  assert.match(btns[0], /aria-label="Download All Original Photos \(ZIP\)"[\s\S]*<span class="dl-label">All Original Photos \(ZIP\)<\/span>/);
+  assert.match(btns[1], /aria-label="Download All MLS Photos \(ZIP\)"[\s\S]*<span class="dl-label">All MLS Photos \(ZIP\)<\/span>/);
+});
+
+test('every grid tile has a hover overlay with the file name and its own download link; a photo with no original has no download icon', () => {
+  const m = buildGalleryModel(project([ph(1, { filename: 'FVM001.jpg' }), ph(2, { filename: 'FVM002.jpg', dropboxPath: undefined })]), OPTS);
+  const html = renderGalleryPage(m, { base: '/delivery/x/TOK' });
+  assert.equal((html.match(/class="g-hover"/g) || []).length, 2);
+  assert.match(html, /<span class="g-name">FVM001\.jpg<\/span><a class="g-dl" href="\/delivery\/x\/TOK\/download\/p1" download/);
+  assert.match(html, /<span class="g-name">FVM002\.jpg<\/span><\/div>/);            // name only, no icon
+  assert.doesNotMatch(html, /\/download\/p2/);
+});
+
+test('lightbox follows the sample: stage, close, top download, day/night pill, side arrows, bottom name + thumbnail strip + counter; NO share button', () => {
+  const html = renderGalleryPage(buildGalleryModel(project([ph(1), ph(2), ph(3)]), OPTS), { base: '/delivery/x/TOK' });
+  for (const id of ['lbStage', 'lbClose', 'lbDl', 'lbTheme', 'lbPrev', 'lbNext', 'lbName', 'lbStrip', 'lbCount']) assert.match(html, new RegExp(`id="${id}"`), id);
+  assert.doesNotMatch(html.toLowerCase(), /share/);
+  // the lightbox download is a pill: the WORD + a round arrow badge (not just an icon)
+  assert.match(html, /id="lbDl"[^>]*><span class="lb-dl-text">Download<\/span><span class="lb-dl-circle"><svg class="dl-ico"/);
+  const data = JSON.parse(/window\.__GALLERY__=(\[.*?\]);<\/script>/s.exec(html)[1]);
+  assert.equal(data.length, 3);
+  assert.deepEqual(Object.keys(data[0]).sort(), ['d', 'n', 't', 'w']);
+  assert.equal(data[0].d, '/delivery/x/TOK/download/p1');
+  assert.equal(data[0].n, '01.jpg');
+});
+
+test('attachmentDisposition: safe ASCII fallback + UTF-8 name, no quotes/slashes/control characters', () => {
+  assert.equal(attachmentDisposition('FVM001.jpg'), `attachment; filename="FVM001.jpg"; filename*=UTF-8''FVM001.jpg`);
+  assert.equal(attachmentDisposition('客厅 1.jpg'), `attachment; filename="__ 1.jpg"; filename*=UTF-8''%E5%AE%A2%E5%8E%85%201.jpg`);
+  assert.equal(attachmentDisposition('a"b/c\\d\n.jpg'), `attachment; filename="abcd.jpg"; filename*=UTF-8''abcd.jpg`);
+  assert.equal(attachmentDisposition(''), `attachment; filename="photo.jpg"; filename*=UTF-8''photo.jpg`);
+});
+
+// ---- 2026-09-24: every Callout photo showed twice (FVS-20260923-004 / -005) ---------------------
+// photo-sync synced the Callout delivery copy `MLS for download/Callout/x.jpg` back as a SECOND
+// Callout photo (distinct photoId, same file name). The records made before the worker fix are
+// still in the database, so the page must recognise and ignore them.
+const dupCallout = (n, folderPath) => ph(n, { folder: 'Callout', filename: `FVM00${n}.jpg`, dropboxPath: `/J/${folderPath}/FVM00${n}.jpg`, downloadDropboxPath: undefined });
+
+test('a Callout photo and its derived "MLS for download/Callout" duplicate show ONCE (delivery page and Gallery)', () => {
+  const realA = dupCallout(50, 'HDR Photos/Callout'), copyA = dupCallout(51, 'MLS for download/Callout');
+  const realB = dupCallout(52, 'HDR Photos/Callout'), copyB = dupCallout(53, 'MLS for download/Callout');
+  const proj = project([ph(1), ph(2), ph(3), realA, copyA, realB, copyB]);
+
+  const delivery = buildDeliveryModel(proj, OPTS);
+  assert.deepEqual(delivery.aerial.map((a) => a.photoId), ['p50', 'p52']);          // the aerial carousel: no duplicates
+  assert.deepEqual(delivery.gallery.map((g) => g.photoId), ['p1', 'p2', 'p3']);
+
+  const g = buildGalleryModel(proj, OPTS);
+  assert.deepEqual(g.photos.map((p) => p.photoId), ['p1', 'p2', 'p3', 'p50', 'p52']);
+  assert.deepEqual(g.originalPhotoIds, ['p1', 'p2', 'p3', 'p50', 'p52']);           // ...and neither ZIP contains a duplicate
+  assert.equal(new Set(g.photos.map((p) => p.name)).size, g.photos.length, 'no two tiles share a file name');
+});
+
+test('derived copies are ignored wherever they sit and however the folder is cased; real photos elsewhere are untouched', () => {
+  assert.equal(isDerivedCopy({ dropboxPath: '/J/MLS for download/a.jpg' }), true);
+  assert.equal(isDerivedCopy({ dropboxPath: '/J/mls for download/Callout/a.jpg' }), true);
+  assert.equal(isDerivedCopy({ dropboxPath: '/J/HDR Photos/Callout/a.jpg' }), false);
+  assert.equal(isDerivedCopy({ dropboxPath: '/J/MLS/a.jpg' }), false);                 // a legacy real "MLS" folder is NOT a derived copy
+  assert.equal(isDerivedCopy({ dropboxPath: '/J/Photos/MLS for download.jpg' }), false); // only a FOLDER of that name counts, not a file name
+  assert.equal(isDerivedCopy({}), false);
+  assert.equal(isDerivedCopy(null), false);
+  // a job with no duplicates is unchanged
+  assert.equal(buildGalleryModel(project([ph(1), ph(2)]), OPTS).photos.length, 2);
 });

@@ -24,6 +24,9 @@ EMT：frankystudio@mail.com
 
 请在pc或者mac上使用浏览器打开效果最佳，感谢您的支持与厚爱！！！
 
+{{LINE:HUB}}下载页面（付款后即可解锁下载）：
+{{LINE:HUB}}{{HUB_LINK}}
+{{LINE:HUB}}
 {{LINE:HDR}}高清照片：
 {{LINE:HDR}}{{HDR_LINK}}
 {{LINE:HDR}}

@@ -88,13 +88,14 @@ test('size=web serves the 2048 delivery copy, 404s when it does not exist', asyn
   assert.equal(miss.status, 404);
 });
 
-test('GALLERY_TOKEN may fetch the web copy but never a true original; RENDER_TOKEN still works for both', async () => {
+test('GALLERY_TOKEN and RENDER_TOKEN may both fetch the original and the web copy; anything else (or an unconfigured token) is refused', async () => {
   const env = { RENDER_TOKEN: 'secret-token', GALLERY_TOKEN: 'gallery-token' };
   const ids = { jobId: 'FVS-1', photoId: 'abc' };
-  assert.equal((await handleRender(req('gallery-token'), env, deps(), { ...ids, size: 'web' })).status, 200);
-  assert.equal((await handleRender(req('gallery-token'), env, deps(), ids)).status, 401);          // original: refused
-  assert.equal((await handleRender(req('secret-token'), env, deps(), ids)).status, 200);
-  assert.equal((await handleRender(req('secret-token'), env, deps(), { ...ids, size: 'web' })).status, 200);
+  for (const tok of ['secret-token', 'gallery-token']) {
+    assert.equal((await handleRender(req(tok), env, deps(), ids)).status, 200, tok + ' original');
+    assert.equal((await handleRender(req(tok), env, deps(), { ...ids, size: 'web' })).status, 200, tok + ' web');
+  }
+  assert.equal((await handleRender(req('nope'), env, deps(), ids)).status, 401);
   assert.equal((await handleRender(req('nope'), env, deps(), { ...ids, size: 'web' })).status, 401);
-  assert.equal((await handleRender(req('gallery-token'), { RENDER_TOKEN: 'secret-token' }, deps(), { ...ids, size: 'web' })).status, 401); // not configured
+  assert.equal((await handleRender(req('gallery-token'), { RENDER_TOKEN: 'secret-token' }, deps(), ids)).status, 401); // not configured
 });

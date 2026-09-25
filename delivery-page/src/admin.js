@@ -8,8 +8,9 @@
 // renderAdminPage), same split as render.js, so this is unit-tested without
 // touching Supabase.
 
-import { escapeHtml, deliveryPath } from './render.js';
+import { escapeHtml, deliveryPath, isDerivedCopy } from './render.js';
 import { galleryPath } from './gallery.js';
+import { hubPath } from './hub.js';
 
 // agentInfo/agentInfo2 are Feature Sheet Builder's fields (this system's
 // `projects` table is shared with it -- see supabase.js#listProjects). Not
@@ -42,7 +43,7 @@ function agentFirstName(job) {
 // Sort order matches FSB admin.js#sortRows() exactly: primary agent's first
 // name A-Z (a job with no agent sinks to the bottom), then newest-updated
 // first within the same name.
-export function buildAdminModel(rows, galleryTokens = {}) {
+export function buildAdminModel(rows, galleryTokens = {}, hubs = {}) {
   const jobs = (rows || []).map((row) => {
     const data = (row && row.data) || {};
     const photos = Array.isArray(data.photos) ? data.photos : [];
@@ -51,7 +52,7 @@ export function buildAdminModel(rows, galleryTokens = {}) {
       jobId: row.id,
       address: (typeof data.address === 'string' && data.address.trim()) || null,
       agents: agentNames(data),
-      photoCount: photos.filter((p) => p && p.status === 'ok').length,
+      photoCount: photos.filter((p) => p && p.status === 'ok' && !isDerivedCopy(p)).length,
       hasVideo: videos.length > 0,
       hasTour: typeof data.tourUrl === 'string' && !!data.tourUrl.trim(),
       updatedAt: row.updated_at || null,
@@ -59,6 +60,9 @@ export function buildAdminModel(rows, galleryTokens = {}) {
       // directory loads (supabase.js#ensureGalleryTokens); null only if the token
       // table isn't reachable.
       galleryToken: (galleryTokens && galleryTokens[row.id]) || null,
+      // Delivery Hub row (written by Job Generator at Create/Update Job); null for a Job
+      // that has not been created/updated since the hub existed.
+      hub: (hubs && hubs[row.id]) || null,
     };
   });
 
@@ -74,6 +78,10 @@ export function buildAdminModel(rows, galleryTokens = {}) {
   });
 
   return { jobs };
+}
+
+function cents(c) {
+  return Number.isFinite(c) ? `$${(c / 100).toFixed(2)}` : '—';
 }
 
 function fmtTime(iso) {
@@ -109,6 +117,10 @@ const CSS = `
   .open-link:hover{text-decoration:underline;}
   .open-link.is-off{color:#c7c7cc;cursor:default;pointer-events:none;}  /* only if the token table isn't reachable */
   .copy-btn:disabled{opacity:.45;cursor:default;}
+  .sw{display:flex;align-items:center;gap:6px;font-size:12.5px;white-space:nowrap;cursor:pointer;}
+  .sw.err{color:#c0392b;}
+  .sw.is-wave{opacity:.55;cursor:not-allowed;}
+  .partial{font-size:12px;color:#b3541e;white-space:nowrap;}
   .btns{display:flex;flex-direction:column;gap:6px;align-items:flex-start;}
   @media (prefers-color-scheme: dark){
     body{background:#000;color:#f2f2f7;}
@@ -137,6 +149,23 @@ export function renderAdminPage(model, { origin = '' } = {}) {
     // client's post-payment download page, its own URL with a random token).
     const gPath = j.galleryToken ? galleryPath(j.address, j.galleryToken) : '';
     const gFull = gPath ? base + gPath : '';
+    // Delivery Hub column: the client-facing download page + Franky's two switches.
+    const hPath = j.hub ? hubPath(j.address, j.hub.token) : '';
+    const hFull = hPath ? base + hPath : '';
+    const hubCell = j.hub ? `<div class="btns">
+        <a class="open-link" href="${escapeHtml(hPath)}" target="_blank" rel="noopener">Open 打开</a>
+        <button class="copy-btn" type="button" data-link="${escapeHtml(hFull)}">Copy link 复制链接</button>
+      </div>` : '<span class="no">—</span>';
+    // Paid through Wave (fully paid, by the webhook): a greyed-out tick that can't be undone -- that
+    // alone tells Franky it was Wave, not his own e-Transfer tick. A PARTIAL Wave payment does not tick;
+    // it shows what was paid / is still owed.
+    const wavePaid = j.hub && j.hub.paid && j.hub.paidSource === 'wave';
+    const partial = j.hub && !j.hub.paid && j.hub.waveRemainingCents > 0
+      ? `<div class="partial">部分付款 Partial: 已付 ${cents(j.hub.wavePaidCents)}, 还差 ${cents(j.hub.waveRemainingCents)}</div>` : '';
+    const payCell = j.hub ? `<div class="btns">
+        <label class="sw${wavePaid ? ' is-wave' : ''}"${wavePaid ? ' title="Wave 信用卡付款 (自动, 不能取消)"' : ''}><input type="checkbox" data-hub="${escapeHtml(j.jobId)}" data-flag="paid"${j.hub.paid ? ' checked' : ''}${wavePaid ? ' disabled' : ''}> Paid 已付款</label>
+        <label class="sw"><input type="checkbox" data-hub="${escapeHtml(j.jobId)}" data-flag="unlocked"${j.hub.unlocked ? ' checked' : ''}> Unlock 直接解锁</label>${partial}
+      </div>` : '<span class="no">—</span>';
     return `
     <tr data-search="${escapeHtml((j.address || '') + ' ' + j.jobId + ' ' + j.agents.join(' ')).toLowerCase()}">
       <td><a class="addr" href="${path}" target="_blank" rel="noopener">${escapeHtml(j.address || '(no address yet)')}</a><div class="jobid">${escapeHtml(j.jobId)}</div></td>
@@ -153,6 +182,8 @@ export function renderAdminPage(model, { origin = '' } = {}) {
         <a class="open-link${gPath ? '' : ' is-off'}"${gPath ? ` href="${escapeHtml(gPath)}" target="_blank" rel="noopener"` : ' aria-disabled="true"'}>Open 打开</a>
         <button class="copy-btn" type="button" data-link="${escapeHtml(gFull)}"${gFull ? '' : ' disabled'}>Copy link 复制链接</button>
       </div></td>
+      <td>${hubCell}</td>
+      <td>${payCell}</td>
     </tr>`;
   }).join('');
 
@@ -167,7 +198,7 @@ export function renderAdminPage(model, { origin = '' } = {}) {
 </header>
 <main>
   ${jobs.length ? `<table>
-    <thead><tr><th>Address 地址</th><th>Agent 经纪</th><th>Photos 照片</th><th>Video 视频</th><th>Tour 全景</th><th>Updated 更新时间</th><th>All in One</th><th>Gallery</th></tr></thead>
+    <thead><tr><th>Address 地址</th><th>Agent 经纪</th><th>Photos 照片</th><th>Video 视频</th><th>Tour 全景</th><th>Updated 更新时间</th><th>All in One</th><th>Gallery</th><th>Delivery 交付页</th><th>Payment 付款</th></tr></thead>
     <tbody id="rows">${rows}</tbody>
   </table>` : '<div class="empty">No jobs yet 还没有任何 job</div>'}
 </main>
@@ -193,6 +224,25 @@ export function renderAdminPage(model, { origin = '' } = {}) {
       prompt('Copy link:', link);
     }
   }
+  // Payment switches: POST the flag with the same admin token this page was opened with.
+  var adminToken = new URLSearchParams(location.search).get('admin') || '';
+  document.querySelectorAll('input[data-hub]').forEach(function (box) {
+    box.addEventListener('change', function () {
+      var label = box.parentNode, body = {};
+      body[box.dataset.flag] = box.checked;
+      label.classList.remove('err');
+      fetch('/admin/hub/' + encodeURIComponent(box.dataset.hub), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: 'Bearer ' + adminToken },
+        body: JSON.stringify(body)
+      }).then(function (r) {
+        if (!r.ok) throw new Error(r.status);
+      }).catch(function () {
+        box.checked = !box.checked;  // did not save -- put the switch back
+        label.classList.add('err');
+      });
+    });
+  });
   document.querySelectorAll('.copy-btn').forEach(function (btn) {
     btn.addEventListener('click', function () { if (btn.dataset.link) copy(btn, btn.dataset.link); });
   });

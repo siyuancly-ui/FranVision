@@ -25,23 +25,13 @@
     if (isNaN(d)) return '—';
     return d.toLocaleString(undefined, { year: '2-digit', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   }
-  // keep the dev ?local=1 flag on every internally-generated link
-  function devSuffix() {
-    return /[?&]local=1\b/.test(window.location.search) ? '&local=1' : '';
-  }
-  function linkFor(id) {
-    return window.location.origin + window.location.pathname +
-      '?p=' + encodeURIComponent(id) + devSuffix();
-  }
+  // the agent link comes from the ONE shared definition (share-link.js), also used by
+  // the editor's own "Copy agent link" button
+  function linkFor(id) { return window.FSB.shareLink.agentLink(window.location, id); }
   function adminLinkFor(id, token) {
     return linkFor(id) + '&admin=' + encodeURIComponent(token);
   }
-  function copy(text) {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(function () { toast('Link copied 链接已复制'); },
-        function () { prompt('Copy link:', text); });
-    } else { prompt('Copy link:', text); }
-  }
+  var copy = window.FSB.util.copyText;
 
   function mount(root, token) {
     document.title = 'All Feature Sheets — FranVision';

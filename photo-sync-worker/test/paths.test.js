@@ -202,3 +202,13 @@ test('downloadSubdirFor: HDR Photos/MLS files -> flat; Callout nested under them
   assert.equal(downloadSubdirFor(it('Floorplan', 'Floorplan/a.jpg'), cfg), null);
   assert.equal(downloadSubdirFor(it('Callout', 'HDR Photos/Callout/a.jpg'), { downloadSetFolders: ['HDR Photos'] }), null);
 });
+
+test('isSyncCandidate: excludeFolders rejects any path with that folder as an ancestor (derived copies), keeps real Callout photos', () => {
+  const opts = { root: '', syncFolders: ['HDR Photos', 'Callout'], excludeFolders: ['MLS for download'] };
+  assert.equal(isSyncCandidate('/J/HDR Photos/Callout/x.jpg', opts), true);
+  assert.equal(isSyncCandidate('/J/MLS for download/Callout/x.jpg', opts), false);
+  assert.equal(isSyncCandidate('/J/MLS for download/x.jpg', opts), false);
+  assert.equal(isSyncCandidate('/J/deep/MLS for download/HDR Photos/x.jpg', opts), false);
+  // without excludeFolders the old (buggy) behaviour is what you get -- callers must pass it
+  assert.equal(isSyncCandidate('/J/MLS for download/Callout/x.jpg', { root: '', syncFolders: ['Callout'] }), true);
+});

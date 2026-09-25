@@ -2,15 +2,19 @@ import { createSupabase } from './supabase.js';
 import { buildDeliveryModel, renderDeliveryPage, renderNotFoundPage } from './render.js';
 import { buildAdminModel, renderAdminPage } from './admin.js';
 import {
-  buildGalleryModel, renderGalleryPage, renderGalleryNotFoundPage, renderGalleryPreparingPage, isGalleryToken, zipFilename,
+  isHubToken, isLineKey, buildHubModel, resolveTarget, isUnlocked, remainingCents, pdfSourceUrl, renderHubPage, renderClientView, renderInvoicePage, renderNotFoundHub, renderNotReadyHub,
+} from './hub.js';
+import { verifyWaveSignature, classifyWaveEvent } from './wave-webhook.js';
+import {
+  buildGalleryModel, renderGalleryPage, renderGalleryNotFoundPage, renderGalleryPreparingPage, isGalleryToken, zipFilename, attachmentDisposition,
 } from './gallery.js';
 
-function html(body, status = 200) {
-  return new Response(body, { status, headers: { 'content-type': 'text/html; charset=utf-8' } });
+function html(body, status = 200, extraHeaders = {}) {
+  return new Response(body, { status, headers: { 'content-type': 'text/html; charset=utf-8', ...extraHeaders } });
 }
 
-function json(obj, status = 200) {
-  return new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json' } });
+function json(obj, status = 200, extraHeaders = {}) {
+  return new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json', ...extraHeaders } });
 }
 
 function folderList(env, key) {
@@ -99,12 +103,148 @@ async function handleGallery(parts, env) {
     });
   }
 
+  // One photo's ORIGINAL as a download (the icon on each grid tile / in the lightbox).
+  // Only photos that are in the grid, same as the ZIPs.
+  if (parts.length === 5 && parts[3] === 'download') {
+    const model = buildGalleryModel(project, deliveryOpts(jobId, env), pendingCopies);
+    if (!model.originalPhotoIds.includes(parts[4])) return notFound();
+    const rec = ((project.data && project.data.photos) || []).find((p) => p.photoId === parts[4]);
+    const upstream = await callPhotoSync(env, `/render/${encodeURIComponent(jobId)}/${encodeURIComponent(parts[4])}`);
+    if (!upstream.ok) return new Response('Could not prepare this download. Please try again or contact Franky.', { status: upstream.status === 404 ? 404 : 502 });
+    const headers = {
+      'content-type': upstream.headers.get('content-type') || 'application/octet-stream',
+      'content-disposition': attachmentDisposition(rec && rec.filename),
+      'cache-control': 'no-store',
+    };
+    const len = upstream.headers.get('content-length');
+    if (len) headers['content-length'] = len;
+    return new Response(upstream.body, { headers });
+  }
+
   return notFound();
 }
 
 // GET /admin?admin=<ADMIN_TOKEN> -- read-only directory of every Job's
 // delivery page. Same query-param-token shape as Feature Sheet Builder's
 // own admin page (a bookmarkable-but-secret link, not a curl-only header).
+// GET /deliver/<address-slug>/<token>[/go/<KEY>] -- the Delivery Hub (hub.js). The slug is
+// cosmetic; a wrong token looks exactly like a missing Job. /go/<KEY> is the gate: it
+// re-checks paid/unlocked on every hit, so a locked page never carries any target link.
+async function handleHub(parts, env, url) {
+  const notFound = () => html(renderNotFoundHub(), 404);
+  if (!isHubToken(parts[2])) return notFound();
+  const sb = createSupabase(env);
+  const row = await sb.getHubByToken(parts[2]);
+  if (!row) return notFound();
+  const base = `/${parts.slice(0, 3).map(encodeURIComponent).join('/')}`;
+  const [project, galleryToken] = await Promise.all([sb.getProject(row.job_id), sb.getGalleryTokenForJob(row.job_id)]);
+
+  // ?for=client: the forwardable client view (hub.js#renderClientView); it also governs /go/<KEY> below.
+  const forClient = Boolean(url && url.searchParams.get('for') === 'client');
+
+  if (parts.length === 3 && forClient) {
+    return html(renderClientView(buildHubModel(row, project, galleryToken), { base }), 200, { 'cache-control': 'no-store' });
+  }
+
+  if (parts.length === 3) {
+    // ?pay=1 (from the invoice page's "Ready to pay") opens the pay dialog right away.
+    return html(renderHubPage(buildHubModel(row, project, galleryToken), { base, openKey: url && url.searchParams.get('pay') ? 'pay' : '' }), 200, { 'cache-control': 'no-store' });
+  }
+
+  // The invoice on its own page, and the PDF behind it. The PDF is fetched from Wave on every hit (Wave regenerates
+  // it, so a paid invoice shows as paid) and streamed to the visitor: inline for the page's viewer, as a download
+  // with ?download=1 -- Wave's own link only ever downloads. The source URL comes from the database (Wave's PDF host
+  // only, see hub.js#pdfSourceUrl), never from the request.
+  if (parts.length === 4 && parts[3] === 'invoice') {
+    if (!pdfSourceUrl(row)) return html(renderNotReadyHub(base), 404, { 'cache-control': 'no-store' });
+    return html(renderInvoicePage(buildHubModel(row, project, galleryToken), { base }), 200, { 'cache-control': 'no-store' });
+  }
+  if (parts.length === 4 && parts[3] === 'invoice.pdf') {
+    const src = pdfSourceUrl(row);
+    if (!src) return notFound();
+    const upstream = await fetch(src, { redirect: 'follow' });
+    const type = upstream.headers.get('content-type') || '';
+    if (!upstream.ok || !/pdf/i.test(type)) return html(renderNotReadyHub(base), 502, { 'cache-control': 'no-store' });
+    const address = (project && project.data && project.data.address) || '';
+    const name = `Invoice${address ? ' - ' + address : ''}.pdf`;
+    const download = url && url.searchParams.get('download');
+    return new Response(upstream.body, {
+      headers: {
+        'content-type': 'application/pdf',
+        'content-disposition': `${download ? 'attachment' : 'inline'}; ${attachmentDisposition(name).replace(/^attachment;\s*/, '')}`,
+        'cache-control': 'no-store',
+      },
+    });
+  }
+
+  // Polled by the locked page after the visitor opens the pay dialog, so it can unlock itself the
+  // moment the Job is paid / unlocked (no manual refresh), or refresh the owed amount after a partial payment.
+  // Carries nothing but those two values.
+  if (parts.length === 4 && parts[3] === 'status') {
+    return json({ unlocked: isUnlocked(row), paid: !!row.paid, remainingCents: remainingCents(row) }, 200, { 'cache-control': 'no-store' });
+  }
+
+  if (parts.length === 5 && parts[3] === 'go' && isLineKey(parts[4])) {
+    // Locked: back to the hub with the "please pay" dialog open (never a target).
+    if (!isUnlocked(row)) {
+      const model = buildHubModel(row, project, galleryToken);
+      return html(forClient ? renderClientView(model, { base }) : renderHubPage(model, { base, openKey: parts[4] }), 200, { 'cache-control': 'no-store' });
+    }
+    const target = resolveTarget(parts[4], row, project, galleryToken);
+    if (!target) return html(renderNotReadyHub(base), 503, { 'cache-control': 'no-store' });
+    return new Response(null, { status: 302, headers: { location: target, 'cache-control': 'no-store' } });
+  }
+
+  return notFound();
+}
+
+// POST /webhooks/wave -- Wave's invoice events (wave-webhook.js has the format + signature rules).
+// A fully paid invoice marks its Job paid (source 'wave'); a partial payment is only recorded. Always
+// answers 200 once the signature is valid (unmatched / ignored / duplicate included) -- Wave disables a
+// subscription after 10 consecutive failed deliveries, so only a bad signature or our own error fails.
+async function handleWaveWebhook(request, env) {
+  if (!env.WAVE_WEBHOOK_SECRET) return json({ error: 'webhook not configured' }, 503);
+  const rawBody = await request.text();
+  const ok = await verifyWaveSignature({ header: request.headers.get('x-wave-signature'), rawBody, secret: env.WAVE_WEBHOOK_SECRET });
+  if (!ok) return json({ error: 'bad signature' }, 401);
+
+  let evt;
+  try {
+    evt = JSON.parse(rawBody);
+  } catch {
+    return json({ error: 'invalid JSON' }, 400);
+  }
+  if (!evt || typeof evt.event_id !== 'string' || typeof evt.event_type !== 'string') return json({ error: 'not a Wave event' }, 400);
+
+  const sb = createSupabase(env);
+  const c = classifyWaveEvent(evt);
+  const fresh = await sb.insertWaveEvent({ event_id: evt.event_id, event_type: evt.event_type, invoice_id: c.invoiceId, business_id: evt.business_id, payload: evt });
+  if (!fresh) return json({ ok: true, duplicate: true });
+
+  let result = 'ignored';
+  let jobId = null;
+  if (c.kind !== 'ignore') {
+    const row = await sb.getHubByWaveInvoice(c.invoiceId);
+    if (!row) {
+      result = 'no matching job';
+    } else {
+      jobId = row.job_id;
+      if (c.kind === 'paid') {
+        await sb.patchHub(jobId, {
+          paid: true, paid_source: 'wave', paid_at: c.paidDate ? new Date(c.paidDate).toISOString() : new Date().toISOString(),
+          wave_paid_cents: c.paidCents, wave_remaining_cents: 0,
+        });
+        result = 'paid';
+      } else {
+        await sb.patchHub(jobId, { wave_paid_cents: c.paidCents, wave_remaining_cents: c.remainingCents });
+        result = 'partial';
+      }
+    }
+  }
+  await sb.updateWaveEvent(evt.event_id, { job_id: jobId, result });
+  return json({ ok: true, result });
+}
+
 async function handleAdmin(url, env) {
   const token = url.searchParams.get('admin') || '';
   if (!env.ADMIN_TOKEN || token !== env.ADMIN_TOKEN) return html('unauthorized', 401);
@@ -114,7 +254,8 @@ async function handleAdmin(url, env) {
   // Every Job gets its Gallery link automatically (like its All in One page,
   // which exists as soon as the Job does) -- no button to press.
   const galleryTokens = await sb.ensureGalleryTokens(rows.map((r) => r.id));
-  const model = buildAdminModel(rows, galleryTokens);
+  const hubs = await sb.listHubs();
+  const model = buildAdminModel(rows, galleryTokens, hubs);
   return html(renderAdminPage(model, { origin: url.origin }));
 }
 
@@ -141,6 +282,35 @@ async function handleAdminSetJob(jobId, request, env) {
   return json({ jobId, fields, result });
 }
 
+// POST /admin/hub/<jobId> (bearer ADMIN_TOKEN) {paid?: bool, unlocked?: bool} -- Franky's
+// "mark paid" / "deliver first" switches on the /admin directory.
+async function handleAdminSetHub(jobId, request, env) {
+  const auth = request.headers.get('authorization') || '';
+  if (!env.ADMIN_TOKEN || auth !== `Bearer ${env.ADMIN_TOKEN}`) return json({ error: 'unauthorized' }, 401);
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: 'invalid JSON body' }, 400);
+  }
+  const flags = {};
+  if (typeof body.paid === 'boolean') flags.paid = body.paid;
+  if (typeof body.unlocked === 'boolean') flags.unlocked = body.unlocked;
+  if (Object.keys(flags).length === 0) return json({ error: 'no recognized fields (paid, unlocked)' }, 400);
+  const sb = createSupabase(env);
+  // A Job Wave says is paid can't be un-paid from here (that's the point of the greyed-out tick);
+  // ticking Paid on it again is a harmless no-op that keeps the 'wave' source.
+  const existing = await sb.getHubByJobId(jobId);
+  if (existing && existing.paid && existing.paid_source === 'wave' && 'paid' in flags) {
+    if (flags.paid === false) return json({ error: 'paid through Wave -- cannot be unticked' }, 409);
+    delete flags.paid;
+    if (Object.keys(flags).length === 0) return json({ jobId, paid: true, unlocked: !!existing.unlocked });
+  }
+  const row = await sb.setHubFlags(jobId, flags);
+  if (!row) return json({ error: 'no delivery hub for this job yet (run Create/Update Job first)' }, 404);
+  return json({ jobId, paid: !!row.paid, unlocked: !!row.unlocked });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -148,6 +318,17 @@ export default {
 
     if (request.method === 'GET' && parts.length === 0) {
       return new Response('franvision-delivery-page: ok', { headers: { 'content-type': 'text/plain' } });
+    }
+
+    // Delivery Hub: /deliver/<address-slug>/<token>[/go/<KEY>] (3+ segments, so it never
+    // meets the 2-segment pretty URL below).
+    if (request.method === 'GET' && parts[0] === 'deliver' && parts.length >= 3) {
+      try {
+        return await handleHub(parts.map(decodeURIComponent), env, url);
+      } catch (err) {
+        console.log('hub_error', { error: String(err) });
+        return html(renderNotFoundHub(), 500);
+      }
     }
 
     // Standalone Gallery page: /delivery/<address-slug>/<token>[/...] -- 3+
@@ -204,6 +385,24 @@ export default {
         return await handleAdminSetJob(decodeURIComponent(parts[2]), request, env);
       } catch (err) {
         console.log('admin_set_job_error', { jobId: parts[2], error: String(err) });
+        return json({ error: String(err) }, 500);
+      }
+    }
+
+    if (request.method === 'POST' && parts[0] === 'webhooks' && parts[1] === 'wave' && parts.length === 2) {
+      try {
+        return await handleWaveWebhook(request, env);
+      } catch (err) {
+        console.log('wave_webhook_error', { error: String(err) });
+        return json({ error: 'internal error' }, 500);   // non-2xx -> Wave retries
+      }
+    }
+
+    if (request.method === 'POST' && parts[0] === 'admin' && parts[1] === 'hub' && parts[2]) {
+      try {
+        return await handleAdminSetHub(decodeURIComponent(parts[2]), request, env);
+      } catch (err) {
+        console.log('admin_set_hub_error', { jobId: parts[2], error: String(err) });
         return json({ error: String(err) }, 500);
       }
     }

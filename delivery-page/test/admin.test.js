@@ -29,10 +29,10 @@ test('buildAdminModel: pulls address/agents/photoCount/hasVideo/hasTour off each
   assert.equal(model.jobs.length, 2);
   assert.deepEqual(model.jobs[0], {
     jobId: 'FVS-1', address: '48 Red Ash Dr', agents: ['Jane Doe', 'John Roe'],
-    photoCount: 2, hasVideo: true, hasTour: true, updatedAt: '2026-09-17T12:00:00Z', galleryToken: null,
+    photoCount: 2, hasVideo: true, hasTour: true, updatedAt: '2026-09-17T12:00:00Z', galleryToken: null, hub: null,
   });
   assert.deepEqual(model.jobs[1], {
-    jobId: 'FVS-2', address: null, agents: [], photoCount: 0, hasVideo: false, hasTour: false, updatedAt: '2026-09-17T12:00:00Z', galleryToken: null,
+    jobId: 'FVS-2', address: null, agents: [], photoCount: 0, hasVideo: false, hasTour: false, updatedAt: '2026-09-17T12:00:00Z', galleryToken: null, hub: null,
   });
 });
 
@@ -128,4 +128,13 @@ test('renderAdminPage: empty state when there are no jobs at all', () => {
   const out = renderAdminPage(buildAdminModel([]));
   assert.ok(out.includes('No jobs yet'));
   assert.ok(out.includes('0 jobs'));
+});
+
+test('buildAdminModel: photoCount does not count derived "MLS for download" duplicates', () => {
+  const model = buildAdminModel([row('FVS-1', { data: { photos: [
+    { status: 'ok', dropboxPath: '/J/HDR Photos/a.jpg' },
+    { status: 'ok', dropboxPath: '/J/HDR Photos/Callout/c.jpg' },
+    { status: 'ok', dropboxPath: '/J/MLS for download/Callout/c.jpg' },   // the duplicate
+  ] } })]);
+  assert.equal(model.jobs[0].photoCount, 2);
 });

@@ -461,3 +461,52 @@ test('the Video line carries the 24-hour note -- Chinese in the Chinese email, E
     assert.ok(!out.includes('https://dropbox.com/v'));
   }
 });
+
+// ---- Delivery Hub (2026-09-25): one link under the "-----" line instead of one link per deliverable ----
+
+test('buildHubLink: /deliver/<address-slug>/<token>; no token -> null; no address -> /delivery/', () => {
+  assert.strictEqual(deliveryEmail.buildHubLink('1 Main St, Toronto', 'a'.repeat(32)), 'https://realgta.ca/deliver/1-main-st-toronto/' + 'a'.repeat(32));
+  assert.strictEqual(deliveryEmail.buildHubLink('', 'abc'), 'https://realgta.ca/deliver/delivery/abc');
+  assert.strictEqual(deliveryEmail.buildHubLink('1 Main St', null), null);
+});
+
+test('generateDeliveryEmails: with a hub the lower half is the one hub link; the hub gets the same button list the email used to print', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'jg-hub-'));
+  const base = { jobId: 'FVS-20260925-001', jobFolderPath: tmp, folderName: 'x', clientName: 'C', address: '1 Main St', order: { addons: { floor_plan: true, three_d_tour: true } }, componentFolders: ['Home Report'], totalCents: 11300, preTaxCents: 10000, waveViewUrl: 'https://next.waveapps.com/pay/abc', wavePdfUrl: 'https://accounting.waveapps.com/x.pdf', waveInvoiceId: 'INV-GQL-ID' };
+  // fake Dropbox client so createSharedLink answers without the network
+  const client = { sharingCreateSharedLinkWithSettings: async ({ path: p }) => ({ result: { url: 'https://www.dropbox.com/scl/fo' + p.replace(/\W+/g, '-') } }), sharingListSharedLinks: async () => ({ result: { links: [] } }) };
+  const read = (f) => fs.readFileSync(path.join(tmp, f), 'utf8');
+
+  let saved = null;
+  const res = await deliveryEmail.generateDeliveryEmails({ ...base, client, saveDeliveryHub: async (args) => { saved = args; return 'b'.repeat(32); } });
+  assert.strictEqual(res.hubLink, true);
+  assert.strictEqual(saved.jobId, 'FVS-20260925-001');
+  assert.strictEqual(saved.totalCents, 11300);
+  assert.strictEqual(saved.waveViewUrl, 'https://next.waveapps.com/pay/abc');
+  assert.strictEqual(saved.wavePdfUrl, 'https://accounting.waveapps.com/x.pdf');
+  assert.strictEqual(saved.waveInvoiceId, 'INV-GQL-ID');
+  assert.strictEqual(saved.preTaxCents, 10000);
+  assert.strictEqual(saved.clientName, 'C');
+  assert.deepStrictEqual(saved.lines.map((l) => l.key), ['HDR', 'MLS', 'FLOORPLAN', 'THREE_D', 'LOCAL_REPORT', 'HOME_REPORT']);   // = getDeliverableLines()'s included keys, in order
+  assert.ok(!('url' in saved.lines.find((l) => l.key === 'THREE_D')), 'THREE_D carries no Dropbox link');
+  for (const f of [deliveryEmail.OUTPUT_FILENAME_EN, deliveryEmail.OUTPUT_FILENAME_ZH]) {
+    const text = read(f);
+    assert.ok(text.includes('https://realgta.ca/deliver/1-main-st/' + 'b'.repeat(32)), f);
+    assert.ok(!/dropbox\.com/.test(text), 'no raw Dropbox link once the hub exists: ' + f);
+    assert.ok(!/High-Resolution Photos:|MLS Photos:|高清照片：|MLS 照片：/.test(text), 'per-line blocks are gone: ' + f);
+    assert.ok(text.includes('https://realgta.ca/1-main-st/FVS-20260925-001'), 'All in One link stays');
+  }
+});
+
+test('generateDeliveryEmails: hub unavailable (failure / no callback / draft) -> the old per-deliverable email, never throws', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'jg-hub2-'));
+  const base = { jobId: 'FVS-20260925-001', jobFolderPath: tmp, folderName: 'x', clientName: 'C', address: '1 Main St', order: { addons: {} }, componentFolders: [], totalCents: 1000, preTaxCents: 885 };
+  const en = () => fs.readFileSync(path.join(tmp, deliveryEmail.OUTPUT_FILENAME_EN), 'utf8');
+  const failed = await deliveryEmail.generateDeliveryEmails({ ...base, saveDeliveryHub: async () => { throw new Error('down'); } });
+  assert.strictEqual(failed.hubLink, false);
+  assert.ok(en().includes('High-Resolution Photos:') && !en().includes('Download page'));
+  assert.strictEqual((await deliveryEmail.generateDeliveryEmails({ ...base })).hubLink, false);
+  let called = false;
+  await deliveryEmail.generateDeliveryEmails({ ...base, jobId: null, saveDeliveryHub: async () => { called = true; return 't'; } });
+  assert.strictEqual(called, false, 'no hub without a real Job ID (drafts)');
+});

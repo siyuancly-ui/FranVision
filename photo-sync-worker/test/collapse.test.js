@@ -92,3 +92,32 @@ test('chunk', () => {
   assert.deepEqual(chunk([1, 2, 3, 4, 5], 2), [[1, 2], [3, 4], [5]]);
   assert.deepEqual(chunk([], 3), []);
 });
+
+// ---- 2026-09-24: derived delivery copies are never synced back as photos -------------------
+// Bug: `MLS for download/Callout/x.jpg` (the Callout delivery copy, added 2026-09-23) matched the
+// `Callout` sync folder (matched at ANY depth) and was synced a SECOND time as a Callout photo, so
+// every Callout photo appeared twice on the delivery page and the Gallery.
+test('classifyForSync: nothing under the derived-copy folder is synced, at any depth -- including MLS for download/Callout/', () => {
+  const cfg = { root: '', syncFolders: ['MLS', 'HDR Photos', 'Callout'], excludeFolders: ['MLS for download'] };
+  const f = (p) => ({ '.tag': 'file', path_display: p, id: 'id:' + p, rev: 'r1' });
+  const out = classifyForSync([
+    f('/FVS-1 job/HDR Photos/a.jpg'),                        // real photo
+    f('/FVS-1 job/HDR Photos/Callout/aerial.jpg'),           // real Callout photo
+    f('/FVS-1 job/MLS for download/a.jpg'),                  // derived copy (never matched a sync folder anyway)
+    f('/FVS-1 job/MLS for download/Callout/aerial.jpg'),     // derived Callout copy  <-- used to be synced as a duplicate
+    f('/FVS-1 job/mls for download/CALLOUT/aerial2.jpg'),    // case-insensitive
+  ], cfg);
+  assert.deepEqual(out.map((o) => o.path).sort(), ['/FVS-1 job/HDR Photos/Callout/aerial.jpg', '/FVS-1 job/HDR Photos/a.jpg']);
+  // deletes of a derived copy are ignored too (they must not mark the real photo pending)
+  const del = classifyForSync([{ '.tag': 'deleted', path_display: '/FVS-1 job/MLS for download/Callout/aerial.jpg' }], cfg);
+  assert.deepEqual(del, []);
+});
+
+test('classifyForSync: with the real worker config (readConfig) the derived-copy folder is excluded by default', async () => {
+  const { readConfig } = await import('../src/sync.js');
+  const cfg = readConfig({ SYNC_FOLDERS: 'HDR Photos,Callout' });
+  assert.deepEqual(cfg.excludeFolders, ['MLS for download']);
+  const out = classifyForSync([{ '.tag': 'file', path_display: '/J/MLS for download/Callout/x.jpg' }], cfg);
+  assert.deepEqual(out, []);
+  assert.deepEqual(readConfig({ DOWNLOAD_SUBFOLDER: 'Delivery Copies' }).excludeFolders, ['Delivery Copies']);
+});

@@ -97,8 +97,17 @@
     });
   }
 
+  // Copy `text` to the clipboard and say so; where the browser refuses (older
+  // Safari, insecure context) fall back to a prompt() the user can copy from.
+  function copyText(text, doneMsg) {
+    var done = function () { toast(doneMsg || 'Link copied 链接已复制'); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () { prompt('Copy link:', text); });
+    } else { prompt('Copy link:', text); }
+  }
+
   window.FSB.util = {
-    el: el, debounce: debounce, get: get, escapeHtml: escapeHtml,
+    copyText: copyText, el: el, debounce: debounce, get: get, escapeHtml: escapeHtml,
     formatDateTime: formatDateTime, toast: toast, confirmDialog: confirmDialog,
   };
 })();

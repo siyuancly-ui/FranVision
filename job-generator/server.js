@@ -1061,7 +1061,7 @@ async function handleApi(req, res, urlPath) {
       // simply nothing attempted) is what gets carried into job.json -- see previousWave above for why
       // "carry forward on failure/skip" matters (never silently lose a previously-created invoice's id).
       const waveJson = waveResult && waveResult.success && waveResult.invoice ? {
-        invoiceId: waveResult.invoice.id, viewUrl: waveResult.invoice.viewUrl,
+        invoiceId: waveResult.invoice.id, viewUrl: waveResult.invoice.viewUrl, pdfUrl: waveResult.invoice.pdfUrl,
         invoiceNumber: waveResult.invoice.invoiceNumber, status: waveResult.invoice.status, updatedAt: nowIso,
       } : previousWave;
 
@@ -1096,7 +1096,10 @@ async function handleApi(req, res, urlPath) {
             jobId, jobFolderPath, folderName, clientName: body.clientName, address: body.address,
             order, componentFolders, totalCents: price.totalCents, preTaxCents: price.finalSubtotalCents,
             waveViewUrl: waveJson && waveJson.viewUrl,
+            wavePdfUrl: waveJson && waveJson.pdfUrl,
+            waveInvoiceId: waveJson && waveJson.invoiceId,
             getGalleryToken: jobBackend.isConfigured() ? (id) => jobBackend.getGalleryToken(id) : null,
+            saveDeliveryHub: jobBackend.isConfigured() ? (args) => jobBackend.saveDeliveryHub(args) : null,
           });
         } catch (err) {
           deliveryEmailResult = { attempted: true, success: false, error: 'Unexpected delivery-email failure: ' + err.message };

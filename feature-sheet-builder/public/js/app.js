@@ -396,6 +396,30 @@
   // ================================================================
   //  UI
   // ================================================================
+  // Copy the agent link for the sheet that is open. The link only needs the sheet's id, but the
+  // agent will see the SAVED sheet -- so any unsaved change is saved first, and a brand-new sheet
+  // that has never been saved has no link yet. The common case (nothing pending) copies right away,
+  // inside the click, which is what browsers require for clipboard access.
+  function copyAgentLink(btn) {
+    var link = function () { return window.FSB.shareLink.agentLink(window.location, app.projectId); };
+    if (app.projectId && !app._dirty && !app._saving) { util.copyText(link()); return; }
+
+    btn.disabled = true;
+    var waitIdle = function (tries) {            // a save may already be running
+      return new Promise(function (resolve) {
+        (function poll(n) { if (!app._saving || n <= 0) resolve(); else setTimeout(function () { poll(n - 1); }, 100); })(tries);
+      });
+    };
+    waitIdle(50).then(function () { return (app._dirty || !app.projectId) ? app.save() : null; })
+      .then(function () { return waitIdle(50); })
+      .then(function () {
+        if (!app.projectId) { util.toast('Nothing saved yet — fill in the sheet first 还没有内容,请先填写', 'error'); return; }
+        if (app._dirty) { util.toast('Save failed — link not copied 保存失败,未复制链接', 'error'); return; }
+        util.copyText(link());
+      })
+      .then(function () { btn.disabled = false; }, function () { btn.disabled = false; });
+  }
+
   function buildChrome() {
     var rootApp = document.getElementById('fsb-app');
     rootApp.innerHTML = '';
@@ -422,6 +446,11 @@
         // print-ready PDF export -- admin only
         app.adminToken
           ? el('button', { class: 'fsb-btn', id: 'fsb-btn-export', text: 'Export PDF 导出' })
+          : null,
+        // one-click copy of the link Franky sends to the agent, so there's no need to go
+        // back to the admin list for it -- admin only
+        app.adminToken
+          ? el('button', { class: 'fsb-btn fsb-btn--info', id: 'fsb-btn-copylink', text: 'Copy agent link 复制经纪链接' })
           : null,
         el('button', { class: 'fsb-btn fsb-btn--save', id: 'fsb-btn-save', text: 'Save 保存' }),
         el('button', { class: 'fsb-btn fsb-btn--primary', id: 'fsb-btn-confirm', text: 'Confirm & Submit 确认提交' }),
@@ -457,6 +486,8 @@
       var b = this;
       window.FSB.exportPdf.run(app).catch(function () {}).then(function () { b.disabled = false; });
     });
+    var copyLinkBtn = document.getElementById('fsb-btn-copylink');
+    if (copyLinkBtn) copyLinkBtn.addEventListener('click', function () { copyAgentLink(this); });
     document.getElementById('fsb-btn-save').addEventListener('click', function () { app.save({ force: true }).then(function () { util.toast('Saved 已保存'); }); });
     document.getElementById('fsb-btn-confirm').addEventListener('click', function () {
       if (app.isReadOnly()) app.unconfirm(); else app.confirmDesign();
