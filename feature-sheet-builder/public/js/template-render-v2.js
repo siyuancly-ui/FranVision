@@ -677,13 +677,18 @@
       var LD = spec.page1.left.desc;
       if (LD) {
         // 华邸 themes: gold ornamental frame behind the description (the text rect is already
-        // inset to the frame's clear middle by compose()). A plain background layer, drawn
-        // before the text so the copy sits on top.
+        // inset to the frame's clear middle by compose()). A background layer, drawn before
+        // the text so the copy sits on top.
         if (LD.frame) {
           var frameEl = el('div', { class: 'fsb-desc-frame' });
           var fr = LD.frame.rect;
+          // The artwork is a MASK filled with the theme's own frame colour (same technique as the page-2
+          // flourish), so it is exactly the hex the other frames use -- not the PNG's baked-in gold.
+          var frameColor = tokenColor(theme, LD.frame.token || 'goldLine');
           frameEl.style.cssText = 'position:absolute;left:' + (fr[0] * pw) + 'px;top:' + (fr[1] * ph) + 'px;width:' + (fr[2] * pw) +
-            'px;height:' + (fr[3] * ph) + 'px;background:url(' + LD.frame.asset + ') center / 100% 100% no-repeat;pointer-events:none;';
+            'px;height:' + (fr[3] * ph) + 'px;background-color:' + frameColor +
+            ';-webkit-mask:url(' + LD.frame.asset + ') center / 100% 100% no-repeat' +
+            ';mask:url(' + LD.frame.asset + ') center / 100% 100% no-repeat;pointer-events:none;';
           page.appendChild(frameEl);
         }
         var descEl = buildText(LD.rect, pw, ph, scale, {

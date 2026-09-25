@@ -130,7 +130,7 @@
         var descBox = leftDef.desc.rect, descFrameSpec = null, textRect = descBox;
         if (theme.descFrame && M.descFrame) {
           var fi = M.descFrame.inset;
-          descFrameSpec = { rect: descBox, asset: M.descFrame.asset };
+          descFrameSpec = { rect: descBox, asset: M.descFrame.asset, token: M.descFrame.token };
           textRect = [descBox[0] + descBox[2] * fi.x, descBox[1] + descBox[3] * fi.y,
             descBox[2] * (1 - 2 * fi.x), descBox[3] * (1 - 2 * fi.y)];
         }

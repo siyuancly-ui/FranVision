@@ -207,8 +207,15 @@
   //  top/bottom). The artwork is 2:1 and the description box is ~2.02:1, so
   //  it needs no distortion to fit.
   // ================================================================
+  //
+  //  COLOUR: the artwork is used as a MASK (its shape only) and filled with the theme token below,
+  //  exactly like the page-2 ornament -- so the frame is the SAME hex as the theme's other frames:
+  //  `goldLine` is what the page-2 panel frames and the page-1 agent-card frame are drawn in
+  //  (navy/burgundy/emerald #a97c4f, marble #b39a56). Change `token` to re-colour it (e.g. 'gold' =
+  //  the page-2 flourish, 'goldSoft' = the page-1 hero keyline).
   var descFrame = {
-    asset: '/template-assets/fsb-v2/assets/desc-frame-gold.png',
+    asset: '/template-assets/fsb-v2/assets/desc-frame.png',
+    token: 'goldLine',
     inset: { x: 0.05, y: 0.15 },
   };
 

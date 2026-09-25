@@ -311,7 +311,7 @@ test('descFrame: in a 华邸 theme with a description, the frame fills the descr
     const s = REG.compose(withDescription(id));
     const d = s.page1.left.desc;
     assert.ok(d && d.frame, id + ': frame present');
-    assert.equal(d.frame.asset, '/template-assets/fsb-v2/assets/desc-frame-gold.png');
+    assert.equal(d.frame.asset, '/template-assets/fsb-v2/assets/desc-frame.png');
     assert.deepEqual(d.frame.rect, MOD.leftColumn.stagger5.desc.rect, id + ': frame = the original description box');
     const [fx, fy, fw, fh] = d.frame.rect, [tx, ty, tw, th] = d.rect;
     const { x, y } = MOD.descFrame.inset;
@@ -329,7 +329,7 @@ test('descFrame: NOT drawn without a description (6-photo collage), and NOT in t
   });
   ['estate-navy', 'estate-burgundy', 'estate-emerald', 'estate-charcoal'].forEach((id) => {
     const s = REG.compose(withDescription(id));
-    assert.equal(JSON.stringify(s).includes('desc-frame-gold'), false, id + ': no frame anywhere in its render spec');
+    assert.equal(JSON.stringify(s).includes('desc-frame.png'), false, id + ': no frame anywhere in its render spec');
   });
 });
 
@@ -346,8 +346,24 @@ test('descFrame: the inset keeps the text clear of the artwork (measured on the 
   assert.ok(x < 0.12 && y < 0.25, 'but not so big that the text area collapses');
 });
 
+test('descFrame colour: the frame uses the SAME theme token as the theme\'s other frames (page-2 panel frames + page-1 agent card), so it is the identical hex', () => {
+  const token = MOD.descFrame.token;
+  HUADI.forEach((id) => {
+    assert.ok(THEMES[id].tokens[token], id + ' defines ' + token);
+    assert.equal(REG.compose(withDescription(id)).page1.left.desc.frame.token, token);
+  });
+  // the renderer draws the page-2 panel frames with that very token (not a hard-coded colour)
+  const src = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'js', 'template-render-v2.js'), 'utf8');
+  const panel = /fsb-panel-border[\s\S]{0,400}?tokenColor\(theme, '([A-Za-z]+)'\)/.exec(src);
+  assert.ok(panel, 'found the panel-border colour in the renderer');
+  assert.equal(panel[1], token, 'panel frames and the description frame share one colour token');
+  // ...and the description frame itself is filled from the theme (a mask), never from a baked-in colour
+  assert.match(src, /var frameColor = tokenColor\(theme, LD\.frame\.token/);
+  assert.match(src, /background-color:' \+ frameColor/);
+});
+
 test('descFrame: the artwork ships in the template assets (a 2:1 RGBA PNG)', () => {
-  const file = path.join(__dirname, 'assets', 'desc-frame-gold.png');
+  const file = path.join(__dirname, 'assets', 'desc-frame.png');   // the SHAPE mask (the supplied artwork, cleaned, lives in _assets-src/)
   const buf = fs.readFileSync(file);
   assert.equal(buf.slice(1, 4).toString(), 'PNG');
   const w = buf.readUInt32BE(16), h = buf.readUInt32BE(20), colorType = buf[25];
