@@ -58,6 +58,18 @@ function safeUrl(u) {
   return /^https?:\/\/\S+$/i.test(first) ? first : '';
 }
 
+// The invoice PDF we are willing to fetch on the visitor's behalf: https, and only from Wave's own PDF host
+// (the value comes from the database, never from the request, and this keeps it from ever being an open fetch).
+export function pdfSourceUrl(row) {
+  const u = safeUrl(row && row.wave_pdf_url);
+  try {
+    const url = new URL(u);
+    return url.protocol === 'https:' && url.hostname === 'accounting.waveapps.com' ? u : '';
+  } catch {
+    return '';
+  }
+}
+
 export function isUnlocked(row) {
   return Boolean(row && (row.paid || row.unlocked));
 }
@@ -92,6 +104,7 @@ export function buildHubModel(row, project, galleryToken) {
     payUrl: safeUrl(row.wave_view_url),
     // The invoice on its own (PDF export, no payment page); falls back to Wave's combined page.
     invoiceUrl: safeUrl(row.wave_pdf_url) || safeUrl(row.wave_view_url),
+    hasInvoicePdf: Boolean(pdfSourceUrl(row)),
     totalCents: Number.isFinite(row.total_cents) ? row.total_cents : null,
     preTaxCents: Number.isFinite(row.pretax_cents) ? row.pretax_cents : null,
     remainingCents: remainingCents(row),
@@ -125,6 +138,36 @@ function preTaxMoney(cents) {
 const LOCK_ICON = '<svg class="hub-ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><rect x="5" y="10.5" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 const ARROW_ICON = '<svg class="hub-ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M12 3.5v11m0 0-4.4-4.4M12 14.5l4.4-4.4M4 15.5V19a1.5 1.5 0 0 0 1.5 1.5h13A1.5 1.5 0 0 0 20 19v-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const EYE_ICON = '<svg class="hub-ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="12" r="2.8" fill="none" stroke="currentColor" stroke-width="2"/></svg>';
+
+// The invoice on its own page: the PDF shown inline (served through our Worker, see index.js) with a Download
+// button, and -- while unpaid -- a way back to the payment choices.
+export function renderInvoicePage(model, { base }) {
+  const title = model.address ? `Invoice — ${model.address}` : 'Invoice';
+  const body = `
+<main class="inv">
+  <div class="inv-bar">
+    <a class="inv-back" href="${escapeHtml(base)}">&larr; Back 返回</a>
+    <span class="inv-title">Invoice 发票</span>
+    <a class="hub-cta inv-dl" href="${escapeHtml(base)}/invoice.pdf?download=1">Download PDF 下载</a>
+  </div>
+  <iframe class="inv-frame" title="Invoice" src="${escapeHtml(base)}/invoice.pdf#view=FitH"></iframe>
+  <p class="inv-fallback">Can't see the invoice? <a href="${escapeHtml(base)}/invoice.pdf?download=1">Download it 下载发票</a></p>
+  ${model.paid ? '' : `<div class="cta-row inv-pay"><a class="hub-cta" href="${escapeHtml(base)}?pay=1">Ready to pay 去付款</a></div>`}
+</main>`;
+  return page(title, body, { bare: true, extraHead: HUB_HEAD, extraCss: HUB_CSS + INVOICE_CSS });
+}
+
+const INVOICE_CSS = `
+  .inv{max-width:860px;margin:0 auto;padding:18px 14px 30px;font-family:Montserrat,-apple-system,"system-ui","Segoe UI",Roboto,sans-serif;color:#3a3a40;}
+  .inv-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:12px;}
+  .inv-back{color:#467ab5;text-decoration:none;font-size:14px;}
+  .inv-title{flex:1;font-family:Fraunces,Georgia,serif;font-size:20px;color:#2b2b30;}
+  .inv-dl{min-width:0;padding:10px 18px;font-size:15px;}
+  .inv-frame{display:block;width:100%;height:82vh;min-height:520px;border:1px solid #d5d5db;border-radius:10px;background:#fff;}
+  .inv-fallback{text-align:center;font-size:12.5px;color:#7a766b;margin:10px 0 0;}
+  .inv-fallback a{color:#467ab5;}
+  .inv-pay{justify-content:center;margin-top:18px;}
+`;
 
 export function renderNotFoundHub() {
   return page('Delivery', `
@@ -168,8 +211,10 @@ export function renderHubPage(model, { base, openKey = '' }) {
     ? `<a class="hub-pay" id="hubCard" href="${escapeHtml(model.payUrl)}" target="_blank" rel="noopener">Pay by credit card <span>信用卡</span></a>`
     : '';
   // The invoice can be read on its own first (PDF), whichever way the client then pays.
-  const viewBtn = model.invoiceUrl
-    ? `<a class="hub-pay is-ghost" href="${escapeHtml(model.invoiceUrl)}" target="_blank" rel="noopener">View invoice <span>查看发票</span></a>`
+  // Our own invoice page (shows the PDF, with a Download button) when we hold Wave's PDF link; otherwise Wave's page.
+  const viewHref = model.hasInvoicePdf ? `${base}/invoice` : model.invoiceUrl;
+  const viewBtn = viewHref
+    ? `<a class="hub-pay is-ghost" href="${escapeHtml(viewHref)}" target="_blank" rel="noopener">View invoice <span>查看发票</span></a>`
     : '';
   const dialog = model.paid ? '' : `
 <div class="hub-modal" id="hubModal" hidden role="dialog" aria-modal="true" aria-labelledby="hubModalTitle">

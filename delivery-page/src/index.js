@@ -2,7 +2,7 @@ import { createSupabase } from './supabase.js';
 import { buildDeliveryModel, renderDeliveryPage, renderNotFoundPage } from './render.js';
 import { buildAdminModel, renderAdminPage } from './admin.js';
 import {
-  isHubToken, isLineKey, buildHubModel, resolveTarget, isUnlocked, remainingCents, renderHubPage, renderNotFoundHub, renderNotReadyHub,
+  isHubToken, isLineKey, buildHubModel, resolveTarget, isUnlocked, remainingCents, pdfSourceUrl, renderHubPage, renderInvoicePage, renderNotFoundHub, renderNotReadyHub,
 } from './hub.js';
 import { verifyWaveSignature, classifyWaveEvent } from './wave-webhook.js';
 import {
@@ -130,7 +130,7 @@ async function handleGallery(parts, env) {
 // GET /deliver/<address-slug>/<token>[/go/<KEY>] -- the Delivery Hub (hub.js). The slug is
 // cosmetic; a wrong token looks exactly like a missing Job. /go/<KEY> is the gate: it
 // re-checks paid/unlocked on every hit, so a locked page never carries any target link.
-async function handleHub(parts, env) {
+async function handleHub(parts, env, url) {
   const notFound = () => html(renderNotFoundHub(), 404);
   if (!isHubToken(parts[2])) return notFound();
   const sb = createSupabase(env);
@@ -140,7 +140,34 @@ async function handleHub(parts, env) {
   const [project, galleryToken] = await Promise.all([sb.getProject(row.job_id), sb.getGalleryTokenForJob(row.job_id)]);
 
   if (parts.length === 3) {
-    return html(renderHubPage(buildHubModel(row, project, galleryToken), { base }), 200, { 'cache-control': 'no-store' });
+    // ?pay=1 (from the invoice page's "Ready to pay") opens the pay dialog right away.
+    return html(renderHubPage(buildHubModel(row, project, galleryToken), { base, openKey: url && url.searchParams.get('pay') ? 'pay' : '' }), 200, { 'cache-control': 'no-store' });
+  }
+
+  // The invoice on its own page, and the PDF behind it. The PDF is fetched from Wave on every hit (Wave regenerates
+  // it, so a paid invoice shows as paid) and streamed to the visitor: inline for the page's viewer, as a download
+  // with ?download=1 -- Wave's own link only ever downloads. The source URL comes from the database (Wave's PDF host
+  // only, see hub.js#pdfSourceUrl), never from the request.
+  if (parts.length === 4 && parts[3] === 'invoice') {
+    if (!pdfSourceUrl(row)) return html(renderNotReadyHub(base), 404, { 'cache-control': 'no-store' });
+    return html(renderInvoicePage(buildHubModel(row, project, galleryToken), { base }), 200, { 'cache-control': 'no-store' });
+  }
+  if (parts.length === 4 && parts[3] === 'invoice.pdf') {
+    const src = pdfSourceUrl(row);
+    if (!src) return notFound();
+    const upstream = await fetch(src, { redirect: 'follow' });
+    const type = upstream.headers.get('content-type') || '';
+    if (!upstream.ok || !/pdf/i.test(type)) return html(renderNotReadyHub(base), 502, { 'cache-control': 'no-store' });
+    const address = (project && project.data && project.data.address) || '';
+    const name = `Invoice${address ? ' - ' + address : ''}.pdf`;
+    const download = url && url.searchParams.get('download');
+    return new Response(upstream.body, {
+      headers: {
+        'content-type': 'application/pdf',
+        'content-disposition': `${download ? 'attachment' : 'inline'}; ${attachmentDisposition(name).replace(/^attachment;\s*/, '')}`,
+        'cache-control': 'no-store',
+      },
+    });
   }
 
   // Polled by the locked page after the visitor opens the pay dialog, so it can unlock itself the
@@ -287,7 +314,7 @@ export default {
     // meets the 2-segment pretty URL below).
     if (request.method === 'GET' && parts[0] === 'deliver' && parts.length >= 3) {
       try {
-        return await handleHub(parts.map(decodeURIComponent), env);
+        return await handleHub(parts.map(decodeURIComponent), env, url);
       } catch (err) {
         console.log('hub_error', { error: String(err) });
         return html(renderNotFoundHub(), 500);
