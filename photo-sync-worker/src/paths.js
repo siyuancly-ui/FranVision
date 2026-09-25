@@ -117,9 +117,16 @@ export function matchAncestorFolder(ancestors, list) {
 
 // Does this file path belong to a folder we mirror (at any depth), and is
 // it a web image? `syncFolders` is the already-parsed list (parseFolderList).
-export function isSyncCandidate(pathDisplay, { root, syncFolders }) {
+// `excludeFolders` = folders THIS WORKER WRITES INTO (the `MLS for download` delivery copies).
+// Anything under one of them, at ANY depth, is a derived copy and must never be synced back as a
+// photo. Matching by any ancestor matters: SYNC_FOLDERS is matched at any depth too, so
+// `MLS for download/Callout/x.jpg` (the Callout delivery copy, added 2026-09-23) matched `Callout`
+// and was synced a second time -- every Callout photo appeared twice on the delivery page and the
+// Gallery. The old guard only worked while the copies sat directly under `MLS for download/`.
+export function isSyncCandidate(pathDisplay, { root, syncFolders, excludeFolders }) {
   const parsed = parseJobPath(pathDisplay, root);
   if (!parsed || parsed.depth < 3) return false;
+  if (excludeFolders && excludeFolders.length && parsed.ancestors.some((a) => folderMatches(a, excludeFolders))) return false;
   if (!matchAncestorFolder(parsed.ancestors, syncFolders)) return false;
   return isWebImage(parsed.filename);
 }

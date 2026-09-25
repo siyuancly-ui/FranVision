@@ -44,10 +44,22 @@ function photoUrl(supabaseUrl, jobId, photoId, variant) {
 
 // Photos in one of `folders` (case-insensitive), synced ok, thumbnail ready,
 // sorted by filename for a stable/predictable order.
+// photo-sync-worker writes derived delivery copies into this folder of the job ("MLS for download/",
+// "MLS for download/Callout/"). They are NOT photos: a record whose file lives under it is a stale
+// duplicate (photo-sync used to sync `MLS for download/Callout/x.jpg` back as a second Callout photo,
+// fixed 2026-09-24; records created before the fix are still in the database) and is ignored here, so
+// already-affected Jobs are right again without any data clean-up. The name is the fixed convention
+// shared with photo-sync-worker's DOWNLOAD_SUBFOLDER default.
+const DERIVED_COPY_FOLDER = 'mls for download';
+export function isDerivedCopy(photo) {
+  const dirs = String((photo && photo.dropboxPath) || '').split('/').filter(Boolean).slice(0, -1);
+  return dirs.some((d) => d.toLowerCase() === DERIVED_COPY_FOLDER);
+}
+
 function pickPhotos(photos, folders) {
   const wanted = new Set(folders.map((f) => f.trim().toLowerCase()));
   return (photos || [])
-    .filter((p) => p && p.status === 'ok' && p.hasThumb && wanted.has(String(p.folder || '').toLowerCase()))
+    .filter((p) => p && p.status === 'ok' && p.hasThumb && !isDerivedCopy(p) && wanted.has(String(p.folder || '').toLowerCase()))
     .sort((a, b) => String(a.filename || '').localeCompare(String(b.filename || '')));
 }
 

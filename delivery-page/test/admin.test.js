@@ -129,3 +129,12 @@ test('renderAdminPage: empty state when there are no jobs at all', () => {
   assert.ok(out.includes('No jobs yet'));
   assert.ok(out.includes('0 jobs'));
 });
+
+test('buildAdminModel: photoCount does not count derived "MLS for download" duplicates', () => {
+  const model = buildAdminModel([row('FVS-1', { data: { photos: [
+    { status: 'ok', dropboxPath: '/J/HDR Photos/a.jpg' },
+    { status: 'ok', dropboxPath: '/J/HDR Photos/Callout/c.jpg' },
+    { status: 'ok', dropboxPath: '/J/MLS for download/Callout/c.jpg' },   // the duplicate
+  ] } })]);
+  assert.equal(model.jobs[0].photoCount, 2);
+});

@@ -8,7 +8,7 @@
 // renderAdminPage), same split as render.js, so this is unit-tested without
 // touching Supabase.
 
-import { escapeHtml, deliveryPath } from './render.js';
+import { escapeHtml, deliveryPath, isDerivedCopy } from './render.js';
 import { galleryPath } from './gallery.js';
 
 // agentInfo/agentInfo2 are Feature Sheet Builder's fields (this system's
@@ -51,7 +51,7 @@ export function buildAdminModel(rows, galleryTokens = {}) {
       jobId: row.id,
       address: (typeof data.address === 'string' && data.address.trim()) || null,
       agents: agentNames(data),
-      photoCount: photos.filter((p) => p && p.status === 'ok').length,
+      photoCount: photos.filter((p) => p && p.status === 'ok' && !isDerivedCopy(p)).length,
       hasVideo: videos.length > 0,
       hasTour: typeof data.tourUrl === 'string' && !!data.tourUrl.trim(),
       updatedAt: row.updated_at || null,

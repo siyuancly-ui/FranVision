@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildDeliveryModel, renderDeliveryPage } from '../src/render.js';
+import { buildDeliveryModel, renderDeliveryPage, isDerivedCopy } from '../src/render.js';
 import { attachmentDisposition, isGalleryToken, galleryPath, buildGalleryModel, renderGalleryPage, zipFilename } from '../src/gallery.js';
 
 const OPTS = {
@@ -185,4 +185,37 @@ test('attachmentDisposition: safe ASCII fallback + UTF-8 name, no quotes/slashes
   assert.equal(attachmentDisposition('客厅 1.jpg'), `attachment; filename="__ 1.jpg"; filename*=UTF-8''%E5%AE%A2%E5%8E%85%201.jpg`);
   assert.equal(attachmentDisposition('a"b/c\\d\n.jpg'), `attachment; filename="abcd.jpg"; filename*=UTF-8''abcd.jpg`);
   assert.equal(attachmentDisposition(''), `attachment; filename="photo.jpg"; filename*=UTF-8''photo.jpg`);
+});
+
+// ---- 2026-09-24: every Callout photo showed twice (FVS-20260923-004 / -005) ---------------------
+// photo-sync synced the Callout delivery copy `MLS for download/Callout/x.jpg` back as a SECOND
+// Callout photo (distinct photoId, same file name). The records made before the worker fix are
+// still in the database, so the page must recognise and ignore them.
+const dupCallout = (n, folderPath) => ph(n, { folder: 'Callout', filename: `FVM00${n}.jpg`, dropboxPath: `/J/${folderPath}/FVM00${n}.jpg`, downloadDropboxPath: undefined });
+
+test('a Callout photo and its derived "MLS for download/Callout" duplicate show ONCE (delivery page and Gallery)', () => {
+  const realA = dupCallout(50, 'HDR Photos/Callout'), copyA = dupCallout(51, 'MLS for download/Callout');
+  const realB = dupCallout(52, 'HDR Photos/Callout'), copyB = dupCallout(53, 'MLS for download/Callout');
+  const proj = project([ph(1), ph(2), ph(3), realA, copyA, realB, copyB]);
+
+  const delivery = buildDeliveryModel(proj, OPTS);
+  assert.deepEqual(delivery.aerial.map((a) => a.photoId), ['p50', 'p52']);          // the aerial carousel: no duplicates
+  assert.deepEqual(delivery.gallery.map((g) => g.photoId), ['p1', 'p2', 'p3']);
+
+  const g = buildGalleryModel(proj, OPTS);
+  assert.deepEqual(g.photos.map((p) => p.photoId), ['p1', 'p2', 'p3', 'p50', 'p52']);
+  assert.deepEqual(g.originalPhotoIds, ['p1', 'p2', 'p3', 'p50', 'p52']);           // ...and neither ZIP contains a duplicate
+  assert.equal(new Set(g.photos.map((p) => p.name)).size, g.photos.length, 'no two tiles share a file name');
+});
+
+test('derived copies are ignored wherever they sit and however the folder is cased; real photos elsewhere are untouched', () => {
+  assert.equal(isDerivedCopy({ dropboxPath: '/J/MLS for download/a.jpg' }), true);
+  assert.equal(isDerivedCopy({ dropboxPath: '/J/mls for download/Callout/a.jpg' }), true);
+  assert.equal(isDerivedCopy({ dropboxPath: '/J/HDR Photos/Callout/a.jpg' }), false);
+  assert.equal(isDerivedCopy({ dropboxPath: '/J/MLS/a.jpg' }), false);                 // a legacy real "MLS" folder is NOT a derived copy
+  assert.equal(isDerivedCopy({ dropboxPath: '/J/Photos/MLS for download.jpg' }), false); // only a FOLDER of that name counts, not a file name
+  assert.equal(isDerivedCopy({}), false);
+  assert.equal(isDerivedCopy(null), false);
+  // a job with no duplicates is unchanged
+  assert.equal(buildGalleryModel(project([ph(1), ph(2)]), OPTS).photos.length, 2);
 });
