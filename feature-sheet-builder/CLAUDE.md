@@ -30,7 +30,7 @@ confirms, and either exports a print PDF or submits the sheet to the studio.
 ```
 cd feature-sheet-builder
 node server.js            # -> http://localhost:4180
-npm test                  # node --test  (78 tests across this module)
+npm test                  # node --test  (96 tests across this module)
 ```
 
 Or double-click `../Feature Sheet Builder.command` in Finder (starts the server,
@@ -71,7 +71,8 @@ public/                      the entire frontend (no build step; classic <script
     export-pdf.js            2-page print PDF (admin export + studio submission)
     submit.js                "Confirm & Submit" -> upload PDF -> notify-submission edge fn
     admin.js                 Franky's ?admin=<token> management list + recycle bin
-    qr.js / util.js          QR from Online Tour URL; DOM + misc helpers
+    share-link.js            the ONE definition of the agent link (`?p=<id>`, never the admin token); pure, unit-tested
+    qr.js / util.js          QR from Online Tour URL; DOM + misc helpers (`util.copyText`)
 
 templates/
   fsb-v2/                    *** the live template system *** (see §5)
@@ -161,6 +162,7 @@ wipe the worker's keys), and opening `?p=FVS-…` shows an explanatory card inst
   stored only as ids in `pages.*.slots`. The Job's address fills a blank street-address field on connect.
 - Switching to a different Job (or Disconnect) clears the photos placed from the old one (their ids don't exist in the new
   gallery); the agent info / headshot / logo are untouched.
+- **"Copy agent link 复制经纪链接" also lives in the editor's top bar (admin only, 2026-09-24)**, between Export PDF and Save, so Franky doesn't have to go back to the All-sheets list after finishing a sheet. It copies the same link as the list's per-row button — both use `share-link.js#agentLink(window.location, id)` (origin + path + `?p=<id>`, dev `local=1` flag kept, **never** the admin token). The agent sees the SAVED sheet, so if there are unsaved changes the button saves first and only then copies; with nothing pending it copies immediately inside the click (browsers require that for clipboard access, with a `prompt()` fallback). A save that fails copies nothing and says so; a brand-new sheet that has never been saved (lazy creation) has no link yet and says so. Agents never see the button (it is built only when `app.adminToken`).
 - **PDF export** (admin `?admin=<token>` only) fetches the **true HDR original** of each *placed* photo (not the 2048
   `MLS for download` copy) from the photo-sync-worker's bearer-gated `GET /render/<jobId>/<photoId>`
   (`photo-source.js#preparePrint` -> blob URLs -> renderer `setPrintMode`); the worker streams the file from the photo's
@@ -212,6 +214,7 @@ themes.
   - **Estate layout** (labelled 藏蓝·Navy / 酒红·Burgundy / 墨绿·Emerald / 深灰·Charcoal in the dropdown) — `estate-navy` / `estate-burgundy` / `estate-emerald` /
     `estate-charcoal`. Marked `layout: 'jason'`, use `geometry-estate.js`, single
     agent only, velvet-artwork background + metal chevron/bar, all-white copy.
+- **Gold ornamental frame around the description (2026-09-24, Franky) — ONLY the four 华邸 themes (`navy` / `marble` / `burgundy` / `emerald`), ONLY when a description exists (the `stagger5` variant).** `themes.js` flags exactly those four `descFrame: true` (an explicit allow-list — the Estate-layout themes and any future theme don't get it by accident). `registry.js compose()` then returns the description block as `{ frame: { rect, asset }, rect }`: the artwork (`templates/fsb-v2/assets/desc-frame.png`, 1774×887 RGBA — a cleaned SHAPE MASK made from the supplied art, whose original is in `Feature Sheet Template/` and copied to the git-ignored `templates/fsb-v2/_assets-src/desc-frame-gold-original.png` (local source art, not tracked); the original had soft halo/semi-transparent strokes, only 0.2% of its ink was fully opaque, so it was re-mapped to solid strokes with a thin anti-aliased edge) fills the ORIGINAL description box (`stagger5.desc.rect`, 2.02:1 vs the art's 2:1 — no visible stretch) and the text rect is inset inside it (`modules.js descFrame.inset` = 5% left/right, 15% top/bottom — measured on the PNG: side lines end at 1.8%, the top ornament's lower edge is at 12.3%, the bottom ornament starts at 86.8%). **Colour: the frame is drawn as a CSS mask filled with the theme token `gold` (`modules.js descFrame.token`) — the very colour of the gold flourish above each page-2 panel (navy/burgundy/emerald `#D9B28D`, marble `#9c7b33`), so it is the identical hex, not the PNG's baked-in gold (same technique as that flourish). History: the first version used `goldLine` (the page-2 panel-frame line colour, `#a97c4f` / `#b39a56`), but Franky saw a colour difference against the ornaments, so it was switched to the flourish's `gold` (other tokens: `goldLine` = panel/agent-card frames, `goldSoft` = page-1 hero keyline). Verified: for each of the four themes the frame's computed colour equals the flourish's, and in the rasterised export path thousands of frame pixels are exactly that hex.** The renderer draws it as a background layer under the text and centres the copy vertically in the frame (a one-line blurb sits mid-frame; a full text fills it); the existing auto-fit (10–20pt) simply shrinks the copy into the smaller text area. No description -> the 6-photo collage, no frame. Verified in the browser on all four themes + the four Estate-layout ones (unchanged), short/medium/long/very-long text (all fit), and in the rasterised export path (`html-to-image` — gold pixels present, so the PDF has it). Tests in `templates/fsb-v2/fsb-v2.test.js`.
 - **Page-1 slot id namespaces differ by layout** and this matters:
   - standard page 1: `p1L-1..6` (collage) + `p1R-hero`
   - Estate page 1: `p1-c1..5` (collage) + `p1-hero`
