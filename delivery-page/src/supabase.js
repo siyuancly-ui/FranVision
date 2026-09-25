@@ -91,6 +91,45 @@ export function createSupabase(env) {
       return this.listGalleryTokens();
     },
 
+    // Delivery Hub (job-generator/supabase/delivery-hub.sql): the delivery_hub row a URL
+    // token was minted for, or null. `token` must already have passed hub.js#isHubToken.
+    async getHubByToken(token) {
+      const res = await fetch(`${BASE}/rest/v1/delivery_hub?token=eq.${encodeURIComponent(token)}&select=*`, { headers: authHeaders });
+      const rows = await readJson(res);
+      return Array.isArray(rows) ? rows[0] || null : rows;
+    },
+
+    // This Job's Gallery token (the HDR button's target), or null.
+    async getGalleryTokenForJob(jobId) {
+      const res = await fetch(`${BASE}/rest/v1/gallery_tokens?job_id=eq.${encodeURIComponent(jobId)}&select=token`, { headers: authHeaders });
+      const rows = await readJson(res);
+      return Array.isArray(rows) && rows[0] ? rows[0].token : null;
+    },
+
+    // Every Job's hub state, { jobId: {token, paid, unlocked} } -- the admin directory's one
+    // query. Empty (never throws) if the table isn't there yet (delivery-hub.sql not run).
+    async listHubs() {
+      try {
+        const res = await fetch(`${BASE}/rest/v1/delivery_hub?select=job_id,token,paid,unlocked`, { headers: authHeaders });
+        const rows = await readJson(res);
+        return Object.fromEntries((rows || []).map((r) => [r.job_id, { token: r.token, paid: !!r.paid, unlocked: !!r.unlocked }]));
+      } catch {
+        return {};
+      }
+    },
+
+    // Admin: flips paid / unlocked for one Job. Returns the updated row, or null when the
+    // Job has no hub row (no Create/Update Job since the hub existed).
+    async setHubFlags(jobId, flags) {
+      const res = await fetch(`${BASE}/rest/v1/delivery_hub?job_id=eq.${encodeURIComponent(jobId)}`, {
+        method: 'PATCH',
+        headers: { ...authHeaders, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify({ ...flags, updated_at: new Date().toISOString() }),
+      });
+      const rows = await readJson(res);
+      return Array.isArray(rows) && rows[0] ? rows[0] : null;
+    },
+
     // Every Job's projects row (id, data, updated_at), newest-updated first
     // -- the admin directory's one query (see src/admin.js). `projects` is
     // shared with Feature Sheet Builder, whose own projects today use a

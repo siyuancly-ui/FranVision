@@ -29,10 +29,10 @@ test('buildAdminModel: pulls address/agents/photoCount/hasVideo/hasTour off each
   assert.equal(model.jobs.length, 2);
   assert.deepEqual(model.jobs[0], {
     jobId: 'FVS-1', address: '48 Red Ash Dr', agents: ['Jane Doe', 'John Roe'],
-    photoCount: 2, hasVideo: true, hasTour: true, updatedAt: '2026-09-17T12:00:00Z', galleryToken: null,
+    photoCount: 2, hasVideo: true, hasTour: true, updatedAt: '2026-09-17T12:00:00Z', galleryToken: null, hub: null,
   });
   assert.deepEqual(model.jobs[1], {
-    jobId: 'FVS-2', address: null, agents: [], photoCount: 0, hasVideo: false, hasTour: false, updatedAt: '2026-09-17T12:00:00Z', galleryToken: null,
+    jobId: 'FVS-2', address: null, agents: [], photoCount: 0, hasVideo: false, hasTour: false, updatedAt: '2026-09-17T12:00:00Z', galleryToken: null, hub: null,
   });
 });
 

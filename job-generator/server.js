@@ -1051,6 +1051,7 @@ async function handleApi(req, res, urlPath) {
             order, componentFolders, totalCents: price.totalCents, preTaxCents: price.finalSubtotalCents,
             waveViewUrl: waveJson && waveJson.viewUrl,
             getGalleryToken: jobBackend.isConfigured() ? (id) => jobBackend.getGalleryToken(id) : null,
+            saveDeliveryHub: jobBackend.isConfigured() ? (args) => jobBackend.saveDeliveryHub(args) : null,
           });
         } catch (err) {
           deliveryEmailResult = { attempted: true, success: false, error: 'Unexpected delivery-email failure: ' + err.message };

@@ -60,6 +60,16 @@ const okFetch = (payload, calls) => async (url, opts) => {
     assert.deepStrictEqual(JSON.parse(calls[1].opts.body), { p_token: 'secret-token', p_map: { custom_item: 'PC' } });
   });
 
+  await test('saveDeliveryHub: calls jg_delivery_hub with lines / wave link / total and returns the token', async () => {
+    const calls = [];
+    const tok = await backend.saveDeliveryHub({ jobId: 'FVS-20260925-001', lines: [{ key: 'HDR' }], waveViewUrl: 'https://w/p', totalCents: 11300 }, { env: ENV, fetchImpl: okFetch('t'.repeat(32), calls) });
+    assert.ok(calls[0].url.endsWith('/rest/v1/rpc/jg_delivery_hub'));
+    assert.deepStrictEqual(JSON.parse(calls[0].opts.body), { p_token: 'secret-token', p_job_id: 'FVS-20260925-001', p_lines: [{ key: 'HDR' }], p_wave_view_url: 'https://w/p', p_total_cents: 11300 });
+    assert.strictEqual(tok, 't'.repeat(32));
+    await backend.saveDeliveryHub({ jobId: 'FVS-20260925-001' }, { env: ENV, fetchImpl: okFetch('x', calls) });
+    assert.deepStrictEqual(JSON.parse(calls[1].opts.body), { p_token: 'secret-token', p_job_id: 'FVS-20260925-001', p_lines: [], p_wave_view_url: null, p_total_cents: null });
+  });
+
   await test('isConfigured: needs all three of url / anon key / token', () => {
     assert.strictEqual(backend.isConfigured(ENV), true);
     assert.strictEqual(backend.isConfigured({ ...ENV, JG_TOKEN: '' }), false);

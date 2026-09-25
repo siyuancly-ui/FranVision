@@ -129,6 +129,18 @@ async function getGalleryToken(jobId, deps) {
   const t = await rpc('jg_gallery_token', { p_job_id: jobId }, deps);
   return typeof t === 'string' && t ? t : null;
 }
+// Delivery Hub (see supabase/delivery-hub.sql): saves which download buttons this Job has (+ the Dropbox
+// link behind each), the Wave payment link and the invoice total, and returns the Job's hub URL token
+// (stable per Job; paid/unlocked are owned by the admin side and never touched here).
+async function saveDeliveryHub({ jobId, lines, waveViewUrl, totalCents }, deps) {
+  const t = await rpc('jg_delivery_hub', {
+    p_job_id: jobId,
+    p_lines: lines || [],
+    p_wave_view_url: waveViewUrl || null,
+    p_total_cents: Number.isInteger(totalCents) ? totalCents : null,
+  }, deps);
+  return typeof t === 'string' && t ? t : null;
+}
 async function getJob(folderName, deps) { return rpc('jg_get_job', { p_folder_name: folderName }, deps); }
 async function listDrafts(deps) { return rpc('jg_list_jobs', { p_kind: 'drafts' }, deps); }
 // 'recent' used to mean "created in the last 3 days"; since 2026-09-22 it means "not yet marked
@@ -165,7 +177,7 @@ async function setWaveMap(map, deps) { return rpc('jg_set_wave_map', { p_map: ma
 
 module.exports = {
   uploadImage, publicImageUrl, IMAGE_BUCKET,
-  BackendError, isConfigured, rpc, dayStamp, getGalleryToken,
+  BackendError, isConfigured, rpc, dayStamp, getGalleryToken, saveDeliveryHub,
   allocateJobId, peekJobId, upsertJob, getJob, listDrafts, listRecentJobs, deleteDraft, completeJob,
   recordWavePairing, suggestWavePairings, getWaveMap, setWaveMap,
 };

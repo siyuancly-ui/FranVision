@@ -2,11 +2,14 @@ import { createSupabase } from './supabase.js';
 import { buildDeliveryModel, renderDeliveryPage, renderNotFoundPage } from './render.js';
 import { buildAdminModel, renderAdminPage } from './admin.js';
 import {
+  isHubToken, isLineKey, buildHubModel, resolveTarget, isUnlocked, renderHubPage, renderNotFoundHub, renderNotReadyHub,
+} from './hub.js';
+import {
   buildGalleryModel, renderGalleryPage, renderGalleryNotFoundPage, renderGalleryPreparingPage, isGalleryToken, zipFilename, attachmentDisposition,
 } from './gallery.js';
 
-function html(body, status = 200) {
-  return new Response(body, { status, headers: { 'content-type': 'text/html; charset=utf-8' } });
+function html(body, status = 200, extraHeaders = {}) {
+  return new Response(body, { status, headers: { 'content-type': 'text/html; charset=utf-8', ...extraHeaders } });
 }
 
 function json(obj, status = 200) {
@@ -123,6 +126,33 @@ async function handleGallery(parts, env) {
 // GET /admin?admin=<ADMIN_TOKEN> -- read-only directory of every Job's
 // delivery page. Same query-param-token shape as Feature Sheet Builder's
 // own admin page (a bookmarkable-but-secret link, not a curl-only header).
+// GET /deliver/<address-slug>/<token>[/go/<KEY>] -- the Delivery Hub (hub.js). The slug is
+// cosmetic; a wrong token looks exactly like a missing Job. /go/<KEY> is the gate: it
+// re-checks paid/unlocked on every hit, so a locked page never carries any target link.
+async function handleHub(parts, env) {
+  const notFound = () => html(renderNotFoundHub(), 404);
+  if (!isHubToken(parts[2])) return notFound();
+  const sb = createSupabase(env);
+  const row = await sb.getHubByToken(parts[2]);
+  if (!row) return notFound();
+  const base = `/${parts.slice(0, 3).map(encodeURIComponent).join('/')}`;
+  const [project, galleryToken] = await Promise.all([sb.getProject(row.job_id), sb.getGalleryTokenForJob(row.job_id)]);
+
+  if (parts.length === 3) {
+    return html(renderHubPage(buildHubModel(row, project, galleryToken), { base }), 200, { 'cache-control': 'no-store' });
+  }
+
+  if (parts.length === 5 && parts[3] === 'go' && isLineKey(parts[4])) {
+    // Locked: back to the hub with the "please pay" dialog open (never a target).
+    if (!isUnlocked(row)) return html(renderHubPage(buildHubModel(row, project, galleryToken), { base, openKey: parts[4] }), 200, { 'cache-control': 'no-store' });
+    const target = resolveTarget(parts[4], row, project, galleryToken);
+    if (!target) return html(renderNotReadyHub(base), 503, { 'cache-control': 'no-store' });
+    return new Response(null, { status: 302, headers: { location: target, 'cache-control': 'no-store' } });
+  }
+
+  return notFound();
+}
+
 async function handleAdmin(url, env) {
   const token = url.searchParams.get('admin') || '';
   if (!env.ADMIN_TOKEN || token !== env.ADMIN_TOKEN) return html('unauthorized', 401);
@@ -132,7 +162,8 @@ async function handleAdmin(url, env) {
   // Every Job gets its Gallery link automatically (like its All in One page,
   // which exists as soon as the Job does) -- no button to press.
   const galleryTokens = await sb.ensureGalleryTokens(rows.map((r) => r.id));
-  const model = buildAdminModel(rows, galleryTokens);
+  const hubs = await sb.listHubs();
+  const model = buildAdminModel(rows, galleryTokens, hubs);
   return html(renderAdminPage(model, { origin: url.origin }));
 }
 
@@ -159,6 +190,26 @@ async function handleAdminSetJob(jobId, request, env) {
   return json({ jobId, fields, result });
 }
 
+// POST /admin/hub/<jobId> (bearer ADMIN_TOKEN) {paid?: bool, unlocked?: bool} -- Franky's
+// "mark paid" / "deliver first" switches on the /admin directory.
+async function handleAdminSetHub(jobId, request, env) {
+  const auth = request.headers.get('authorization') || '';
+  if (!env.ADMIN_TOKEN || auth !== `Bearer ${env.ADMIN_TOKEN}`) return json({ error: 'unauthorized' }, 401);
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: 'invalid JSON body' }, 400);
+  }
+  const flags = {};
+  if (typeof body.paid === 'boolean') flags.paid = body.paid;
+  if (typeof body.unlocked === 'boolean') flags.unlocked = body.unlocked;
+  if (Object.keys(flags).length === 0) return json({ error: 'no recognized fields (paid, unlocked)' }, 400);
+  const row = await createSupabase(env).setHubFlags(jobId, flags);
+  if (!row) return json({ error: 'no delivery hub for this job yet (run Create/Update Job first)' }, 404);
+  return json({ jobId, paid: !!row.paid, unlocked: !!row.unlocked });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -166,6 +217,17 @@ export default {
 
     if (request.method === 'GET' && parts.length === 0) {
       return new Response('franvision-delivery-page: ok', { headers: { 'content-type': 'text/plain' } });
+    }
+
+    // Delivery Hub: /deliver/<address-slug>/<token>[/go/<KEY>] (3+ segments, so it never
+    // meets the 2-segment pretty URL below).
+    if (request.method === 'GET' && parts[0] === 'deliver' && parts.length >= 3) {
+      try {
+        return await handleHub(parts.map(decodeURIComponent), env);
+      } catch (err) {
+        console.log('hub_error', { error: String(err) });
+        return html(renderNotFoundHub(), 500);
+      }
     }
 
     // Standalone Gallery page: /delivery/<address-slug>/<token>[/...] -- 3+
@@ -222,6 +284,15 @@ export default {
         return await handleAdminSetJob(decodeURIComponent(parts[2]), request, env);
       } catch (err) {
         console.log('admin_set_job_error', { jobId: parts[2], error: String(err) });
+        return json({ error: String(err) }, 500);
+      }
+    }
+
+    if (request.method === 'POST' && parts[0] === 'admin' && parts[1] === 'hub' && parts[2]) {
+      try {
+        return await handleAdminSetHub(decodeURIComponent(parts[2]), request, env);
+      } catch (err) {
+        console.log('admin_set_hub_error', { jobId: parts[2], error: String(err) });
         return json({ error: String(err) }, 500);
       }
     }
