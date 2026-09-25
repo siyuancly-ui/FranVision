@@ -4,7 +4,7 @@
 // button per deliverable -- the SAME set the email used to list line by line
 // (job-generator/delivery-email.js#getDeliverableLines, stored per Job in the
 // delivery_hub table by Job Generator at Create/Update Job). While the Job is
-// unpaid a click opens a "please pay first" dialog (Pay now -> the Wave invoice);
+// unpaid a click opens a "please pay first" dialog (credit card -> the Wave invoice page, or e-Transfer instructions);
 // once paid (or unlocked by Franky for a deliver-first client) the same button
 // goes straight to the deliverable.
 //
@@ -178,14 +178,17 @@ export function renderHubPage(model, { base, openKey = '' }) {
   const addr = model.address ? escapeHtml(model.address) : 'your property';
   const fee = model.totalCents != null && model.preTaxCents != null
     ? `<p class="mail-fee">Fee 费用: <strong>${preTaxMoney(model.preTaxCents)} + HST = ${money(model.totalCents)}</strong></p>` : '';
-  // The two blue buttons (like the studio's other delivery pages): Pay now opens the two-way pay dialog
-  // (credit card / e-Transfer); Print invoice opens the Wave invoice page. Once paid, Pay now becomes a
-  // static "Paid" mark. Print invoice only exists when the Job has a Wave invoice.
-  const payNow = model.unlocked
-    ? '<span class="hub-cta is-paid">Paid 已付款 &#10003;</span>'
-    : '<button class="hub-cta" id="hubPayNow" type="button">Pay now</button>';
-  const printBtn = model.payUrl
-    ? `<a class="hub-cta" href="${escapeHtml(model.payUrl)}" target="_blank" rel="noopener">Print invoice</a>` : '';
+  // ONE blue button for everything money-related: it opens the Wave invoice page (the customer link
+  // `viewUrl`, which lands on Wave's public invoice page) where the client can pay by card / bank, print,
+  // and download the PDF -- which shows "Paid" once it is. Clicking it while unpaid starts the auto-unlock
+  // watch (see hubScript). Wave's page has no Interac e-Transfer, so while locked a small text link opens
+  // the e-Transfer instructions. A Job with no Wave invoice gets a Pay now button that opens the dialog.
+  const payLabel = model.unlocked ? 'Invoice (Paid) 发票 &#10003;' : 'Pay now / Invoice 付款 / 发票';
+  const payBtn = model.payUrl
+    ? `<a class="hub-cta${model.unlocked ? ' is-paid' : ''}" id="hubPayNow" href="${escapeHtml(model.payUrl)}" target="_blank" rel="noopener">${payLabel}</a>`
+    : (model.unlocked ? '' : '<button class="hub-cta" id="hubPayNow" type="button">Pay now 付款</button>');
+  const emtLink = !model.unlocked && model.payUrl
+    ? '<p class="mail-emt">Prefer Interac e-Transfer? <button class="hub-link" id="hubEmtLink" type="button">Show e-Transfer details 使用 EMT 转账</button></p>' : '';
 
   // The wording is the Delivery Email's own (job-generator/delivery-email-template.{en,zh}.txt), so the page
   // reads like the email it replaces -- keep the two in step if the email's wording changes.
@@ -201,7 +204,8 @@ export function renderHubPage(model, { base, openKey = '' }) {
       ? '<p class="mail-p is-open">Payment received — thank you! Your files are ready below.<span class="mail-zh">已收到付款，谢谢！下面的文件都可以下载了。</span></p>'
       : '<p class="mail-p">You can preview the photos above. To download the files, please complete payment first.<span class="mail-zh">您可以先预览照片；需要下载文件的话，请先支付费用。</span></p>'}
     ${fee}
-    <div class="cta-row">${payNow}${printBtn}</div>
+    <div class="cta-row">${payBtn}</div>
+    ${emtLink}
     <hr class="mail-rule">
     ${model.address ? `<h1 class="mail-addr">${escapeHtml(model.address)}</h1>` : ''}
     <p class="mail-note">For the best experience, please open in a browser on PC or Mac. Thank you so much for your support!<span class="mail-zh">请在 PC 或 Mac 上使用浏览器打开效果最佳，感谢您的支持与厚爱！</span></p>
@@ -240,7 +244,9 @@ const HUB_CSS = `
   .cta-row{display:flex;flex-wrap:wrap;gap:14px;margin:6px 0 0;}
   .hub-cta{display:inline-flex;align-items:center;justify-content:center;min-width:150px;box-sizing:border-box;padding:14px 26px;border:0;border-radius:8px;background:#467ab5;color:#fff;font:inherit;font-size:18px;text-decoration:none;cursor:pointer;}
   .hub-cta:hover{background:#3b6aa0;}
-  .hub-cta.is-paid{background:#5f8f6b;cursor:default;}
+  .hub-cta.is-paid{background:#5f8f6b;}
+  .mail-emt{margin:12px 0 0;font-size:12.5px;color:#7a766b;}
+  .hub-link{border:0;background:none;padding:0;font:inherit;color:#467ab5;text-decoration:underline;cursor:pointer;}
   .hub-note{font-weight:400;font-size:12px;color:#8a867b;}
   .hub-list{display:flex;flex-direction:column;gap:12px;margin-top:18px;}
   /* Same raised grey button family as the Gallery page's download buttons, full width. */
@@ -293,7 +299,8 @@ function hubScript(openKey, base) {
   function open(){ show('choose'); modal.hidden=false; }
   function close(){ modal.hidden=true; }
   document.querySelectorAll('.hub-btn.is-locked').forEach(function(b){ b.addEventListener('click', open); });
-  var pn=document.getElementById('hubPayNow'); if(pn){ pn.addEventListener('click', open); }
+  var pn=document.getElementById('hubPayNow'); if(pn){ pn.addEventListener('click', function(e){ if(pn.tagName==='A'){ watch(); } else { open(); } }); }
+  var el=document.getElementById('hubEmtLink'); if(el){ el.addEventListener('click', function(){ show('emt'); modal.hidden=false; }); }
   document.getElementById('hubClose').addEventListener('click', close);
   document.getElementById('hubEmt').addEventListener('click', function(){ show('emt'); });
   document.getElementById('hubBack').addEventListener('click', function(){ show('choose'); });

@@ -101,26 +101,26 @@ test('interactive-email page: greeting + "photos are ready" + fee line + Pay now
   assert.match(html, /Your photos for <strong>12 Main St, Toronto<\/strong> are ready/);
   assert.match(html, /12 Main St, Toronto 的照片已经制作完成/);
   assert.match(html, /Fee 费用: <strong>\$100 \+ HST = \$113\.00<\/strong>/);   // whole dollars, like the email
-  assert.match(html, /id="hubPayNow"/);
-  assert.match(html, /href="https:\/\/next\.waveapps\.com\/pay\/abc" target="_blank" rel="noopener">Print invoice/);
-  assert.ok(html.indexOf('id="hubPayNow"') < html.indexOf('class="hub-list"'), 'the two buttons sit above the download buttons');
+  assert.match(html, /id="hubPayNow" href="https:\/\/next\.waveapps\.com\/pay\/abc" target="_blank" rel="noopener">Pay now \/ Invoice/);   // ONE blue button -> the Wave invoice page
+  assert.doesNotMatch(html, /Print invoice/);
+  assert.match(html, /id="hubEmtLink"/);                                            // Wave's page has no Interac e-Transfer
+  assert.ok(html.indexOf('id="hubPayNow"') < html.indexOf('class="hub-list"'), 'the button sits above the download buttons');
   assert.match(html, /Thank you!<br>Franky<br>FranVision Media/);
   assert.match(html, /24 hours/);                                                  // Video's note (VIDEO is one of ROW's lines)
 });
 
-test('interactive-email page: cents in the pre-tax amount are kept; no name -> plain "Hello,"; no invoice link -> no Print invoice button', () => {
+test('interactive-email page: cents in the pre-tax amount are kept; no name -> plain "Hello,"; no Wave invoice -> Pay now opens the dialog, no e-Transfer side link', () => {
   const html = renderHubPage(buildHubModel({ ...ROW, wave_view_url: null, pretax_cents: 9885, total_cents: 11170 }, PROJECT, GTOKEN), { base: '/deliver/x/y' });
   assert.match(html, /Hello,/);
   assert.match(html, /\$98\.85 \+ HST = \$111\.70/);
-  assert.doesNotMatch(html, /Print invoice/);
-  assert.match(html, /id="hubPayNow"/);
+  assert.match(html, /<button class="hub-cta" id="hubPayNow" type="button">Pay now/);
+  assert.doesNotMatch(html, /id="hubEmtLink"/);
 });
 
-test('interactive-email page: once paid, Pay now becomes a static "Paid" mark, Print invoice stays, and the copy says the files are ready', () => {
+test('interactive-email page: once paid, the same button stays (now "Invoice (Paid)", green) so the paid invoice can be downloaded; no e-Transfer link; copy says the files are ready', () => {
   const html = renderHubPage(buildHubModel({ ...ROW, paid: true }, PROJECT, GTOKEN), { base: '/deliver/x/y' });
-  assert.match(html, /is-paid">Paid 已付款/);
-  assert.doesNotMatch(html, /id="hubPayNow"/);
-  assert.match(html, /Print invoice/);
+  assert.match(html, /class="hub-cta is-paid" id="hubPayNow" href="https:\/\/next\.waveapps\.com\/pay\/abc" target="_blank" rel="noopener">Invoice \(Paid\)/);
+  assert.doesNotMatch(html, /id="hubEmtLink"/);
   assert.match(html, /Payment received/);
   assert.doesNotMatch(html, /complete payment first/);
 });
