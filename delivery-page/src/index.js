@@ -365,7 +365,7 @@ export default {
     // never shadow the /admin routes below regardless of check order (a
     // real address slug colliding with "admin" is effectively impossible
     // anyway).
-    if (request.method === 'GET' && parts.length === 2 && parts[0] !== 'admin') {
+    if (request.method === 'GET' && parts.length === 2 && parts[0] !== 'admin' && parts[0] !== 'webhooks') {
       try {
         return await handleDelivery(decodeURIComponent(parts[1]), env);
       } catch (err) {

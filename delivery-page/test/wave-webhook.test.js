@@ -112,6 +112,7 @@ test('webhook: bad / missing signature -> 401 and nothing is written; no secret 
   // reachability check
   const ping = await worker.fetch(new Request('https://realgta.ca/webhooks/wave'), env);
   assert.equal(ping.status, 200);
+  assert.deepEqual(await ping.json(), { ok: true, service: 'wave-webhook' });   // not swallowed by the /<address-slug>/<jobId> route
 });
 
 test('webhook: invoice.paid for a Job\'s invoice -> paid, source wave; the hub unlocks; the event is logged once', async () => {
