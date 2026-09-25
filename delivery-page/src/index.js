@@ -147,7 +147,7 @@ async function handleHub(parts, env) {
   // moment the Job is paid / unlocked (no manual refresh), or refresh the owed amount after a partial payment.
   // Carries nothing but those two values.
   if (parts.length === 4 && parts[3] === 'status') {
-    return json({ unlocked: isUnlocked(row), remainingCents: remainingCents(row) }, 200, { 'cache-control': 'no-store' });
+    return json({ unlocked: isUnlocked(row), paid: !!row.paid, remainingCents: remainingCents(row) }, 200, { 'cache-control': 'no-store' });
   }
 
   if (parts.length === 5 && parts[3] === 'go' && isLineKey(parts[4])) {

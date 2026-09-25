@@ -116,9 +116,9 @@ test('status: a tiny no-store {unlocked} the locked page polls; flips as soon as
   let r = await get(env, `/deliver/x/${TOKEN}/status`);
   assert.equal(r.status, 200);
   assert.equal(r.headers.get('cache-control'), 'no-store');
-  assert.deepEqual(await r.json(), { unlocked: false, remainingCents: null });
+  assert.deepEqual(await r.json(), { unlocked: false, paid: false, remainingCents: null });
   await post(env, `/admin/hub/${JOB}`, { paid: true });
-  assert.deepEqual(await (await get(env, `/deliver/x/${TOKEN}/status`)).json(), { unlocked: true, remainingCents: null });
+  assert.deepEqual(await (await get(env, `/deliver/x/${TOKEN}/status`)).json(), { unlocked: true, paid: true, remainingCents: null });
   assert.equal((await get(env, `/deliver/x/${'e'.repeat(32)}/status`)).status, 404);
 });
 

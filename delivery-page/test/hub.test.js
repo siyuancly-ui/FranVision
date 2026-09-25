@@ -114,15 +114,24 @@ test('interactive-email page: cents in the pre-tax amount are kept; no name -> p
   assert.match(html, /\$98\.85 \+ HST = \$111\.70/);
 });
 
-test('interactive-email page: once paid, the button becomes a green "Invoice (Paid)" link to the invoice PDF (falls back to the Wave page when there is no PDF link); copy says the files are ready', () => {
-  const withPdf = renderHubPage(buildHubModel({ ...ROW, paid: true, wave_pdf_url: 'https://accounting.waveapps.com/inv.pdf' }, PROJECT, GTOKEN), { base: '/deliver/x/y' });
-  assert.match(withPdf, /class="hub-cta is-paid" href="https:\/\/accounting\.waveapps\.com\/inv\.pdf" target="_blank" rel="noopener">Invoice \(Paid\)/);
-  const html = renderHubPage(buildHubModel({ ...ROW, paid: true }, PROJECT, GTOKEN), { base: '/deliver/x/y' });
-  assert.match(html, /class="hub-cta is-paid" href="https:\/\/next\.waveapps\.com\/pay\/abc"/);
-  assert.doesNotMatch(renderHubPage(buildHubModel({ ...ROW, paid: true, wave_view_url: null }, PROJECT, GTOKEN), { base: '/deliver/x/y' }), /Invoice \(Paid\)/);   // no invoice at all -> no button
-  assert.doesNotMatch(html, /id="hubPayNow"|Invoice &amp; payment|hubModal/);
+test('interactive-email page: once PAID the button becomes a green "Invoice & receipt" link to Wave\'s public invoice page (Print / PDF / Receipts); copy says the files are ready', () => {
+  const html = renderHubPage(buildHubModel({ ...ROW, paid: true, wave_pdf_url: 'https://accounting.waveapps.com/inv.pdf' }, PROJECT, GTOKEN), { base: '/deliver/x/y' });
+  assert.match(html, /class="hub-cta is-paid" href="https:\/\/next\.waveapps\.com\/pay\/abc" target="_blank" rel="noopener">Invoice &amp; receipt 发票与收据/);
+  assert.doesNotMatch(html, /id="hubPayNow"|id="hubModal"|<script>/);                       // nothing left to pay -> no dialog, no polling script
   assert.match(html, /Payment received/);
   assert.doesNotMatch(html, /complete payment first/);
+  assert.match(renderHubPage(buildHubModel({ ...ROW, paid: true, wave_view_url: null, wave_pdf_url: 'https://accounting.waveapps.com/inv.pdf' }, PROJECT, GTOKEN), { base: '/deliver/x/y' }), /href="https:\/\/accounting\.waveapps\.com\/inv\.pdf"[^>]*>Invoice &amp; receipt/);   // no Wave page link -> the PDF
+  assert.doesNotMatch(renderHubPage(buildHubModel({ ...ROW, paid: true, wave_view_url: null, wave_pdf_url: null }, PROJECT, GTOKEN), { base: '/deliver/x/y' }), /Invoice &amp; receipt/);   // no invoice at all -> no button
+});
+
+test('deliver-first (unlocked but NOT paid): downloads open, but the invoice button stays "View invoice & pay" with its dialog and the copy says payment is still due', () => {
+  const html = renderHubPage(buildHubModel({ ...ROW, unlocked: true }, PROJECT, GTOKEN), { base: '/deliver/x/y' });
+  assert.match(html, /id="hubPayNow" type="button">View invoice &amp; pay/);
+  assert.match(html, /id="hubModal"/);
+  assert.match(html, /href="\/deliver\/x\/y\/go\/MLS"/);                                    // downloads are open
+  assert.doesNotMatch(html, /class="hub-btn is-locked"/);
+  assert.match(html, /Payment is still due/);
+  assert.doesNotMatch(html, /Invoice &amp; receipt|Payment received/);
 });
 
 test('3D Tour button follows Tour Link.txt (projects.data.tourUrl): first line only, BOM/blank lines/CRLF tolerated, non-URLs rejected', () => {

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Local preview of the Delivery Hub with a FAKE Supabase (no network, nothing real touched):
 //   node scripts/preview-hub.js            -> http://localhost:4190/
+//   REAL=1 node scripts/preview-hub.js     -> same, but the buttons open the REAL links of test invoice #360101-2077-1907
 // The index links to the hub and /admin, and can send SIGNED fake Wave webhooks (fully paid / partial) through the
 // real /webhooks/wave route so you can watch /admin and the hub react exactly as in production.
 import http from 'node:http';
@@ -11,7 +12,10 @@ const PORT = Number(process.env.PORT) || 4190;
 const TOKEN = 'c'.repeat(32);
 const GTOKEN = 'd'.repeat(32);
 const JOB = 'FVS-20260925-001';
-const WAVE_INVOICE = '2619579987556152644';
+// REAL=1 -> use Franky's real test invoice #360101-2077-1907 (READ-ONLY: only its public links are opened; nothing
+// is sent or changed in Wave). Its real Wave links then sit behind the buttons.
+const REAL = process.env.REAL === '1';
+const WAVE_INVOICE = REAL ? '2619994685011244534' : '2619579987556152644';
 const SECRET = 'preview-secret';
 const fresh = () => ({
   paid: false, unlocked: false, paid_source: null, paid_at: null, wave_paid_cents: null, wave_remaining_cents: null,
@@ -21,7 +25,8 @@ const fresh = () => ({
 let state = fresh();
 const events = new Map();
 const project = () => ({ id: JOB, data: { address: '48 Red Ash Dr, Oakville', tourUrl: 'https://my.matterport.com/show/?m=example' }, updated_at: '2026-09-25T10:00:00Z' });
-const row = () => ({ job_id: JOB, token: TOKEN, wave_invoice_id: WAVE_INVOICE, total_cents: 22599, pretax_cents: 20000, client_name: 'Jessie Tang', wave_view_url: 'https://next.waveapps.com/example/public/invoices/abc', wave_pdf_url: 'https://accounting.waveapps.com/example/invoice.pdf', ...state });
+const row = () => ({ job_id: JOB, token: TOKEN, wave_invoice_id: WAVE_INVOICE, total_cents: REAL ? 5650 : 22599, pretax_cents: REAL ? 5000 : 20000, client_name: REAL ? 'Swan' : 'Jessie Tang', wave_view_url: REAL ? 'https://link.waveapps.com/beyhz6-6gcshc' : 'https://next.waveapps.com/example/public/invoices/abc',
+  wave_pdf_url: REAL ? 'https://accounting.waveapps.com/invoices/72a699be-404e-4cd7-b8eb-654e0b2dd015/export/2619994685011244534/9e5ab7b033dc4442ba6d100b4b045980?pdf=1' : 'https://accounting.waveapps.com/example/invoice.pdf', ...state });
 
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (url, init = {}) => {
@@ -57,19 +62,19 @@ http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   if (url.pathname.startsWith('/sim/')) {
     const what = url.pathname.slice(5);
-    if (what === 'paid') await sendWave('invoice.paid', '225.99', '0.00');
-    else if (what === 'partial') await sendWave('invoice.partially_paid', '100.00', '125.99');
+    if (what === 'paid') await sendWave('invoice.paid', REAL ? '56.50' : '225.99', '0.00');
+    else if (what === 'partial') await sendWave('invoice.partially_paid', '20.00', REAL ? '36.50' : '125.99');
     else if (what === 'reset') { state = fresh(); events.clear(); }
     res.writeHead(302, { location: '/' }); return res.end();
   }
   if (url.pathname === '/') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     return res.end(`<body style="font-family:system-ui;max-width:640px;margin:40px auto;line-height:2">
-      <h2>Delivery Hub preview (fake data)</h2>
+      <h2>Delivery Hub preview (${REAL ? '真实发票 #360101-2077-1907 的链接，交付页状态是模拟的' : 'fake data'})</h2>
       <p><a href="${hub}" target="_blank">1. 打开交付页 →</a></p>
       <p><a href="/admin?admin=adm" target="_blank">2. 打开 /admin 目录 →</a> 在这里勾 Paid / Unlock，然后刷新交付页</p>
       <p>3. 模拟 Wave 通知（走真实的 /webhooks/wave，带签名）：<br>
-        <a href="/sim/paid">Wave 付清 $225.99</a> &nbsp;·&nbsp; <a href="/sim/partial">Wave 部分付款 $100</a> &nbsp;·&nbsp; <a href="/sim/reset">全部还原</a></p>
+        <a href="/sim/paid">Wave 付清</a> &nbsp;·&nbsp; <a href="/sim/partial">Wave 部分付款</a> &nbsp;·&nbsp; <a href="/sim/reset">全部还原</a></p>
       <p style="color:#888;font-size:13px">这个首页只是预览用的，上线后不存在。已解锁的按钮会在新标签页打开示例 Dropbox 链接（地址是假的，只看跳转）。</p></body>`);
   }
   const body = ['GET', 'HEAD'].includes(req.method) ? undefined : await new Promise((r) => { let d = ''; req.on('data', (c) => (d += c)); req.on('end', () => r(d)); });

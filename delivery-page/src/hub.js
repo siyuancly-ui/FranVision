@@ -87,6 +87,8 @@ export function buildHubModel(row, project, galleryToken) {
     jobId: row.job_id,
     address,
     unlocked: isUnlocked(row),
+    // Really paid (not merely unlocked for a deliver-first client): decides the invoice/receipt button and copy.
+    paid: Boolean(row.paid),
     payUrl: safeUrl(row.wave_view_url),
     // The invoice on its own (PDF export, no payment page); falls back to Wave's combined page.
     invoiceUrl: safeUrl(row.wave_pdf_url) || safeUrl(row.wave_view_url),
@@ -169,7 +171,7 @@ export function renderHubPage(model, { base, openKey = '' }) {
   const viewBtn = model.invoiceUrl
     ? `<a class="hub-pay is-ghost" href="${escapeHtml(model.invoiceUrl)}" target="_blank" rel="noopener">View invoice <span>查看发票</span></a>`
     : '';
-  const dialog = model.unlocked ? '' : `
+  const dialog = model.paid ? '' : `
 <div class="hub-modal" id="hubModal" hidden role="dialog" aria-modal="true" aria-labelledby="hubModalTitle">
   <div class="hub-modal-card">
     <div id="hubChoose">
@@ -201,12 +203,16 @@ export function renderHubPage(model, { base, openKey = '' }) {
   const partial = model.remainingCents != null
     ? `<p class="mail-partial">${model.partialPaidCents != null ? `Paid ${money(model.partialPaidCents)}, ` : ''}<strong>${money(model.remainingCents)} more</strong> to unlock downloads.<span class="mail-zh">${model.partialPaidCents != null ? `已付 ${money(model.partialPaidCents)}，` : ''}还需支付 <strong>${money(model.remainingCents)}</strong> 才能解锁下载。</span></p>` : '';
 
-  // ONE blue button for everything money-related. While locked it opens the dialog where the client can
-  // read the invoice (PDF, no payment page) and then choose Wave credit card or Interac e-Transfer (Wave's
-  // own page has no Interac, and its bank-EFT option is not used). Once paid the same button becomes a green
-  // "Invoice (Paid)" link to the invoice PDF (Wave regenerates it, so it can be downloaded marked Paid).
-  const payBtn = model.unlocked
-    ? (model.invoiceUrl ? `<a class="hub-cta is-paid" href="${escapeHtml(model.invoiceUrl)}" target="_blank" rel="noopener">Invoice (Paid) 发票 &#10003;</a>` : '')
+  // ONE blue button for everything money-related. Until the Job is PAID it opens the dialog where the client
+  // can read the invoice (PDF, no payment page) and then choose Wave credit card or Interac e-Transfer (Wave's
+  // own page has no Interac, and its bank-EFT option is not used). Once PAID it becomes a green link to Wave's
+  // public invoice page (`wave_view_url`), which for a paid invoice offers Print / Download PDF (marked paid) /
+  // a Receipts menu -- for card payments AND for payments Franky records by hand in Wave (e-Transfer) -- so the
+  // client saves their own invoice and receipt without asking Franky. (A deliver-first "unlocked" but unpaid Job
+  // still gets the pay button.)
+  const paidLink = model.payUrl || model.invoiceUrl;
+  const payBtn = model.paid
+    ? (paidLink ? `<a class="hub-cta is-paid" href="${escapeHtml(paidLink)}" target="_blank" rel="noopener">Invoice &amp; receipt 发票与收据 &#10003;</a>` : '')
     : '<button class="hub-cta" id="hubPayNow" type="button">View invoice &amp; pay 查看发票并付款</button>';
 
   // The wording is the Delivery Email's own (job-generator/delivery-email-template.{en,zh}.txt), so the page
@@ -219,9 +225,11 @@ export function renderHubPage(model, { base, openKey = '' }) {
     <p class="mail-p">Your photos for <strong>${addr}</strong> are ready — thank you for your patience.</p>
     <p class="mail-zh">${model.address ? `${escapeHtml(model.address)} 的` : ''}照片已经制作完成，感谢您的耐心等待。</p>
     <a class="hub-btn hub-preview" href="${escapeHtml(model.allInOnePath)}" target="_blank" rel="noopener">${EYE_ICON}<span class="hub-label">Preview All in One<span class="hub-zh">在线预览</span></span></a>
-    ${model.unlocked
-      ? '<p class="mail-p is-open">Payment received — thank you! Your files are ready below.<span class="mail-zh">已收到付款，谢谢！下面的文件都可以下载了。</span></p>'
-      : '<p class="mail-p">You can preview the photos above. To download the files, please complete payment first.<span class="mail-zh">您可以先预览照片；需要下载文件的话，请先支付费用。</span></p>'}
+    ${model.paid
+      ? '<p class="mail-p is-open">Payment received — thank you! Your files are ready below, and you can save your invoice and receipt with the button.<span class="mail-zh">已收到付款，谢谢！下面的文件都可以下载了，发票和收据可以通过按钮自行保存。</span></p>'
+      : (model.unlocked
+        ? '<p class="mail-p is-open">Your files are ready below. Payment is still due — thank you!<span class="mail-zh">下面的文件已可下载，请尽快完成付款，谢谢！</span></p>'
+        : '<p class="mail-p">You can preview the photos above. To download the files, please complete payment first.<span class="mail-zh">您可以先预览照片；需要下载文件的话，请先支付费用。</span></p>')}
     ${fee}
     ${partial}
     <div class="cta-row">${payBtn}</div>
@@ -239,7 +247,7 @@ ${dialog}`;
     bare: true,
     extraHead: HUB_HEAD,
     extraCss: HUB_CSS,
-    extraBody: model.unlocked ? '' : `<script>${hubScript(openKey, base, model.remainingCents)}</script>`,
+    extraBody: model.paid ? '' : `<script>${hubScript(openKey, base, model.remainingCents, model.unlocked)}</script>`,
   });
 }
 
@@ -312,7 +320,7 @@ const HUB_CSS = `
   }
 `;
 
-function hubScript(openKey, base, remaining) {
+function hubScript(openKey, base, remaining, unlockedNow) {
   return `
 (function(){
   var modal=document.getElementById('hubModal'), choose=document.getElementById('hubChoose'), emt=document.getElementById('hubEmtPanel');
@@ -334,7 +342,7 @@ function hubScript(openKey, base, remaining) {
   // started for e-Transfer: that is confirmed by Franky by hand, possibly hours later.
   var statusUrl=${JSON.stringify(base + '/status').replace(/</g, '\\u003c')}, timer=null;
   function check(){
-    fetch(statusUrl,{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){ if(j&&!j.unlocked&&(j.remainingCents||null)!==${JSON.stringify(remaining == null ? null : remaining)}){ location.reload(); return; } if(j&&j.unlocked) location.replace(${JSON.stringify(base).replace(/</g, '\\u003c')}); }).catch(function(){});
+    fetch(statusUrl,{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){ if(j&&!j.unlocked&&(j.remainingCents||null)!==${JSON.stringify(remaining == null ? null : remaining)}){ location.reload(); return; } if(j&&(j.paid||(j.unlocked&&!${unlockedNow ? 'true' : 'false'}))) location.replace(${JSON.stringify(base).replace(/</g, '\\u003c')}); }).catch(function(){});
   }
   function watch(){ if(!timer){ timer=setInterval(check,5000); } check(); }
   var card=document.getElementById('hubCard'); if(card){ card.addEventListener('click', watch); }
