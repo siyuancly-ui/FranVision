@@ -157,6 +157,11 @@
     }, 'jason'),
   };
 
+  // The gold ornamental frame around the page-1 description (modules.js `descFrame`) is
+  // ONLY for the four 华邸 themes -- an explicit allow-list, so a theme added later (or the
+  // Estate-layout ones) never gets it by accident.
+  ['navy', 'marble', 'burgundy', 'emerald'].forEach(function (id) { THEMES[id].descFrame = true; });
+
   if (typeof module !== 'undefined' && module.exports) module.exports = THEMES;
   if (root) root.FSB_V2_THEMES = THEMES;
 })(typeof window !== 'undefined' ? window : null);

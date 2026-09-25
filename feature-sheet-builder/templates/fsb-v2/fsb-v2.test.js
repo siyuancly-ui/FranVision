@@ -280,3 +280,81 @@ test('registry: hasContent counts a connected Job as content (a deliberate act)'
   const p = REG.blankProject('navy'); p.jobId = 'FVS-20260918-001';
   assert.equal(REG.hasContent(p), true);
 });
+
+// ================================================================
+//  Gold ornamental frame around the page-1 description (2026-09-24)
+//  ONLY the four 华邸 themes, ONLY when a description exists.
+// ================================================================
+const fs = require('node:fs');
+const path = require('node:path');
+const HUADI = ['navy', 'marble', 'burgundy', 'emerald'];
+
+function withDescription(themeId, text) {
+  const p = REG.blankProject(themeId);
+  p.propertyInfo.description = text === undefined ? 'A bright, spacious home close to everything.' : text;
+  return p;
+}
+
+test('descFrame: exactly the four 华邸 themes are flagged (explicit allow-list), the Estate-layout ones are not', () => {
+  const flagged = Object.keys(THEMES).filter((id) => THEMES[id].descFrame).sort();
+  assert.deepEqual(flagged, [...HUADI].sort());
+  ['estate-navy', 'estate-burgundy', 'estate-emerald', 'estate-charcoal'].forEach((id) => {
+    assert.ok(!THEMES[id].descFrame, id + ' must not get the frame');
+    assert.equal(THEMES[id].layout, 'jason');
+  });
+  // the dropdown labels of the flagged ones are the 华邸 ones
+  HUADI.forEach((id) => assert.match(THEMES[id].name, /^华邸/));
+});
+
+test('descFrame: in a 华邸 theme with a description, the frame fills the description box and the text sits inset inside it', () => {
+  HUADI.forEach((id) => {
+    const s = REG.compose(withDescription(id));
+    const d = s.page1.left.desc;
+    assert.ok(d && d.frame, id + ': frame present');
+    assert.equal(d.frame.asset, '/template-assets/fsb-v2/assets/desc-frame-gold.png');
+    assert.deepEqual(d.frame.rect, MOD.leftColumn.stagger5.desc.rect, id + ': frame = the original description box');
+    const [fx, fy, fw, fh] = d.frame.rect, [tx, ty, tw, th] = d.rect;
+    const { x, y } = MOD.descFrame.inset;
+    assert.ok(tx > fx && ty > fy && tx + tw < fx + fw && ty + th < fy + fh, id + ': text strictly inside the frame');
+    assert.ok(Math.abs((tx - fx) / fw - x) < 1e-9 && Math.abs((ty - fy) / fh - y) < 1e-9, id + ': inset as configured');
+    assert.ok(Math.abs((fx + fw - tx - tw) / fw - x) < 1e-9 && Math.abs((fy + fh - ty - th) / fh - y) < 1e-9, id + ': symmetric');
+  });
+});
+
+test('descFrame: NOT drawn without a description (6-photo collage), and NOT in the Estate-layout themes (their text box is unchanged)', () => {
+  HUADI.forEach((id) => {
+    const blank = REG.compose(REG.blankProject(id));
+    assert.equal(blank.page1.left.desc, null, id + ': no description -> no desc block, so no frame');
+    assert.equal(blank.flags.leftVariant, 'collage6');
+  });
+  ['estate-navy', 'estate-burgundy', 'estate-emerald', 'estate-charcoal'].forEach((id) => {
+    const s = REG.compose(withDescription(id));
+    assert.equal(JSON.stringify(s).includes('desc-frame-gold'), false, id + ': no frame anywhere in its render spec');
+  });
+});
+
+test('descFrame: a blank/whitespace description counts as none; a real one switches the frame on', () => {
+  assert.equal(REG.compose(withDescription('navy', '   ')).page1.left.desc, null);
+  assert.ok(REG.compose(withDescription('navy', 'x')).page1.left.desc.frame);
+});
+
+test('descFrame: the inset keeps the text clear of the artwork (measured on the PNG: side lines 1.8%, top ornament to 12.3%, bottom ornament from 86.8%)', () => {
+  const { x, y } = MOD.descFrame.inset;
+  assert.ok(x > 0.018 + 0.02, 'text clear of the side lines');
+  assert.ok(y > 0.123, 'text below the top ornament');
+  assert.ok(1 - y < 0.868, 'text above the bottom ornament');
+  assert.ok(x < 0.12 && y < 0.25, 'but not so big that the text area collapses');
+});
+
+test('descFrame: the artwork ships in the template assets (a 2:1 RGBA PNG)', () => {
+  const file = path.join(__dirname, 'assets', 'desc-frame-gold.png');
+  const buf = fs.readFileSync(file);
+  assert.equal(buf.slice(1, 4).toString(), 'PNG');
+  const w = buf.readUInt32BE(16), h = buf.readUInt32BE(20), colorType = buf[25];
+  assert.ok(Math.abs(w / h - 2) < 0.01, `2:1 (got ${w}x${h})`);
+  assert.equal(colorType, 6, 'RGBA, so the middle is transparent');
+  // it fits the description box without visible distortion
+  const box = MOD.leftColumn.stagger5.desc.rect;
+  const boxAspect = (box[2] * GEO.page.trimWidthPt) / (box[3] * GEO.page.trimHeightPt);
+  assert.ok(Math.abs(boxAspect / (w / h) - 1) < 0.03, `description box ${boxAspect.toFixed(3)}:1 ~ artwork ${(w / h).toFixed(3)}:1`);
+});

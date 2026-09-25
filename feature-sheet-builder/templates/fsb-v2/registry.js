@@ -125,7 +125,16 @@
         return { id: p.id, kind: 'photos', slots: [{ id: p.id, rect: p.rect }], rect: p.rect };
       }), overflow: 0 };
       if (leftDef.desc) {
-        leftDesc = { rect: leftDef.desc.rect, type: leftDef.desc.type,
+        // 华邸 themes: the description sits inside a gold ornamental frame -- the frame fills the
+        // description box, the text is inset to the frame's clear middle (see modules.js descFrame).
+        var descBox = leftDef.desc.rect, descFrameSpec = null, textRect = descBox;
+        if (theme.descFrame && M.descFrame) {
+          var fi = M.descFrame.inset;
+          descFrameSpec = { rect: descBox, asset: M.descFrame.asset };
+          textRect = [descBox[0] + descBox[2] * fi.x, descBox[1] + descBox[3] * fi.y,
+            descBox[2] * (1 - 2 * fi.x), descBox[3] * (1 - 2 * fi.y)];
+        }
+        leftDesc = { rect: textRect, frame: descFrameSpec, type: leftDef.desc.type,
           field: 'propertyInfo.description',
           value: get(project, 'propertyInfo.description') || '' };
       }

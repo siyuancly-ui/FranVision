@@ -30,7 +30,7 @@ confirms, and either exports a print PDF or submits the sheet to the studio.
 ```
 cd feature-sheet-builder
 node server.js            # -> http://localhost:4180
-npm test                  # node --test  (89 tests across this module)
+npm test                  # node --test  (95 tests across this module)
 ```
 
 Or double-click `../Feature Sheet Builder.command` in Finder (starts the server,
@@ -214,6 +214,7 @@ themes.
   - **Estate layout** (labelled 藏蓝·Navy / 酒红·Burgundy / 墨绿·Emerald / 深灰·Charcoal in the dropdown) — `estate-navy` / `estate-burgundy` / `estate-emerald` /
     `estate-charcoal`. Marked `layout: 'jason'`, use `geometry-estate.js`, single
     agent only, velvet-artwork background + metal chevron/bar, all-white copy.
+- **Gold ornamental frame around the description (2026-09-24, Franky) — ONLY the four 华邸 themes (`navy` / `marble` / `burgundy` / `emerald`), ONLY when a description exists (the `stagger5` variant).** `themes.js` flags exactly those four `descFrame: true` (an explicit allow-list — the Estate-layout themes and any future theme don't get it by accident). `registry.js compose()` then returns the description block as `{ frame: { rect, asset }, rect }`: the artwork (`templates/fsb-v2/assets/desc-frame-gold.png`, 1774×887 RGBA, source in `Feature Sheet Template/`) fills the ORIGINAL description box (`stagger5.desc.rect`, 2.02:1 vs the art's 2:1 — no visible stretch) and the text rect is inset inside it (`modules.js descFrame.inset` = 5% left/right, 15% top/bottom — measured on the PNG: side lines end at 1.8%, the top ornament's lower edge is at 12.3%, the bottom ornament starts at 86.8%). The renderer draws it as a background layer under the text and centres the copy vertically in the frame (a one-line blurb sits mid-frame; a full text fills it); the existing auto-fit (10–20pt) simply shrinks the copy into the smaller text area. No description -> the 6-photo collage, no frame. Verified in the browser on all four themes + the four Estate-layout ones (unchanged), short/medium/long/very-long text (all fit), and in the rasterised export path (`html-to-image` — gold pixels present, so the PDF has it). Tests in `templates/fsb-v2/fsb-v2.test.js`.
 - **Page-1 slot id namespaces differ by layout** and this matters:
   - standard page 1: `p1L-1..6` (collage) + `p1R-hero`
   - Estate page 1: `p1-c1..5` (collage) + `p1-hero`

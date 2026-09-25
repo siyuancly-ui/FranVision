@@ -194,7 +194,25 @@
 
   function assign(a, b) { return Object.assign({}, a, b); }
 
-  var MODULES = { LEFT: LEFT, RIGHT: RIGHT, leftColumn: leftColumn, agentBlock: agentBlock };
+  // ================================================================
+  //  DESCRIPTION FRAME (2026-09-24, Franky)
+  //  A gold ornamental frame drawn around the page-1 description text, ONLY
+  //  in themes flagged `descFrame: true` (the four 华邸 themes: navy / marble
+  //  / burgundy / emerald) and ONLY when a description exists (the stagger5
+  //  variant). The artwork fills the description box; the text is inset so it
+  //  sits in the clear middle (measured on the 1774x887 PNG: side lines end at
+  //  1.8% / start at 98.1%, the top ornament's lower edge is at 12.3% and the
+  //  bottom ornament's upper edge at 86.8% of the frame height). inset =
+  //  fraction of the frame box kept clear on each side (x = left/right, y =
+  //  top/bottom). The artwork is 2:1 and the description box is ~2.02:1, so
+  //  it needs no distortion to fit.
+  // ================================================================
+  var descFrame = {
+    asset: '/template-assets/fsb-v2/assets/desc-frame-gold.png',
+    inset: { x: 0.05, y: 0.15 },
+  };
+
+  var MODULES = { LEFT: LEFT, RIGHT: RIGHT, leftColumn: leftColumn, agentBlock: agentBlock, descFrame: descFrame };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = MODULES;
   if (root) root.FSB_V2_MODULES = MODULES;
