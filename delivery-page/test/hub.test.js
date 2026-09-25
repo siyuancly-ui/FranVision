@@ -124,3 +124,15 @@ test('interactive-email page: once paid, Pay now becomes a static "Paid" mark, P
   assert.match(html, /Payment received/);
   assert.doesNotMatch(html, /complete payment first/);
 });
+
+test('3D Tour button follows Tour Link.txt (projects.data.tourUrl): first line only, BOM/blank lines/CRLF tolerated, non-URLs rejected', () => {
+  const target = (tourUrl) => resolveTarget('THREE_D', ROW, { data: { tourUrl } }, GTOKEN);
+  assert.equal(target('https://my.matterport.com/show/?m=abc'), 'https://my.matterport.com/show/?m=abc');
+  assert.equal(target('﻿https://my.matterport.com/show/?m=abc\r\n'), 'https://my.matterport.com/show/?m=abc');            // Windows Notepad BOM + CRLF
+  assert.equal(target('\n\n  https://tour.example.com/x  \nnote: floor tour\n'), 'https://tour.example.com/x');                  // extra lines under the link
+  for (const bad of ['', '   ', null, undefined, 'my.matterport.com/show', 'javascript:alert(1)', 'https://a b.com', 'see attached']) assert.equal(target(bad), null);
+  // the button is "ready" exactly when there is a usable link
+  const ready = (tourUrl) => buildHubModel(ROW, { data: { tourUrl } }, GTOKEN).lines.find((l) => l.key === 'THREE_D').ready;
+  assert.equal(ready('https://tour.example.com/x'), true);
+  assert.equal(ready(''), false);
+});

@@ -50,9 +50,12 @@ export function isLineKey(key) {
 
 // Only ever redirect to a plain web URL (a stored value is data, never trusted to
 // be a safe scheme).
+// Takes the FIRST non-empty line, so a Tour Link.txt with a note or a second line under the
+// link still yields just the link; anything with whitespace left in it is rejected rather
+// than sent to a Location header.
 function safeUrl(u) {
-  const s = typeof u === 'string' ? u.trim() : '';
-  return /^https?:\/\//i.test(s) ? s : '';
+  const first = typeof u === 'string' ? (u.split(/\r?\n/).map((l) => l.trim()).find(Boolean) || '') : '';
+  return /^https?:\/\/\S+$/i.test(first) ? first : '';
 }
 
 export function isUnlocked(row) {
