@@ -17,7 +17,10 @@
 --                    [{"key":"HDR"},{"key":"MLS","url":"https://www.dropbox.com/..."},...]
 --                    (HDR -> the Gallery page and THREE_D -> projects.tourUrl are resolved
 --                    at click time, so they carry no url here);
---   * wave_view_url  the Wave invoice's payment page (the "Pay now" button);
+--   * wave_view_url  the Wave invoice's customer link (link.waveapps.com/..., lands on Wave's public invoice
+--                    page = invoice + card payment) -- the "Pay by credit card" button;
+--   * wave_pdf_url   the invoice's PDF export link (Wave GraphQL `pdfUrl`, public via its token, no login) --
+--                    the "View invoice" button, so the invoice can be read WITHOUT going to Wave's pay page;
 --   * total_cents / pretax_cents  invoice total incl. HST and the pre-tax amount -- the page's
 --                    "Fee: $100+HST = $113.00" line and the pay dialog;
 --   * client_name    the email's "Hello <name>," greeting;
@@ -42,6 +45,7 @@ create table if not exists public.delivery_hub (
   token         text not null unique,
   lines         jsonb not null default '[]'::jsonb,
   wave_view_url text,
+  wave_pdf_url  text,
   total_cents   integer,
   pretax_cents  integer,
   client_name   text,
@@ -74,7 +78,7 @@ create table if not exists public.wave_events (
 alter table public.wave_events enable row level security;
 revoke all on public.wave_events from anon, authenticated;
 
-create or replace function public.jg_delivery_hub(p_token text, p_job_id text, p_lines jsonb, p_wave_view_url text, p_total_cents integer, p_wave_invoice_id text, p_pretax_cents integer, p_client_name text)
+create or replace function public.jg_delivery_hub(p_token text, p_job_id text, p_lines jsonb, p_wave_view_url text, p_wave_pdf_url text, p_total_cents integer, p_wave_invoice_id text, p_pretax_cents integer, p_client_name text)
 returns text language plpgsql security definer set search_path = public, extensions as $$
 declare v_token text;
 begin
@@ -88,11 +92,12 @@ begin
   if p_wave_invoice_id is not null and p_wave_invoice_id !~ '^[0-9]{1,30}$' then
     raise exception 'jg: wave invoice id must be digits';
   end if;
-  insert into public.delivery_hub (job_id, token, lines, wave_view_url, total_cents, wave_invoice_id, pretax_cents, client_name)
-  values (p_job_id, encode(extensions.gen_random_bytes(16), 'hex'), p_lines, nullif(btrim(p_wave_view_url), ''), p_total_cents, p_wave_invoice_id, p_pretax_cents, nullif(btrim(p_client_name), ''))
+  insert into public.delivery_hub (job_id, token, lines, wave_view_url, wave_pdf_url, total_cents, wave_invoice_id, pretax_cents, client_name)
+  values (p_job_id, encode(extensions.gen_random_bytes(16), 'hex'), p_lines, nullif(btrim(p_wave_view_url), ''), nullif(btrim(p_wave_pdf_url), ''), p_total_cents, p_wave_invoice_id, p_pretax_cents, nullif(btrim(p_client_name), ''))
   on conflict (job_id) do update set
     lines = excluded.lines,
-    wave_view_url = coalesce(excluded.wave_view_url, public.delivery_hub.wave_view_url),  -- a later Update without a picked customer keeps the earlier link
+    wave_view_url = coalesce(excluded.wave_view_url, public.delivery_hub.wave_view_url),
+    wave_pdf_url = coalesce(excluded.wave_pdf_url, public.delivery_hub.wave_pdf_url),  -- a later Update without a picked customer keeps the earlier link
     total_cents = coalesce(excluded.total_cents, public.delivery_hub.total_cents),
     wave_invoice_id = coalesce(excluded.wave_invoice_id, public.delivery_hub.wave_invoice_id),
     pretax_cents = coalesce(excluded.pretax_cents, public.delivery_hub.pretax_cents),
@@ -102,5 +107,5 @@ begin
   return v_token;
 end $$;
 
-revoke all on function public.jg_delivery_hub(text, text, jsonb, text, integer, text, integer, text) from public;
-grant execute on function public.jg_delivery_hub(text, text, jsonb, text, integer, text, integer, text) to anon;
+revoke all on function public.jg_delivery_hub(text, text, jsonb, text, text, integer, text, integer, text) from public;
+grant execute on function public.jg_delivery_hub(text, text, jsonb, text, text, integer, text, integer, text) to anon;

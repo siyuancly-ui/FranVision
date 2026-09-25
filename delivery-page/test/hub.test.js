@@ -62,7 +62,7 @@ test('isUnlocked: paid OR unlocked', () => {
 test('locked page: lock buttons + dialog with Pay now, and NO target anywhere in the HTML', () => {
   const html = renderHubPage(buildHubModel(ROW, PROJECT, GTOKEN), { base: '/deliver/x/' + ROW.token });
   assert.equal((html.match(/is-locked/g) || []).length >= 5, true);
-  assert.match(html, /Please pay to unlock/);
+  assert.match(html, /Invoice &amp; payment/);
   assert.match(html, /href="https:\/\/next\.waveapps\.com\/pay\/abc"/);
   assert.match(html, /Pay by credit card/);
   assert.match(html, /Pay by e-Transfer/);
@@ -79,7 +79,7 @@ test('unlocked page: real links through /go/<KEY>, no dialog; not-ready item is 
   const html = renderHubPage(buildHubModel({ ...ROW, paid: true }, PROJECT, GTOKEN), { base: '/deliver/x/' + ROW.token });
   assert.match(html, new RegExp(`href="/deliver/x/${ROW.token}/go/MLS" target="_blank" rel="noopener"`));   // opens in a new tab, the hub stays put
   assert.match(html, new RegExp(`href="/deliver/x/${ROW.token}/go/HDR"`));
-  assert.doesNotMatch(html, /Please pay to unlock|class="hub-btn is-locked"|id="hubModal"/);
+  assert.doesNotMatch(html, /Invoice &amp; payment|class="hub-btn is-locked"|id="hubModal"/);
   assert.doesNotMatch(html, /dropbox\.com/);
   assert.doesNotMatch(html, /go\/LOCAL_REPORT/);
   assert.match(html, /Preparing/);
@@ -101,26 +101,26 @@ test('interactive-email page: greeting + "photos are ready" + fee line + Pay now
   assert.match(html, /Your photos for <strong>12 Main St, Toronto<\/strong> are ready/);
   assert.match(html, /12 Main St, Toronto 的照片已经制作完成/);
   assert.match(html, /Fee 费用: <strong>\$100 \+ HST = \$113\.00<\/strong>/);   // whole dollars, like the email
-  assert.match(html, /id="hubPayNow" href="https:\/\/next\.waveapps\.com\/pay\/abc" target="_blank" rel="noopener">Pay now \/ Invoice/);   // ONE blue button -> the Wave invoice page
-  assert.doesNotMatch(html, /Print invoice/);
-  assert.match(html, /id="hubEmtLink"/);                                            // Wave's page has no Interac e-Transfer
+  assert.match(html, /<button class="hub-cta" id="hubPayNow" type="button">View invoice &amp; pay 查看发票并付款<\/button>/);   // ONE blue button, bilingual, opens the dialog
+  assert.doesNotMatch(html, /Print invoice|Pay now \/ Invoice/);
   assert.ok(html.indexOf('id="hubPayNow"') < html.indexOf('class="hub-list"'), 'the button sits above the download buttons');
   assert.match(html, /Thank you!<br>Franky<br>FranVision Media/);
   assert.match(html, /24 hours/);                                                  // Video's note (VIDEO is one of ROW's lines)
 });
 
-test('interactive-email page: cents in the pre-tax amount are kept; no name -> plain "Hello,"; no Wave invoice -> Pay now opens the dialog, no e-Transfer side link', () => {
+test('interactive-email page: cents in the pre-tax amount are kept; no name -> plain "Hello,"', () => {
   const html = renderHubPage(buildHubModel({ ...ROW, wave_view_url: null, pretax_cents: 9885, total_cents: 11170 }, PROJECT, GTOKEN), { base: '/deliver/x/y' });
   assert.match(html, /Hello,/);
   assert.match(html, /\$98\.85 \+ HST = \$111\.70/);
-  assert.match(html, /<button class="hub-cta" id="hubPayNow" type="button">Pay now/);
-  assert.doesNotMatch(html, /id="hubEmtLink"/);
 });
 
-test('interactive-email page: once paid, the same button stays (now "Invoice (Paid)", green) so the paid invoice can be downloaded; no e-Transfer link; copy says the files are ready', () => {
+test('interactive-email page: once paid, the button becomes a green "Invoice (Paid)" link to the invoice PDF (falls back to the Wave page when there is no PDF link); copy says the files are ready', () => {
+  const withPdf = renderHubPage(buildHubModel({ ...ROW, paid: true, wave_pdf_url: 'https://accounting.waveapps.com/inv.pdf' }, PROJECT, GTOKEN), { base: '/deliver/x/y' });
+  assert.match(withPdf, /class="hub-cta is-paid" href="https:\/\/accounting\.waveapps\.com\/inv\.pdf" target="_blank" rel="noopener">Invoice \(Paid\)/);
   const html = renderHubPage(buildHubModel({ ...ROW, paid: true }, PROJECT, GTOKEN), { base: '/deliver/x/y' });
-  assert.match(html, /class="hub-cta is-paid" id="hubPayNow" href="https:\/\/next\.waveapps\.com\/pay\/abc" target="_blank" rel="noopener">Invoice \(Paid\)/);
-  assert.doesNotMatch(html, /id="hubEmtLink"/);
+  assert.match(html, /class="hub-cta is-paid" href="https:\/\/next\.waveapps\.com\/pay\/abc"/);
+  assert.doesNotMatch(renderHubPage(buildHubModel({ ...ROW, paid: true, wave_view_url: null }, PROJECT, GTOKEN), { base: '/deliver/x/y' }), /Invoice \(Paid\)/);   // no invoice at all -> no button
+  assert.doesNotMatch(html, /id="hubPayNow"|Invoice &amp; payment|hubModal/);
   assert.match(html, /Payment received/);
   assert.doesNotMatch(html, /complete payment first/);
 });
@@ -151,4 +151,17 @@ test('partial payment (safety net): the page shows what came in and what is stil
   const plain = renderHubPage(buildHubModel({ ...ROW, pretax_cents: 10000 }, PROJECT, GTOKEN), { base: '/deliver/x/y' });
   assert.doesNotMatch(plain, /to unlock downloads|才能解锁下载/);
   assert.match(plain, /hub-fee">\$113\.00 <span>incl\. HST/);
+});
+
+test('dialog splits invoice from payment: View invoice (PDF) first, then Pay by credit card (Wave page) and Pay by e-Transfer; each only when it exists', () => {
+  const full = renderHubPage(buildHubModel({ ...ROW, wave_pdf_url: 'https://accounting.waveapps.com/inv.pdf' }, PROJECT, GTOKEN), { base: '/deliver/x/y' });
+  const i = { view: full.indexOf('View invoice <span>'), card: full.indexOf('id="hubCard"'), emt: full.indexOf('id="hubEmt"') };
+  assert.ok(i.view > 0 && i.view < i.card && i.card < i.emt, 'order: view invoice, credit card, e-Transfer');
+  assert.match(full, /class="hub-pay is-ghost" href="https:\/\/accounting\.waveapps\.com\/inv\.pdf" target="_blank" rel="noopener">View invoice/);
+  assert.match(full, /id="hubCard" href="https:\/\/next\.waveapps\.com\/pay\/abc"/);          // card -> Wave's page
+  const noPdf = renderHubPage(buildHubModel(ROW, PROJECT, GTOKEN), { base: '/deliver/x/y' });
+  assert.match(noPdf, /class="hub-pay is-ghost" href="https:\/\/next\.waveapps\.com\/pay\/abc"/);   // no PDF link yet -> the Wave page shows the invoice
+  const none = renderHubPage(buildHubModel({ ...ROW, wave_view_url: null, wave_pdf_url: null }, PROJECT, GTOKEN), { base: '/deliver/x/y' });
+  assert.doesNotMatch(none, /View invoice <span>|id="hubCard"/);
+  assert.match(none, /id="hubEmt"/);                                                            // e-Transfer is always available
 });

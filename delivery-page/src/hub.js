@@ -88,6 +88,8 @@ export function buildHubModel(row, project, galleryToken) {
     address,
     unlocked: isUnlocked(row),
     payUrl: safeUrl(row.wave_view_url),
+    // The invoice on its own (PDF export, no payment page); falls back to Wave's combined page.
+    invoiceUrl: safeUrl(row.wave_pdf_url) || safeUrl(row.wave_view_url),
     totalCents: Number.isFinite(row.total_cents) ? row.total_cents : null,
     preTaxCents: Number.isFinite(row.pretax_cents) ? row.pretax_cents : null,
     remainingCents: remainingCents(row),
@@ -163,12 +165,17 @@ export function renderHubPage(model, { base, openKey = '' }) {
   const cardBtn = model.payUrl
     ? `<a class="hub-pay" id="hubCard" href="${escapeHtml(model.payUrl)}" target="_blank" rel="noopener">Pay by credit card <span>信用卡</span></a>`
     : '';
+  // The invoice can be read on its own first (PDF), whichever way the client then pays.
+  const viewBtn = model.invoiceUrl
+    ? `<a class="hub-pay is-ghost" href="${escapeHtml(model.invoiceUrl)}" target="_blank" rel="noopener">View invoice <span>查看发票</span></a>`
+    : '';
   const dialog = model.unlocked ? '' : `
 <div class="hub-modal" id="hubModal" hidden role="dialog" aria-modal="true" aria-labelledby="hubModalTitle">
   <div class="hub-modal-card">
     <div id="hubChoose">
-      <h2 id="hubModalTitle">Please pay to unlock <span>请先付款解锁</span></h2>
+      <h2 id="hubModalTitle">Invoice &amp; payment <span>发票与付款</span></h2>
       ${amount}
+      ${viewBtn}
       ${cardBtn}
       <button class="hub-pay is-alt" id="hubEmt" type="button">Pay by e-Transfer <span>EMT 转账</span></button>
     </div>
@@ -194,17 +201,13 @@ export function renderHubPage(model, { base, openKey = '' }) {
   const partial = model.remainingCents != null
     ? `<p class="mail-partial">${model.partialPaidCents != null ? `Paid ${money(model.partialPaidCents)}, ` : ''}<strong>${money(model.remainingCents)} more</strong> to unlock downloads.<span class="mail-zh">${model.partialPaidCents != null ? `已付 ${money(model.partialPaidCents)}，` : ''}还需支付 <strong>${money(model.remainingCents)}</strong> 才能解锁下载。</span></p>` : '';
 
-  // ONE blue button for everything money-related: it opens the Wave invoice page (the customer link
-  // `viewUrl`, which lands on Wave's public invoice page) where the client can pay by card / bank, print,
-  // and download the PDF -- which shows "Paid" once it is. Clicking it while unpaid starts the auto-unlock
-  // watch (see hubScript). Wave's page has no Interac e-Transfer, so while locked a small text link opens
-  // the e-Transfer instructions. A Job with no Wave invoice gets a Pay now button that opens the dialog.
-  const payLabel = model.unlocked ? 'Invoice (Paid) 发票 &#10003;' : 'Pay now / Invoice 付款 / 发票';
-  const payBtn = model.payUrl
-    ? `<a class="hub-cta${model.unlocked ? ' is-paid' : ''}" id="hubPayNow" href="${escapeHtml(model.payUrl)}" target="_blank" rel="noopener">${payLabel}</a>`
-    : (model.unlocked ? '' : '<button class="hub-cta" id="hubPayNow" type="button">Pay now 付款</button>');
-  const emtLink = !model.unlocked && model.payUrl
-    ? '<p class="mail-emt">Prefer Interac e-Transfer? <button class="hub-link" id="hubEmtLink" type="button">Show e-Transfer details 使用 EMT 转账</button></p>' : '';
+  // ONE blue button for everything money-related. While locked it opens the dialog where the client can
+  // read the invoice (PDF, no payment page) and then choose Wave credit card or Interac e-Transfer (Wave's
+  // own page has no Interac, and its bank-EFT option is not used). Once paid the same button becomes a green
+  // "Invoice (Paid)" link to the invoice PDF (Wave regenerates it, so it can be downloaded marked Paid).
+  const payBtn = model.unlocked
+    ? (model.invoiceUrl ? `<a class="hub-cta is-paid" href="${escapeHtml(model.invoiceUrl)}" target="_blank" rel="noopener">Invoice (Paid) 发票 &#10003;</a>` : '')
+    : '<button class="hub-cta" id="hubPayNow" type="button">View invoice &amp; pay 查看发票并付款</button>';
 
   // The wording is the Delivery Email's own (job-generator/delivery-email-template.{en,zh}.txt), so the page
   // reads like the email it replaces -- keep the two in step if the email's wording changes.
@@ -222,7 +225,6 @@ export function renderHubPage(model, { base, openKey = '' }) {
     ${fee}
     ${partial}
     <div class="cta-row">${payBtn}</div>
-    ${emtLink}
     <hr class="mail-rule">
     ${model.address ? `<h1 class="mail-addr">${escapeHtml(model.address)}</h1>` : ''}
     <p class="mail-note">For the best experience, please open in a browser on PC or Mac. Thank you so much for your support!<span class="mail-zh">请在 PC 或 Mac 上使用浏览器打开效果最佳，感谢您的支持与厚爱！</span></p>
@@ -264,8 +266,6 @@ const HUB_CSS = `
   .hub-cta.is-paid{background:#5f8f6b;}
   .mail-partial{margin:0 0 14px;padding:12px 14px;border-radius:8px;background:#fff6e8;border:1px solid #f0d9b0;font-size:14px;line-height:1.55;color:#7a4b00;}
   .mail-partial .mail-zh{margin:4px 0 0;color:#8a6a3a;}
-  .mail-emt{margin:12px 0 0;font-size:12.5px;color:#7a766b;}
-  .hub-link{border:0;background:none;padding:0;font:inherit;color:#467ab5;text-decoration:underline;cursor:pointer;}
   .hub-note{font-weight:400;font-size:12px;color:#8a867b;}
   .hub-list{display:flex;flex-direction:column;gap:12px;margin-top:18px;}
   /* Same raised grey button family as the Gallery page's download buttons, full width. */
@@ -290,6 +290,8 @@ const HUB_CSS = `
   .hub-pay{display:block;width:100%;box-sizing:border-box;margin:0 0 10px;padding:14px 16px;border:0;border-radius:12px;background:#4a7ab5;color:#fff;font:inherit;font-weight:600;font-size:15px;text-decoration:none;cursor:pointer;}
   .hub-pay span{font-weight:400;font-size:12px;opacity:.85;margin-left:6px;}
   .hub-pay:hover{background:#3f6ba1;}
+  .hub-pay.is-ghost{background:#fff;color:#467ab5;border:1px solid #b7c4d6;}
+  .hub-pay.is-ghost:hover{background:#f0f5fa;}
   .hub-pay.is-alt{background:#5f8f6b;}
   .hub-pay.is-alt:hover{background:#527d5d;}
   .hub-emt-to{margin:8px 0 2px;font-size:12px;color:#8a867b;}
@@ -318,8 +320,7 @@ function hubScript(openKey, base, remaining) {
   function open(){ show('choose'); modal.hidden=false; }
   function close(){ modal.hidden=true; }
   document.querySelectorAll('.hub-btn.is-locked').forEach(function(b){ b.addEventListener('click', open); });
-  var pn=document.getElementById('hubPayNow'); if(pn){ pn.addEventListener('click', function(e){ if(pn.tagName==='A'){ watch(); } else { open(); } }); }
-  var el=document.getElementById('hubEmtLink'); if(el){ el.addEventListener('click', function(){ show('emt'); modal.hidden=false; }); }
+  var pn=document.getElementById('hubPayNow'); if(pn){ pn.addEventListener('click', open); }
   document.getElementById('hubClose').addEventListener('click', close);
   document.getElementById('hubEmt').addEventListener('click', function(){ show('emt'); });
   document.getElementById('hubBack').addEventListener('click', function(){ show('choose'); });

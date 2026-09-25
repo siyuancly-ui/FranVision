@@ -243,7 +243,7 @@ function writeDeliveryEmailFiles(jobFolderAbsolutePath, { zhContent, enContent }
 // ---- The one function server.js calls. NEVER throws -- same contract as
 // dropbox-sync.js. `client` is a test-only seam (delivery-email.test.js
 // injects a fake Dropbox client so the suite never hits the real API). ----
-async function generateDeliveryEmails({ jobId, jobFolderPath, folderName, clientName, address, order, componentFolders, totalCents, preTaxCents, client, waveViewUrl, waveInvoiceId, getGalleryToken, saveDeliveryHub }) {
+async function generateDeliveryEmails({ jobId, jobFolderPath, folderName, clientName, address, order, componentFolders, totalCents, preTaxCents, client, waveViewUrl, wavePdfUrl, waveInvoiceId, getGalleryToken, saveDeliveryHub }) {
   try {
     const lines = getDeliverableLines(order, componentFolders);
     const includedKeys = new Set(lines.filter((l) => l.include).map((l) => l.key));
@@ -275,7 +275,7 @@ async function generateDeliveryEmails({ jobId, jobFolderPath, folderName, client
     let hubToken = null;
     if (jobId && typeof saveDeliveryHub === 'function') {
       const hubLines = lines.filter((l) => l.include).map((l) => (linkByKey[l.key] ? { key: l.key, url: linkByKey[l.key] } : { key: l.key }));
-      try { hubToken = (await saveDeliveryHub({ jobId, lines: hubLines, waveViewUrl: waveViewUrl || null, totalCents, waveInvoiceId: waveInvoiceId || null, preTaxCents, clientName })) || null; } catch (err) { hubToken = null; }
+      try { hubToken = (await saveDeliveryHub({ jobId, lines: hubLines, waveViewUrl: waveViewUrl || null, wavePdfUrl: wavePdfUrl || null, totalCents, waveInvoiceId: waveInvoiceId || null, preTaxCents, clientName })) || null; } catch (err) { hubToken = null; }
     }
     // With a hub the lower half of the email is that one link: drop every per-line block, keep the HUB one.
     const emailKeys = hubToken ? new Set(['HUB']) : includedKeys;

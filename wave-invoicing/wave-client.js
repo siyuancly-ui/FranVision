@@ -52,9 +52,9 @@ function createWaveClient({ token, businessId, fetchImpl = fetch, sleep = (ms) =
     return m;
   }
 
-  const INVOICE_FIELDS = 'id status invoiceNumber viewUrl total{ value } amountDue{ value }';
+  const INVOICE_FIELDS = 'id status invoiceNumber viewUrl pdfUrl total{ value } amountDue{ value }';
   const shape = (inv) => inv && ({
-    id: inv.id, status: inv.status, invoiceNumber: inv.invoiceNumber, viewUrl: inv.viewUrl,
+    id: inv.id, status: inv.status, invoiceNumber: inv.invoiceNumber, viewUrl: inv.viewUrl, pdfUrl: inv.pdfUrl,
     totalDecimal: inv.total && inv.total.value, amountDueDecimal: inv.amountDue && inv.amountDue.value,
   });
 

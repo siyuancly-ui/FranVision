@@ -62,12 +62,12 @@ const okFetch = (payload, calls) => async (url, opts) => {
 
   await test('saveDeliveryHub: calls jg_delivery_hub with lines / wave link / total and returns the token', async () => {
     const calls = [];
-    const tok = await backend.saveDeliveryHub({ jobId: 'FVS-20260925-001', lines: [{ key: 'HDR' }], waveViewUrl: 'https://w/p', totalCents: 11300, preTaxCents: 10000, clientName: 'Jessie Tang', waveInvoiceId: Buffer.from('Business:72a699be-404e-4cd7-b8eb-654e0b2dd015;Invoice:2619579987556152644').toString('base64') }, { env: ENV, fetchImpl: okFetch('t'.repeat(32), calls) });
+    const tok = await backend.saveDeliveryHub({ jobId: 'FVS-20260925-001', lines: [{ key: 'HDR' }], waveViewUrl: 'https://w/p', wavePdfUrl: 'https://w/pdf', totalCents: 11300, preTaxCents: 10000, clientName: 'Jessie Tang', waveInvoiceId: Buffer.from('Business:72a699be-404e-4cd7-b8eb-654e0b2dd015;Invoice:2619579987556152644').toString('base64') }, { env: ENV, fetchImpl: okFetch('t'.repeat(32), calls) });
     assert.ok(calls[0].url.endsWith('/rest/v1/rpc/jg_delivery_hub'));
-    assert.deepStrictEqual(JSON.parse(calls[0].opts.body), { p_token: 'secret-token', p_job_id: 'FVS-20260925-001', p_lines: [{ key: 'HDR' }], p_wave_view_url: 'https://w/p', p_total_cents: 11300, p_wave_invoice_id: '2619579987556152644', p_pretax_cents: 10000, p_client_name: 'Jessie Tang' });
+    assert.deepStrictEqual(JSON.parse(calls[0].opts.body), { p_token: 'secret-token', p_job_id: 'FVS-20260925-001', p_lines: [{ key: 'HDR' }], p_wave_view_url: 'https://w/p', p_wave_pdf_url: 'https://w/pdf', p_total_cents: 11300, p_wave_invoice_id: '2619579987556152644', p_pretax_cents: 10000, p_client_name: 'Jessie Tang' });
     assert.strictEqual(tok, 't'.repeat(32));
     await backend.saveDeliveryHub({ jobId: 'FVS-20260925-001' }, { env: ENV, fetchImpl: okFetch('x', calls) });
-    assert.deepStrictEqual(JSON.parse(calls[1].opts.body), { p_token: 'secret-token', p_job_id: 'FVS-20260925-001', p_lines: [], p_wave_view_url: null, p_total_cents: null, p_wave_invoice_id: null, p_pretax_cents: null, p_client_name: null });
+    assert.deepStrictEqual(JSON.parse(calls[1].opts.body), { p_token: 'secret-token', p_job_id: 'FVS-20260925-001', p_lines: [], p_wave_view_url: null, p_wave_pdf_url: null, p_total_cents: null, p_wave_invoice_id: null, p_pretax_cents: null, p_client_name: null });
   });
 
   await test('waveInvoiceNumber: digits from the GraphQL id (or bare digits), null otherwise; stays a string (19 digits)', () => {

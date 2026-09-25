@@ -21,7 +21,7 @@ const fresh = () => ({
 let state = fresh();
 const events = new Map();
 const project = () => ({ id: JOB, data: { address: '48 Red Ash Dr, Oakville', tourUrl: 'https://my.matterport.com/show/?m=example' }, updated_at: '2026-09-25T10:00:00Z' });
-const row = () => ({ job_id: JOB, token: TOKEN, wave_invoice_id: WAVE_INVOICE, total_cents: 22599, pretax_cents: 20000, client_name: 'Jessie Tang', wave_view_url: 'https://next.waveapps.com/example/public/invoices/abc', ...state });
+const row = () => ({ job_id: JOB, token: TOKEN, wave_invoice_id: WAVE_INVOICE, total_cents: 22599, pretax_cents: 20000, client_name: 'Jessie Tang', wave_view_url: 'https://next.waveapps.com/example/public/invoices/abc', wave_pdf_url: 'https://accounting.waveapps.com/example/invoice.pdf', ...state });
 
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (url, init = {}) => {

@@ -9,12 +9,12 @@ const mk = (responses) => {
   const fetchImpl = async (url, opts) => { calls.push(JSON.parse(opts.body)); const r = responses.shift(); if (r instanceof Error) throw r; return r; };
   return { calls, client: createWaveClient({ token: 't', businessId: 'B', fetchImpl, sleep: async () => {} }) };
 };
-const inv = { id: 'I', status: 'DRAFT', invoiceNumber: '9', viewUrl: 'u', total: { value: '1.13' }, amountDue: { value: '1.13' } };
+const inv = { id: 'I', status: 'DRAFT', invoiceNumber: '9', viewUrl: 'u', pdfUrl: 'p', total: { value: '1.13' }, amountDue: { value: '1.13' } };
 
 test('createDraftInvoice shapes the result', async () => {
   const { client, calls } = mk([resp(200, { data: { invoiceCreate: { didSucceed: true, inputErrors: null, invoice: inv } } })]);
   const out = await client.createDraftInvoice({ businessId: 'B', items: [] });
-  assert.deepEqual(out, { id: 'I', status: 'DRAFT', invoiceNumber: '9', viewUrl: 'u', totalDecimal: '1.13', amountDueDecimal: '1.13' });
+  assert.deepEqual(out, { id: 'I', status: 'DRAFT', invoiceNumber: '9', viewUrl: 'u', pdfUrl: 'p', totalDecimal: '1.13', amountDueDecimal: '1.13' });
   assert.deepEqual(calls[0].variables.i, { businessId: 'B', items: [] });
 });
 

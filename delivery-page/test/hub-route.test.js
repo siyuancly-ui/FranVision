@@ -42,7 +42,7 @@ test('hub page: 200 for a valid token (slug cosmetic), unknown / malformed token
     const res = await get(env, `/deliver/${slug}/${TOKEN}`);
     assert.equal(res.status, 200);
     assert.equal(res.headers.get('cache-control'), 'no-store');
-    assert.match(await res.text(), /Please pay to unlock/);
+    assert.match(await res.text(), /Invoice &amp; payment/);
   }
   const a = await get(env, `/deliver/x/${'e'.repeat(32)}`);
   const b = await get(env, `/deliver/x/${JOB}`);
