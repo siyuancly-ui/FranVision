@@ -484,6 +484,8 @@ test('generateDeliveryEmails: with a hub the lower half is the one hub link; the
   assert.strictEqual(saved.totalCents, 11300);
   assert.strictEqual(saved.waveViewUrl, 'https://next.waveapps.com/pay/abc');
   assert.strictEqual(saved.waveInvoiceId, 'INV-GQL-ID');
+  assert.strictEqual(saved.preTaxCents, 10000);
+  assert.strictEqual(saved.clientName, 'C');
   assert.deepStrictEqual(saved.lines.map((l) => l.key), ['HDR', 'MLS', 'FLOORPLAN', 'THREE_D', 'LOCAL_REPORT', 'HOME_REPORT']);   // = getDeliverableLines()'s included keys, in order
   assert.ok(!('url' in saved.lines.find((l) => l.key === 'THREE_D')), 'THREE_D carries no Dropbox link');
   for (const f of [deliveryEmail.OUTPUT_FILENAME_EN, deliveryEmail.OUTPUT_FILENAME_ZH]) {

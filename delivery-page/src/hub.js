@@ -36,7 +36,7 @@ export function hubPath(address, token) {
 const LINE_DEFS = {
   HDR: { en: 'High-Resolution Photos', zh: '高清照片' },
   MLS: { en: 'MLS Photos', zh: 'MLS 照片' },
-  VIDEO: { en: 'Video', zh: '视频' },
+  VIDEO: { en: 'Video', zh: '视频', noteEn: 'ready within 24 hours', noteZh: '24小时内完成' },
   FLOORPLAN: { en: 'Floor Plan / Site Plan', zh: '平面图' },
   THREE_D: { en: '3D Tour / Floor Tour', zh: '3D 全景' },
   LOCAL_REPORT: { en: 'Local Report', zh: '社区报告' },
@@ -70,7 +70,7 @@ export function buildHubModel(row, project, galleryToken) {
   const lines = LINE_ORDER.filter((k) => stored.has(k)).map((key) => {
     const line = stored.get(key);
     const ready = key === 'HDR' ? Boolean(galleryToken) : key === 'THREE_D' ? Boolean(tourUrl) : Boolean(safeUrl(line.url));
-    return { key, en: LINE_DEFS[key].en, zh: LINE_DEFS[key].zh, ready };
+    return { key, en: LINE_DEFS[key].en, zh: LINE_DEFS[key].zh, noteEn: LINE_DEFS[key].noteEn || '', noteZh: LINE_DEFS[key].noteZh || '', ready };
   });
 
   return {
@@ -79,6 +79,8 @@ export function buildHubModel(row, project, galleryToken) {
     unlocked: isUnlocked(row),
     payUrl: safeUrl(row.wave_view_url),
     totalCents: Number.isFinite(row.total_cents) ? row.total_cents : null,
+    preTaxCents: Number.isFinite(row.pretax_cents) ? row.pretax_cents : null,
+    clientName: typeof row.client_name === 'string' ? row.client_name.trim() : '',
     allInOnePath: deliveryPath(row.job_id, address),
     lines,
   };
@@ -97,6 +99,11 @@ export function resolveTarget(key, row, project, galleryToken) {
 
 function money(cents) {
   return `$${(cents / 100).toFixed(2)}`;
+}
+
+// Same rule as the email's PRETAX_AMOUNT: whole dollars drop the decimals, otherwise full cents.
+function preTaxMoney(cents) {
+  return cents % 100 === 0 ? `$${cents / 100}` : money(cents);
 }
 
 const LOCK_ICON = '<svg class="hub-ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><rect x="5" y="10.5" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
@@ -126,7 +133,8 @@ export function renderNotReadyHub(backHref) {
 // open the dialog for right away (arrives via /go/<KEY> hit while locked).
 export function renderHubPage(model, { base, openKey = '' }) {
   const buttons = model.lines.map((l) => {
-    const label = `<span class="hub-label">${escapeHtml(l.en)}<span class="hub-zh">${escapeHtml(l.zh)}</span></span>`;
+    const note = l.noteEn ? ` <span class="hub-note">(${escapeHtml(l.noteEn)} ${escapeHtml(l.noteZh)})</span>` : '';
+    const label = `<span class="hub-label">${escapeHtml(l.en)}${note}<span class="hub-zh">${escapeHtml(l.zh)}</span></span>`;
     if (!l.ready && model.unlocked) {
       return `<span class="hub-btn is-disabled" title="Still being prepared">${ARROW_ICON}${label}<span class="hub-tag">Preparing&hellip;</span></span>`;
     }
@@ -163,13 +171,40 @@ export function renderHubPage(model, { base, openKey = '' }) {
   </div>
 </div>`;
 
+  const who = model.clientName ? escapeHtml(model.clientName) : '';
+  const addr = model.address ? escapeHtml(model.address) : 'your property';
+  const fee = model.totalCents != null && model.preTaxCents != null
+    ? `<p class="mail-fee">Fee 费用: <strong>${preTaxMoney(model.preTaxCents)} + HST = ${money(model.totalCents)}</strong></p>` : '';
+  // The two blue buttons (like the studio's other delivery pages): Pay now opens the two-way pay dialog
+  // (credit card / e-Transfer); Print invoice opens the Wave invoice page. Once paid, Pay now becomes a
+  // static "Paid" mark. Print invoice only exists when the Job has a Wave invoice.
+  const payNow = model.unlocked
+    ? '<span class="hub-cta is-paid">Paid 已付款 &#10003;</span>'
+    : '<button class="hub-cta" id="hubPayNow" type="button">Pay now</button>';
+  const printBtn = model.payUrl
+    ? `<a class="hub-cta" href="${escapeHtml(model.payUrl)}" target="_blank" rel="noopener">Print invoice</a>` : '';
+
+  // The wording is the Delivery Email's own (job-generator/delivery-email-template.{en,zh}.txt), so the page
+  // reads like the email it replaces -- keep the two in step if the email's wording changes.
   const body = `
-<main class="hub-wrap">
-  <p class="eyebrow">FranVision Media</p>
-  ${model.address ? `<h1 class="hub-addr">${escapeHtml(model.address)}</h1>` : '<h1 class="hub-addr">Your delivery</h1>'}
-  <p class="hub-state${model.unlocked ? ' is-open' : ''}">${model.unlocked ? 'Unlocked 已解锁 — your files are ready.' : 'Downloads unlock after payment 付款后解锁下载'}</p>
-  <a class="hub-btn hub-preview" href="${escapeHtml(model.allInOnePath)}">${EYE_ICON}<span class="hub-label">Preview All in One<span class="hub-zh">在线预览</span></span></a>
-  ${model.lines.length ? `<div class="hub-list">\n${buttons}\n</div>` : '<p class="hub-empty">Nothing to download yet.</p>'}
+<main class="mail">
+  <div class="mail-card">
+    <p class="eyebrow">FranVision Media</p>
+    <p class="mail-hello">Hello${who ? ` ${who}` : ''},</p>
+    <p class="mail-p">Your photos for <strong>${addr}</strong> are ready — thank you for your patience.</p>
+    <p class="mail-zh">${model.address ? `${escapeHtml(model.address)} 的` : ''}照片已经制作完成，感谢您的耐心等待。</p>
+    <a class="hub-btn hub-preview" href="${escapeHtml(model.allInOnePath)}" target="_blank" rel="noopener">${EYE_ICON}<span class="hub-label">Preview All in One<span class="hub-zh">在线预览</span></span></a>
+    ${model.unlocked
+      ? '<p class="mail-p is-open">Payment received — thank you! Your files are ready below.<span class="mail-zh">已收到付款，谢谢！下面的文件都可以下载了。</span></p>'
+      : '<p class="mail-p">You can preview the photos above. To download the files, please complete payment first.<span class="mail-zh">您可以先预览照片；需要下载文件的话，请先支付费用。</span></p>'}
+    ${fee}
+    <div class="cta-row">${payNow}${printBtn}</div>
+    <hr class="mail-rule">
+    ${model.address ? `<h1 class="mail-addr">${escapeHtml(model.address)}</h1>` : ''}
+    <p class="mail-note">For the best experience, please open in a browser on PC or Mac. Thank you so much for your support!<span class="mail-zh">请在 PC 或 Mac 上使用浏览器打开效果最佳，感谢您的支持与厚爱！</span></p>
+    ${model.lines.length ? `<div class="hub-list">\n${buttons}\n</div>` : '<p class="hub-empty">Nothing to download yet.</p>'}
+    <p class="mail-sign">Thank you!<br>Franky<br>FranVision Media</p>
+  </div>
 </main>
 ${creditHtml()}
 ${dialog}`;
@@ -185,12 +220,26 @@ ${dialog}`;
 const HUB_HEAD = '<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500&family=Montserrat:wght@300;400;500;600&display=swap" rel="stylesheet">';
 
 const HUB_CSS = `
-  body{background:#fbfbfd;}
-  .hub-wrap{max-width:560px;margin:0 auto;padding:56px 20px 24px;font-family:Montserrat,-apple-system,"system-ui","Segoe UI",Roboto,sans-serif;color:#3a3a40;}
-  .hub-addr{font-family:Fraunces,Georgia,"Times New Roman",serif;font-weight:400;font-size:clamp(24px,5vw,34px);line-height:1.2;margin:0 0 10px;color:#2b2b30;}
-  .hub-state{margin:0 0 26px;font-size:14px;color:#8a6d00;}
-  .hub-state.is-open{color:#1f8b3a;}
-  .hub-list{display:flex;flex-direction:column;gap:12px;margin-top:22px;}
+  body{background:#eceef2;}
+  .mail{padding:28px 14px 8px;font-family:Montserrat,-apple-system,"system-ui","Segoe UI",Roboto,sans-serif;color:#3a3a40;}
+  .mail-card{max-width:600px;margin:0 auto;background:#fff;border-radius:14px;padding:40px 34px 34px;box-shadow:0 2px 14px rgba(30,30,40,0.10);}
+  .mail-hello{font-size:17px;margin:0 0 14px;}
+  .mail-p{font-size:15px;line-height:1.6;margin:0 0 4px;}
+  .mail-p strong{font-weight:600;}
+  .mail-p.is-open{color:#1f8b3a;margin:18px 0 4px;}
+  .mail-zh{display:block;font-size:13px;line-height:1.55;color:#7a766b;margin:0 0 18px;}
+  .mail-fee{margin:22px 0 14px;font-size:15px;}
+  .mail-rule{border:0;border-top:1px solid #e3e3e8;margin:30px 0 26px;}
+  .mail-addr{font-family:Fraunces,Georgia,"Times New Roman",serif;font-weight:400;font-size:clamp(22px,4.6vw,30px);line-height:1.2;margin:0 0 12px;color:#2b2b30;}
+  .mail-note{font-size:13.5px;line-height:1.55;color:#55555c;margin:0 0 6px;}
+  .mail-sign{margin:30px 0 0;font-size:14px;line-height:1.7;color:#55555c;}
+  /* The two blue buttons (studio's usual delivery-page look). */
+  .cta-row{display:flex;flex-wrap:wrap;gap:14px;margin:6px 0 0;}
+  .hub-cta{display:inline-flex;align-items:center;justify-content:center;min-width:150px;box-sizing:border-box;padding:14px 26px;border:0;border-radius:8px;background:#467ab5;color:#fff;font:inherit;font-size:18px;text-decoration:none;cursor:pointer;}
+  .hub-cta:hover{background:#3b6aa0;}
+  .hub-cta.is-paid{background:#5f8f6b;cursor:default;}
+  .hub-note{font-weight:400;font-size:12px;color:#8a867b;}
+  .hub-list{display:flex;flex-direction:column;gap:12px;margin-top:18px;}
   /* Same raised grey button family as the Gallery page's download buttons, full width. */
   .hub-btn{display:flex;align-items:center;gap:14px;width:100%;box-sizing:border-box;padding:15px 20px;border:1px solid #a9a9b0;border-radius:14px;background:linear-gradient(180deg,#fbfbfc 0%,#e3e3e7 55%,#d3d3d9 100%);color:#3a3a40;font:inherit;font-size:15px;font-weight:500;text-decoration:none;text-align:left;cursor:pointer;box-shadow:0 3px 7px rgba(30,30,40,0.2),0 1px 2px rgba(30,30,40,0.16),inset 0 1px 0 #fff;transition:transform .12s,box-shadow .12s;}
   .hub-btn:hover{background:linear-gradient(180deg,#ffffff 0%,#ececf0 55%,#dcdce2 100%);box-shadow:0 5px 11px rgba(30,30,40,0.26),0 1px 3px rgba(30,30,40,0.2),inset 0 1px 0 #fff;transform:translateY(-1px);}
@@ -201,7 +250,7 @@ const HUB_CSS = `
   .hub-tag{font-size:12px;color:#8a867b;}
   .hub-btn.is-locked{color:#55555c;}
   .hub-btn.is-disabled{opacity:.55;cursor:default;pointer-events:none;box-shadow:0 1px 2px rgba(30,30,40,0.12);}
-  .hub-preview{background:linear-gradient(180deg,#ffffff 0%,#f0f5fa 100%);border-color:#b7c4d6;}
+  .hub-preview{background:linear-gradient(180deg,#ffffff 0%,#f0f5fa 100%);border-color:#b7c4d6;margin:14px 0 16px;}
   .hub-empty{color:#8a867b;text-align:center;margin-top:28px;}
   .hub-modal{position:fixed;inset:0;z-index:60;background:rgba(20,20,26,0.55);display:flex;align-items:center;justify-content:center;padding:20px;font-family:Montserrat,-apple-system,"system-ui","Segoe UI",Roboto,sans-serif;}
   .hub-modal[hidden]{display:none;}
@@ -224,8 +273,10 @@ const HUB_CSS = `
   .hub-close{position:absolute;top:8px;right:12px;border:0;background:none;color:#8a867b;font-size:26px;line-height:1;cursor:pointer;}
   @media (prefers-color-scheme: dark){
     body{background:#0d0d10;}
-    .hub-wrap{color:#d7d7dc;}
-    .hub-addr{color:#f2f2f7;}
+    .mail{color:#d7d7dc;}
+    .mail-card{background:#1c1c20;box-shadow:none;}
+    .mail-addr{color:#f2f2f7;}
+    .mail-rule{border-color:#33333a;}
     .hub-modal-card{background:#1c1c20;color:#f2f2f7;}
     .hub-copy{background:#26262b;color:#f2f2f7;border-color:#3a3a40;}
   }
@@ -239,6 +290,7 @@ function hubScript(openKey, base) {
   function open(){ show('choose'); modal.hidden=false; }
   function close(){ modal.hidden=true; }
   document.querySelectorAll('.hub-btn.is-locked').forEach(function(b){ b.addEventListener('click', open); });
+  var pn=document.getElementById('hubPayNow'); if(pn){ pn.addEventListener('click', open); }
   document.getElementById('hubClose').addEventListener('click', close);
   document.getElementById('hubEmt').addEventListener('click', function(){ show('emt'); });
   document.getElementById('hubBack').addEventListener('click', function(){ show('choose'); });

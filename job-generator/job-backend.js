@@ -142,13 +142,15 @@ function waveInvoiceNumber(id) {
     return m ? m[1] : null;
   } catch (e) { return null; }
 }
-async function saveDeliveryHub({ jobId, lines, waveViewUrl, totalCents, waveInvoiceId }, deps) {
+async function saveDeliveryHub({ jobId, lines, waveViewUrl, totalCents, waveInvoiceId, preTaxCents, clientName }, deps) {
   const t = await rpc('jg_delivery_hub', {
     p_job_id: jobId,
     p_lines: lines || [],
     p_wave_view_url: waveViewUrl || null,
     p_total_cents: Number.isInteger(totalCents) ? totalCents : null,
     p_wave_invoice_id: waveInvoiceNumber(waveInvoiceId),
+    p_pretax_cents: Number.isInteger(preTaxCents) ? preTaxCents : null,
+    p_client_name: clientName ? String(clientName) : null,
   }, deps);
   return typeof t === 'string' && t ? t : null;
 }

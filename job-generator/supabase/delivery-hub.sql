@@ -18,7 +18,9 @@
 --                    (HDR -> the Gallery page and THREE_D -> projects.tourUrl are resolved
 --                    at click time, so they carry no url here);
 --   * wave_view_url  the Wave invoice's payment page (the "Pay now" button);
---   * total_cents    invoice total incl. HST, shown in the lock dialog;
+--   * total_cents / pretax_cents  invoice total incl. HST and the pre-tax amount -- the page's
+--                    "Fee: $100+HST = $113.00" line and the pay dialog;
+--   * client_name    the email's "Hello <name>," greeting;
 --   * wave_invoice_id  the numeric part of the Wave invoice's id (the GraphQL id is
 --                    base64("Business:<uuid>;Invoice:<n>"); Wave's webhook `invoice_id` is that <n>,
 --                    kept as text -- it is 19 digits, beyond a JS safe integer);
@@ -41,6 +43,8 @@ create table if not exists public.delivery_hub (
   lines         jsonb not null default '[]'::jsonb,
   wave_view_url text,
   total_cents   integer,
+  pretax_cents  integer,
+  client_name   text,
   wave_invoice_id text,
   paid          boolean not null default false,
   paid_source   text check (paid_source in ('manual', 'wave')),
@@ -70,7 +74,7 @@ create table if not exists public.wave_events (
 alter table public.wave_events enable row level security;
 revoke all on public.wave_events from anon, authenticated;
 
-create or replace function public.jg_delivery_hub(p_token text, p_job_id text, p_lines jsonb, p_wave_view_url text, p_total_cents integer, p_wave_invoice_id text)
+create or replace function public.jg_delivery_hub(p_token text, p_job_id text, p_lines jsonb, p_wave_view_url text, p_total_cents integer, p_wave_invoice_id text, p_pretax_cents integer, p_client_name text)
 returns text language plpgsql security definer set search_path = public, extensions as $$
 declare v_token text;
 begin
@@ -84,17 +88,19 @@ begin
   if p_wave_invoice_id is not null and p_wave_invoice_id !~ '^[0-9]{1,30}$' then
     raise exception 'jg: wave invoice id must be digits';
   end if;
-  insert into public.delivery_hub (job_id, token, lines, wave_view_url, total_cents, wave_invoice_id)
-  values (p_job_id, encode(extensions.gen_random_bytes(16), 'hex'), p_lines, nullif(btrim(p_wave_view_url), ''), p_total_cents, p_wave_invoice_id)
+  insert into public.delivery_hub (job_id, token, lines, wave_view_url, total_cents, wave_invoice_id, pretax_cents, client_name)
+  values (p_job_id, encode(extensions.gen_random_bytes(16), 'hex'), p_lines, nullif(btrim(p_wave_view_url), ''), p_total_cents, p_wave_invoice_id, p_pretax_cents, nullif(btrim(p_client_name), ''))
   on conflict (job_id) do update set
     lines = excluded.lines,
     wave_view_url = coalesce(excluded.wave_view_url, public.delivery_hub.wave_view_url),  -- a later Update without a picked customer keeps the earlier link
     total_cents = coalesce(excluded.total_cents, public.delivery_hub.total_cents),
     wave_invoice_id = coalesce(excluded.wave_invoice_id, public.delivery_hub.wave_invoice_id),
+    pretax_cents = coalesce(excluded.pretax_cents, public.delivery_hub.pretax_cents),
+    client_name = coalesce(excluded.client_name, public.delivery_hub.client_name),
     updated_at = now();
   select token into v_token from public.delivery_hub where job_id = p_job_id;
   return v_token;
 end $$;
 
-revoke all on function public.jg_delivery_hub(text, text, jsonb, text, integer, text) from public;
-grant execute on function public.jg_delivery_hub(text, text, jsonb, text, integer, text) to anon;
+revoke all on function public.jg_delivery_hub(text, text, jsonb, text, integer, text, integer, text) from public;
+grant execute on function public.jg_delivery_hub(text, text, jsonb, text, integer, text, integer, text) to anon;

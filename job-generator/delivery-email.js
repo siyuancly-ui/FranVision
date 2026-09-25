@@ -275,7 +275,7 @@ async function generateDeliveryEmails({ jobId, jobFolderPath, folderName, client
     let hubToken = null;
     if (jobId && typeof saveDeliveryHub === 'function') {
       const hubLines = lines.filter((l) => l.include).map((l) => (linkByKey[l.key] ? { key: l.key, url: linkByKey[l.key] } : { key: l.key }));
-      try { hubToken = (await saveDeliveryHub({ jobId, lines: hubLines, waveViewUrl: waveViewUrl || null, totalCents, waveInvoiceId: waveInvoiceId || null })) || null; } catch (err) { hubToken = null; }
+      try { hubToken = (await saveDeliveryHub({ jobId, lines: hubLines, waveViewUrl: waveViewUrl || null, totalCents, waveInvoiceId: waveInvoiceId || null, preTaxCents, clientName })) || null; } catch (err) { hubToken = null; }
     }
     // With a hub the lower half of the email is that one link: drop every per-line block, keep the HUB one.
     const emailKeys = hubToken ? new Set(['HUB']) : includedKeys;
