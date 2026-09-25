@@ -64,8 +64,10 @@ test('locked page: lock buttons + dialog with Pay now, and NO target anywhere in
   assert.equal((html.match(/is-locked/g) || []).length >= 5, true);
   assert.match(html, /Please pay to unlock/);
   assert.match(html, /href="https:\/\/next\.waveapps\.com\/pay\/abc"/);
+  assert.match(html, /Pay by credit card/);
+  assert.match(html, /Pay by e-Transfer/);
   assert.match(html, /\$113\.00/);
-  assert.match(html, /frankystudio@mail\.com/);
+  assert.match(html, /frankystudio@mail\.com/);   // inside the e-Transfer panel
   assert.doesNotMatch(html, /dropbox\.com/);
   assert.doesNotMatch(html, /matterport/);
   assert.doesNotMatch(html, /\/go\//);              // not even the gate URLs
@@ -75,7 +77,7 @@ test('locked page: lock buttons + dialog with Pay now, and NO target anywhere in
 
 test('unlocked page: real links through /go/<KEY>, no dialog; not-ready item is disabled, not a link', () => {
   const html = renderHubPage(buildHubModel({ ...ROW, paid: true }, PROJECT, GTOKEN), { base: '/deliver/x/' + ROW.token });
-  assert.match(html, new RegExp(`href="/deliver/x/${ROW.token}/go/MLS"`));
+  assert.match(html, new RegExp(`href="/deliver/x/${ROW.token}/go/MLS" target="_blank" rel="noopener"`));   // opens in a new tab, the hub stays put
   assert.match(html, new RegExp(`href="/deliver/x/${ROW.token}/go/HDR"`));
   assert.doesNotMatch(html, /Please pay to unlock|class="hub-btn is-locked"|id="hubModal"/);
   assert.doesNotMatch(html, /dropbox\.com/);
@@ -83,10 +85,11 @@ test('unlocked page: real links through /go/<KEY>, no dialog; not-ready item is 
   assert.match(html, /Preparing/);
 });
 
-test('pay dialog without a Wave link still explains e-Transfer and shows no Pay now button; escapes address', () => {
+test('pay dialog without a Wave link offers only e-Transfer (no credit-card button, no amount); escapes address', () => {
   const html = renderHubPage(buildHubModel({ ...ROW, wave_view_url: null, total_cents: null }, { data: { address: '<b>1</b> St' } }, GTOKEN), { base: '/deliver/x/y' });
-  assert.doesNotMatch(html, /Pay now/);
-  assert.doesNotMatch(html, /Total 应付/);
+  assert.doesNotMatch(html, /Pay by credit card/);
+  assert.match(html, /Pay by e-Transfer/);
+  assert.doesNotMatch(html, /hub-fee">\$/);
   assert.match(html, /frankystudio@mail\.com/);
   assert.doesNotMatch(html, /<b>1<\/b>/);
   assert.match(html, /&lt;b&gt;1&lt;\/b&gt; St/);

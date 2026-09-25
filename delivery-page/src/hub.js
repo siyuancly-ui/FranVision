@@ -131,25 +131,36 @@ export function renderHubPage(model, { base, openKey = '' }) {
       return `<span class="hub-btn is-disabled" title="Still being prepared">${ARROW_ICON}${label}<span class="hub-tag">Preparing&hellip;</span></span>`;
     }
     if (model.unlocked) {
-      return `<a class="hub-btn" href="${base}/go/${l.key}">${ARROW_ICON}${label}</a>`;
+      return `<a class="hub-btn" href="${base}/go/${l.key}" target="_blank" rel="noopener">${ARROW_ICON}${label}</a>`;
     }
     return `<button class="hub-btn is-locked" type="button" data-key="${l.key}">${LOCK_ICON}${label}</button>`;
   }).join('\n');
 
-  const fee = model.totalCents != null ? `<p class="hub-fee">Total 应付: <strong>${money(model.totalCents)}</strong> <span>(incl. HST)</span></p>` : '';
-  const payBtn = model.payUrl
-    ? `<a class="hub-pay" href="${escapeHtml(model.payUrl)}" target="_blank" rel="noopener">Pay now 信用卡付款</a>`
+  const amount = model.totalCents != null ? `<p class="hub-fee">${money(model.totalCents)} <span>incl. HST</span></p>` : '';
+  const cardBtn = model.payUrl
+    ? `<a class="hub-pay" href="${escapeHtml(model.payUrl)}" target="_blank" rel="noopener">Pay by credit card <span>信用卡</span></a>`
     : '';
   const dialog = model.unlocked ? '' : `
 <div class="hub-modal" id="hubModal" hidden role="dialog" aria-modal="true" aria-labelledby="hubModalTitle">
   <div class="hub-modal-card">
-    <h2 id="hubModalTitle">Please pay to unlock</h2>
-    <p class="hub-zh-line">请先付款，付款后即可解锁下载</p>
-    ${fee}
-    <p class="hub-how">Pay by credit card, or by e-Transfer to <strong>frankystudio@mail.com</strong> <span>(not Gmail)</span>. 信用卡付款，或 EMT 转账至上述邮箱。</p>
-    ${payBtn}
-    <p class="hub-after">After payment, this page unlocks once we confirm it — please let Franky know or send a screenshot. 付款后请告知 Franky 或发送截图，确认后即刻解锁。</p>
-    <button class="hub-close" id="hubClose" type="button">Close 关闭</button>
+    <div id="hubChoose">
+      <h2 id="hubModalTitle">Please pay to unlock <span>请先付款解锁</span></h2>
+      ${amount}
+      ${cardBtn}
+      <button class="hub-pay is-alt" id="hubEmt" type="button">Pay by e-Transfer <span>EMT 转账</span></button>
+    </div>
+    <div id="hubEmtPanel" hidden>
+      <h2>Pay by e-Transfer <span>EMT 转账</span></h2>
+      ${amount}
+      <p class="hub-emt-to">Send to</p>
+      <p class="hub-emt-mail" id="hubMail">frankystudio@mail.com</p>
+      <p class="hub-emt-note">Not Gmail 不是 Gmail</p>
+      <button class="hub-copy" id="hubCopy" type="button">Copy email 复制邮箱</button>
+      <p class="hub-after">Then let Franky know or send a screenshot — we'll unlock this page. 付款后请告知 Franky 或发截图。</p>
+      <button class="hub-back" id="hubBack" type="button">&larr; Back 返回</button>
+    </div>
+    <p class="hub-refresh">Already paid? <a href="" onclick="location.reload();return false;">Refresh 已付款？刷新页面</a></p>
+    <button class="hub-close" id="hubClose" type="button" aria-label="Close">&times;</button>
   </div>
 </div>`;
 
@@ -195,34 +206,49 @@ const HUB_CSS = `
   .hub-empty{color:#8a867b;text-align:center;margin-top:28px;}
   .hub-modal{position:fixed;inset:0;z-index:60;background:rgba(20,20,26,0.55);display:flex;align-items:center;justify-content:center;padding:20px;font-family:Montserrat,-apple-system,"system-ui","Segoe UI",Roboto,sans-serif;}
   .hub-modal[hidden]{display:none;}
-  .hub-modal-card{background:#fff;color:#2b2b30;border-radius:16px;max-width:440px;width:100%;padding:28px 24px 22px;box-shadow:0 20px 50px rgba(0,0,0,0.35);text-align:center;}
-  .hub-modal-card h2{margin:0 0 4px;font-family:Fraunces,Georgia,serif;font-weight:500;font-size:22px;}
-  .hub-zh-line{margin:0 0 14px;color:#6b665b;font-size:14px;}
-  .hub-fee{margin:0 0 10px;font-size:16px;}
-  .hub-fee span{color:#8a867b;font-size:12px;}
-  .hub-how,.hub-after{font-size:13px;line-height:1.55;color:#55555c;margin:0 0 14px;}
-  .hub-how span{color:#8a867b;}
-  .hub-after{font-size:12px;color:#8a867b;}
-  .hub-pay{display:block;margin:0 0 14px;padding:13px 16px;border-radius:12px;background:#4a7ab5;color:#fff;font-weight:600;font-size:15px;text-decoration:none;}
+  .hub-modal-card{position:relative;background:#fff;color:#2b2b30;border-radius:16px;max-width:400px;width:100%;padding:30px 24px 20px;box-shadow:0 20px 50px rgba(0,0,0,0.35);text-align:center;}
+  .hub-modal-card h2{margin:0 0 6px;font-family:Fraunces,Georgia,serif;font-weight:500;font-size:22px;}
+  .hub-modal-card h2 span{display:block;font-family:Montserrat,-apple-system,sans-serif;font-size:13px;font-weight:400;color:#8a867b;margin-top:2px;}
+  .hub-fee{margin:14px 0 18px;font-size:26px;font-weight:600;letter-spacing:.01em;}
+  .hub-fee span{font-size:12px;font-weight:400;color:#8a867b;}
+  .hub-pay{display:block;width:100%;box-sizing:border-box;margin:0 0 10px;padding:14px 16px;border:0;border-radius:12px;background:#4a7ab5;color:#fff;font:inherit;font-weight:600;font-size:15px;text-decoration:none;cursor:pointer;}
+  .hub-pay span{font-weight:400;font-size:12px;opacity:.85;margin-left:6px;}
   .hub-pay:hover{background:#3f6ba1;}
-  .hub-close{border:1px solid #c9c9d0;background:#fff;color:#3a3a40;border-radius:10px;padding:9px 20px;font:inherit;font-size:13px;cursor:pointer;}
+  .hub-pay.is-alt{background:#5f8f6b;}
+  .hub-pay.is-alt:hover{background:#527d5d;}
+  .hub-emt-to{margin:8px 0 2px;font-size:12px;color:#8a867b;}
+  .hub-emt-mail{margin:0;font-size:18px;font-weight:600;word-break:break-all;}
+  .hub-emt-note{margin:2px 0 14px;font-size:12px;color:#b3541e;}
+  .hub-copy,.hub-back{border:1px solid #c9c9d0;background:#fff;color:#3a3a40;border-radius:10px;padding:9px 16px;font:inherit;font-size:13px;cursor:pointer;}
+  .hub-back{border:0;color:#6b665b;margin-top:6px;}
+  .hub-after{font-size:12px;line-height:1.5;color:#8a867b;margin:14px 0 4px;}
+  .hub-refresh{margin:12px 0 0;font-size:11.5px;color:#a09b90;}
+  .hub-refresh a{color:#6b665b;}
+  .hub-close{position:absolute;top:8px;right:12px;border:0;background:none;color:#8a867b;font-size:26px;line-height:1;cursor:pointer;}
   @media (prefers-color-scheme: dark){
     body{background:#0d0d10;}
     .hub-wrap{color:#d7d7dc;}
     .hub-addr{color:#f2f2f7;}
     .hub-modal-card{background:#1c1c20;color:#f2f2f7;}
-    .hub-how,.hub-after{color:#b9b9c1;}
+    .hub-copy{background:#26262b;color:#f2f2f7;border-color:#3a3a40;}
   }
 `;
 
 function hubScript(openKey) {
   return `
 (function(){
-  var modal=document.getElementById('hubModal');
-  function open(){ modal.hidden=false; }
+  var modal=document.getElementById('hubModal'), choose=document.getElementById('hubChoose'), emt=document.getElementById('hubEmtPanel');
+  function show(panel){ choose.hidden=panel!=='choose'; emt.hidden=panel!=='emt'; }
+  function open(){ show('choose'); modal.hidden=false; }
   function close(){ modal.hidden=true; }
   document.querySelectorAll('.hub-btn.is-locked').forEach(function(b){ b.addEventListener('click', open); });
   document.getElementById('hubClose').addEventListener('click', close);
+  document.getElementById('hubEmt').addEventListener('click', function(){ show('emt'); });
+  document.getElementById('hubBack').addEventListener('click', function(){ show('choose'); });
+  document.getElementById('hubCopy').addEventListener('click', function(){
+    var b=this, t=document.getElementById('hubMail').textContent, done=function(){ b.textContent='Copied 已复制'; };
+    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(done,function(){}); }
+  });
   modal.addEventListener('click', function(e){ if(e.target===modal) close(); });
   document.addEventListener('keydown', function(e){ if(e.key==='Escape') close(); });
   ${openKey ? 'open();' : ''}

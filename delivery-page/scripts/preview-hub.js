@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Local preview of the Delivery Hub with a FAKE Supabase (no network, nothing real touched):
 //   node scripts/preview-hub.js            -> http://localhost:4190/
-// The index page links to the hub in each state and lets you flip Paid / Unlock like /admin does.
+// The index page just links to the hub and to /admin (flip Paid / Unlock there, exactly as in production).
 import http from 'node:http';
 import worker from '../src/index.js';
 
@@ -38,18 +38,12 @@ const hub = `/deliver/48-red-ash-dr-oakville/${TOKEN}`;
 http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   if (url.pathname === '/') {
-    if (url.searchParams.get('set')) {
-      const [k, v] = url.searchParams.get('set').split(':'); state[k] = v === '1';
-      res.writeHead(302, { location: '/' }); return res.end();
-    }
-    const btn = (k, label) => `<a href="/?set=${k}:${state[k] ? 0 : 1}" style="margin-right:12px">${state[k] ? '✅' : '⬜'} ${label}</a>`;
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-    return res.end(`<body style="font-family:system-ui;max-width:640px;margin:40px auto;line-height:1.8">
+    return res.end(`<body style="font-family:system-ui;max-width:640px;margin:40px auto;line-height:2">
       <h2>Delivery Hub preview (fake data)</h2>
-      <p>${btn('paid', 'Paid 已付款')} ${btn('unlocked', 'Unlock 先交付')} ${btn('withPay', 'has Wave link')}</p>
-      <p><a href="${hub}" target="_blank">打开交付页 →</a> (在新窗口，改开关后刷新它)</p>
-      <p><a href="/admin?admin=adm" target="_blank">打开 /admin 目录 →</a></p>
-      <p style="color:#888;font-size:13px">点击已解锁的按钮会跳到示例 Dropbox 链接（不存在的地址，只是看跳转），HDR 会跳到 Gallery 页（本预览里没有）。</p></body>`);
+      <p><a href="${hub}" target="_blank">1. 打开交付页 →</a></p>
+      <p><a href="/admin?admin=adm" target="_blank">2. 打开 /admin 目录 →</a> 在这里勾 Paid / Unlock，然后刷新交付页</p>
+      <p style="color:#888;font-size:13px">这个首页只是预览用的，上线后不存在。已解锁的按钮会在新标签页打开示例 Dropbox 链接（地址是假的，只看跳转）。</p></body>`);
   }
   const body = ['GET', 'HEAD'].includes(req.method) ? undefined : await new Promise((r) => { let d = ''; req.on('data', (c) => (d += c)); req.on('end', () => r(d)); });
   const out = await worker.fetch(new Request(`https://realgta.ca${req.url}`, { method: req.method, headers: req.headers, body, redirect: 'manual' }), env);

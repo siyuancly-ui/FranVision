@@ -152,7 +152,7 @@ export function renderAdminPage(model, { origin = '' } = {}) {
       </div>` : '<span class="no">—</span>';
     const payCell = j.hub ? `<div class="btns">
         <label class="sw"><input type="checkbox" data-hub="${escapeHtml(j.jobId)}" data-flag="paid"${j.hub.paid ? ' checked' : ''}> Paid 已付款</label>
-        <label class="sw"><input type="checkbox" data-hub="${escapeHtml(j.jobId)}" data-flag="unlocked"${j.hub.unlocked ? ' checked' : ''}> Unlock 先交付</label>
+        <label class="sw"><input type="checkbox" data-hub="${escapeHtml(j.jobId)}" data-flag="unlocked"${j.hub.unlocked ? ' checked' : ''}> Unlock 直接解锁</label>
       </div>` : '<span class="no">—</span>';
     return `
     <tr data-search="${escapeHtml((j.address || '') + ' ' + j.jobId + ' ' + j.agents.join(' ')).toLowerCase()}">
