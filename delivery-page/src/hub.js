@@ -62,6 +62,13 @@ export function isUnlocked(row) {
   return Boolean(row && (row.paid || row.unlocked));
 }
 
+// What is still owed after a PARTIAL Wave payment (from the last partially_paid webhook), in cents; null when
+// there is no partial payment on record or the Job is already unlocked/paid.
+export function remainingCents(row) {
+  if (!row || isUnlocked(row)) return null;
+  return Number.isFinite(row.wave_remaining_cents) && row.wave_remaining_cents > 0 ? row.wave_remaining_cents : null;
+}
+
 // row = delivery_hub row; project = projects row (or null); galleryToken = this
 // Job's gallery_tokens token (or null).
 export function buildHubModel(row, project, galleryToken) {
@@ -83,6 +90,8 @@ export function buildHubModel(row, project, galleryToken) {
     payUrl: safeUrl(row.wave_view_url),
     totalCents: Number.isFinite(row.total_cents) ? row.total_cents : null,
     preTaxCents: Number.isFinite(row.pretax_cents) ? row.pretax_cents : null,
+    remainingCents: remainingCents(row),
+    partialPaidCents: remainingCents(row) != null && Number.isFinite(row.wave_paid_cents) ? row.wave_paid_cents : null,
     clientName: typeof row.client_name === 'string' ? row.client_name.trim() : '',
     allInOnePath: deliveryPath(row.job_id, address),
     lines,
@@ -147,7 +156,10 @@ export function renderHubPage(model, { base, openKey = '' }) {
     return `<button class="hub-btn is-locked" type="button" data-key="${l.key}">${LOCK_ICON}${label}</button>`;
   }).join('\n');
 
-  const amount = model.totalCents != null ? `<p class="hub-fee">${money(model.totalCents)} <span>incl. HST</span></p>` : '';
+  // After a partial payment the dialog asks for what is STILL owed, not the full total again.
+  const amount = model.remainingCents != null
+    ? `<p class="hub-fee">${money(model.remainingCents)} <span>remaining 剩余未付</span></p>`
+    : (model.totalCents != null ? `<p class="hub-fee">${money(model.totalCents)} <span>incl. HST</span></p>` : '');
   const cardBtn = model.payUrl
     ? `<a class="hub-pay" id="hubCard" href="${escapeHtml(model.payUrl)}" target="_blank" rel="noopener">Pay by credit card <span>信用卡</span></a>`
     : '';
@@ -178,6 +190,10 @@ export function renderHubPage(model, { base, openKey = '' }) {
   const addr = model.address ? escapeHtml(model.address) : 'your property';
   const fee = model.totalCents != null && model.preTaxCents != null
     ? `<p class="mail-fee">Fee 费用: <strong>${preTaxMoney(model.preTaxCents)} + HST = ${money(model.totalCents)}</strong></p>` : '';
+  // A partial Wave payment does NOT unlock; the page says what came in and what is still owed.
+  const partial = model.remainingCents != null
+    ? `<p class="mail-partial">Partial payment received${model.partialPaidCents != null ? ` (${money(model.partialPaidCents)})` : ''} — <strong>${money(model.remainingCents)} still owed</strong> to unlock the downloads.<span class="mail-zh">已收到部分付款${model.partialPaidCents != null ? `（${money(model.partialPaidCents)}）` : ''}，还需支付 <strong>${money(model.remainingCents)}</strong> 才能解锁下载。</span></p>` : '';
+
   // ONE blue button for everything money-related: it opens the Wave invoice page (the customer link
   // `viewUrl`, which lands on Wave's public invoice page) where the client can pay by card / bank, print,
   // and download the PDF -- which shows "Paid" once it is. Clicking it while unpaid starts the auto-unlock
@@ -204,6 +220,7 @@ export function renderHubPage(model, { base, openKey = '' }) {
       ? '<p class="mail-p is-open">Payment received — thank you! Your files are ready below.<span class="mail-zh">已收到付款，谢谢！下面的文件都可以下载了。</span></p>'
       : '<p class="mail-p">You can preview the photos above. To download the files, please complete payment first.<span class="mail-zh">您可以先预览照片；需要下载文件的话，请先支付费用。</span></p>'}
     ${fee}
+    ${partial}
     <div class="cta-row">${payBtn}</div>
     ${emtLink}
     <hr class="mail-rule">
@@ -220,7 +237,7 @@ ${dialog}`;
     bare: true,
     extraHead: HUB_HEAD,
     extraCss: HUB_CSS,
-    extraBody: model.unlocked ? '' : `<script>${hubScript(openKey, base)}</script>`,
+    extraBody: model.unlocked ? '' : `<script>${hubScript(openKey, base, model.remainingCents)}</script>`,
   });
 }
 
@@ -245,6 +262,8 @@ const HUB_CSS = `
   .hub-cta{display:inline-flex;align-items:center;justify-content:center;min-width:150px;box-sizing:border-box;padding:14px 26px;border:0;border-radius:8px;background:#467ab5;color:#fff;font:inherit;font-size:18px;text-decoration:none;cursor:pointer;}
   .hub-cta:hover{background:#3b6aa0;}
   .hub-cta.is-paid{background:#5f8f6b;}
+  .mail-partial{margin:0 0 14px;padding:12px 14px;border-radius:8px;background:#fff6e8;border:1px solid #f0d9b0;font-size:14px;line-height:1.55;color:#7a4b00;}
+  .mail-partial .mail-zh{margin:4px 0 0;color:#8a6a3a;}
   .mail-emt{margin:12px 0 0;font-size:12.5px;color:#7a766b;}
   .hub-link{border:0;background:none;padding:0;font:inherit;color:#467ab5;text-decoration:underline;cursor:pointer;}
   .hub-note{font-weight:400;font-size:12px;color:#8a867b;}
@@ -291,7 +310,7 @@ const HUB_CSS = `
   }
 `;
 
-function hubScript(openKey, base) {
+function hubScript(openKey, base, remaining) {
   return `
 (function(){
   var modal=document.getElementById('hubModal'), choose=document.getElementById('hubChoose'), emt=document.getElementById('hubEmtPanel');
@@ -314,7 +333,7 @@ function hubScript(openKey, base) {
   // started for e-Transfer: that is confirmed by Franky by hand, possibly hours later.
   var statusUrl=${JSON.stringify(base + '/status').replace(/</g, '\\u003c')}, timer=null;
   function check(){
-    fetch(statusUrl,{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){ if(j&&j.unlocked) location.replace(${JSON.stringify(base).replace(/</g, '\\u003c')}); }).catch(function(){});
+    fetch(statusUrl,{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){ if(j&&!j.unlocked&&(j.remainingCents||null)!==${JSON.stringify(remaining == null ? null : remaining)}){ location.reload(); return; } if(j&&j.unlocked) location.replace(${JSON.stringify(base).replace(/</g, '\\u003c')}); }).catch(function(){});
   }
   function watch(){ if(!timer){ timer=setInterval(check,5000); } check(); }
   var card=document.getElementById('hubCard'); if(card){ card.addEventListener('click', watch); }

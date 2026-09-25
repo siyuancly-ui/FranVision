@@ -118,7 +118,7 @@ test('webhook: invoice.paid for a Job\'s invoice -> paid, source wave; the hub u
   assert.equal(state.events.get('e1').result, 'paid');
   assert.equal(state.events.get('e1').job_id, JOB);
   const status = await (await worker.fetch(new Request(`https://realgta.ca/deliver/x/${TOKEN}/status`), env)).json();
-  assert.deepEqual(status, { unlocked: true });
+  assert.deepEqual(status, { unlocked: true, remainingCents: null });
 });
 
 test('webhook: PARTIAL payment does not unlock -- it only records what was paid / is still owed', async () => {

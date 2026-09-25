@@ -1,7 +1,7 @@
 // Pure Delivery Hub logic (src/hub.js): model, target resolution, and the lock gate in the HTML.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isHubToken, hubPath, buildHubModel, resolveTarget, isUnlocked, renderHubPage } from '../src/hub.js';
+import { isHubToken, hubPath, buildHubModel, resolveTarget, isUnlocked, remainingCents, renderHubPage } from '../src/hub.js';
 
 const ROW = {
   job_id: 'FVS-20260925-001',
@@ -135,4 +135,20 @@ test('3D Tour button follows Tour Link.txt (projects.data.tourUrl): first line o
   const ready = (tourUrl) => buildHubModel(ROW, { data: { tourUrl } }, GTOKEN).lines.find((l) => l.key === 'THREE_D').ready;
   assert.equal(ready('https://tour.example.com/x'), true);
   assert.equal(ready(''), false);
+});
+
+test('partial payment (safety net): the page shows what came in and what is still owed, and the pay dialog asks for the remainder; no partial -> nothing extra', () => {
+  const partialRow = { ...ROW, pretax_cents: 10000, wave_paid_cents: 5000, wave_remaining_cents: 6300 };
+  assert.equal(remainingCents(partialRow), 6300);
+  assert.equal(remainingCents({ ...partialRow, paid: true }), null);          // paid: nothing owed
+  assert.equal(remainingCents({ ...partialRow, unlocked: true }), null);      // unlocked: nothing to show
+  assert.equal(remainingCents({ ...ROW, wave_remaining_cents: 0 }), null);
+  const html = renderHubPage(buildHubModel(partialRow, PROJECT, GTOKEN), { base: '/deliver/x/y' });
+  assert.match(html, /Partial payment received \(\$50\.00\) — <strong>\$63\.00 still owed<\/strong>/);
+  assert.match(html, /还需支付 <strong>\$63\.00<\/strong>/);
+  assert.match(html, /hub-fee">\$63\.00 <span>remaining/);                     // dialog: the remainder, not the $113 total again
+  assert.match(html, /class="hub-btn is-locked"/);                              // still locked
+  const plain = renderHubPage(buildHubModel({ ...ROW, pretax_cents: 10000 }, PROJECT, GTOKEN), { base: '/deliver/x/y' });
+  assert.doesNotMatch(plain, /Partial payment received|still owed/);
+  assert.match(plain, /hub-fee">\$113\.00 <span>incl\. HST/);
 });

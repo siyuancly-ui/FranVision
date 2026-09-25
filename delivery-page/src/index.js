@@ -2,7 +2,7 @@ import { createSupabase } from './supabase.js';
 import { buildDeliveryModel, renderDeliveryPage, renderNotFoundPage } from './render.js';
 import { buildAdminModel, renderAdminPage } from './admin.js';
 import {
-  isHubToken, isLineKey, buildHubModel, resolveTarget, isUnlocked, renderHubPage, renderNotFoundHub, renderNotReadyHub,
+  isHubToken, isLineKey, buildHubModel, resolveTarget, isUnlocked, remainingCents, renderHubPage, renderNotFoundHub, renderNotReadyHub,
 } from './hub.js';
 import { verifyWaveSignature, classifyWaveEvent } from './wave-webhook.js';
 import {
@@ -144,9 +144,10 @@ async function handleHub(parts, env) {
   }
 
   // Polled by the locked page after the visitor opens the pay dialog, so it can unlock itself the
-  // moment the Job is paid / unlocked (no manual refresh). Carries nothing but that one boolean.
+  // moment the Job is paid / unlocked (no manual refresh), or refresh the owed amount after a partial payment.
+  // Carries nothing but those two values.
   if (parts.length === 4 && parts[3] === 'status') {
-    return json({ unlocked: isUnlocked(row) }, 200, { 'cache-control': 'no-store' });
+    return json({ unlocked: isUnlocked(row), remainingCents: remainingCents(row) }, 200, { 'cache-control': 'no-store' });
   }
 
   if (parts.length === 5 && parts[3] === 'go' && isLineKey(parts[4])) {
