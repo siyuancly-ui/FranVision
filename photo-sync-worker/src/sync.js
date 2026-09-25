@@ -28,7 +28,7 @@ export function collapseEntries(entries) {
 // From collapsed entries, keep only the ones we act on:
 //   { type: 'upsert', ... }  for a file under a SYNC_FOLDERS sub-folder
 //   { type: 'delete', ... }  for a deleted path with that same shape
-export function classifyForSync(entries, { root, syncFolders }) {
+export function classifyForSync(entries, { root, syncFolders, excludeFolders }) {
   const out = [];
   for (const e of entries || []) {
     const tag = e['.tag'];
@@ -36,7 +36,7 @@ export function classifyForSync(entries, { root, syncFolders }) {
     if (!pathDisplay) continue;
 
     if (tag === 'file') {
-      if (!isSyncCandidate(pathDisplay, { root, syncFolders })) continue;
+      if (!isSyncCandidate(pathDisplay, { root, syncFolders, excludeFolders })) continue;
       const parsed = parseJobPath(pathDisplay, root);
       out.push({
         type: 'upsert',
@@ -56,7 +56,7 @@ export function classifyForSync(entries, { root, syncFolders }) {
         dims: dimsFromMediaInfo(e.media_info),
       });
     } else if (tag === 'deleted') {
-      if (!isSyncCandidate(pathDisplay, { root, syncFolders })) continue;
+      if (!isSyncCandidate(pathDisplay, { root, syncFolders, excludeFolders })) continue;
       const parsed = parseJobPath(pathDisplay, root);
       out.push({
         type: 'delete',
@@ -163,6 +163,9 @@ export function readConfig(env) {
     // benefit. See supabase.js#uploadLarge and dropbox.js#downloadFile.
     originalRenderFolders: parseFolderList(env.ORIGINAL_RENDER_FOLDERS),
     downloadSubfolder: env.DOWNLOAD_SUBFOLDER || 'MLS for download',
+    // folders this worker itself writes derived copies into -- nothing under them is ever synced as a photo
+    // (see paths.js#isSyncCandidate)
+    excludeFolders: [env.DOWNLOAD_SUBFOLDER || 'MLS for download'],
     thumbSize: env.THUMB_SIZE || 'w1024h768',
     // Bigger render for the downloadable delivery set written back to
     // Dropbox. Dropbox tops out at w2048h1536 (a 3:2 landscape -> 2048x1365).
