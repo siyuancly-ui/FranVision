@@ -218,6 +218,37 @@ export function renderNotReadyHub(backHref) {
 </div>`, { bare: true });
 }
 
+// The forwardable "client view" (?for=client on the same hub URL): ONLY the part below the divider -- the
+// All in One button, the address and the download buttons. No greeting, fee, invoice, payment, dialog, brand
+// mark, sign-off or credit line (the agent forwards this link to their own client and it must not show what the
+// agent paid). While the Job is not unlocked the download buttons are inert with a "contact your agent" note --
+// never the pay dialog, which would expose the price. Every link on it carries ?for=client, and nothing on it
+// links to the full page. (Anyone who deletes the parameter gets the full page: this is a convenience view, not
+// a security boundary -- decided 2026-09-25.)
+const CLIENT_QS = '?for=client';
+
+export function renderClientView(model, { base }) {
+  const buttons = model.lines.map((l) => {
+    const note = l.noteEn ? ` <span class="hub-note">(${escapeHtml(l.noteEn)} ${escapeHtml(l.noteZh)})</span>` : '';
+    const label = `<span class="hub-label">${escapeHtml(l.en)}${note}<span class="hub-zh">${escapeHtml(l.zh)}</span></span>`;
+    if (!model.unlocked) return `<span class="hub-btn is-disabled">${LOCK_ICON}${label}</span>`;
+    if (!l.ready) return `<span class="hub-btn is-disabled" title="Still being prepared">${ARROW_ICON}${label}<span class="hub-tag">Preparing&hellip;</span></span>`;
+    return `<a class="hub-btn" href="${base}/go/${l.key}${CLIENT_QS}" target="_blank" rel="noopener">${ARROW_ICON}${label}</a>`;
+  }).join('\n');
+
+  const body = `
+<main class="mail">
+  <div class="mail-card">
+    <a class="hub-btn hub-preview" href="${escapeHtml(model.allInOnePath)}" target="_blank" rel="noopener">${EYE_ICON}<span class="hub-label">All in One<span class="hub-zh">在线浏览</span></span></a>
+    ${model.address ? `<h1 class="mail-addr">${escapeHtml(model.address)}</h1>` : ''}
+    <p class="mail-note">For the best experience, please open in a browser on PC or Mac.<span class="mail-zh">请在 PC 或 Mac 上使用浏览器打开效果最佳。</span></p>
+    ${model.lines.length ? `<div class="hub-list">\n${buttons}\n</div>` : '<p class="hub-empty">Nothing to download yet.</p>'}
+    ${model.unlocked || !model.lines.length ? '' : '<p class="mail-note">Downloads are not available yet — please contact your agent.<span class="mail-zh">下载暂未开放，请联系您的经纪。</span></p>'}
+  </div>
+</main>`;
+  return page(model.address || 'Downloads', body, { bare: true, extraHead: HUB_HEAD, extraCss: HUB_CSS });
+}
+
 // base = "/deliver/<slug>/<token>" (already encoded); openKey = a locked key to
 // open the dialog for right away (arrives via /go/<KEY> hit while locked).
 export function renderHubPage(model, { base, openKey = '' }) {
@@ -307,6 +338,7 @@ export function renderHubPage(model, { base, openKey = '' }) {
     <p class="mail-note">For the best experience, please open in a browser on PC or Mac. Thank you so much for your support!<span class="mail-zh">请在 PC 或 Mac 上使用浏览器打开效果最佳，感谢您的支持与厚爱！</span></p>
     ${model.lines.length ? `<div class="hub-list">\n${buttons}\n</div>` : '<p class="hub-empty">Nothing to download yet.</p>'}
     <p class="mail-sign">Thank you!<br>Franky<br>FranVision Media</p>
+    <div class="mail-share"><button class="hub-share" id="hubShare" type="button">Share downloads with your client (no prices) 分享给客户（不含价格）</button></div>
   </div>
 </main>
 ${creditHtml()}
@@ -316,7 +348,7 @@ ${dialog}`;
     bare: true,
     extraHead: HUB_HEAD,
     extraCss: HUB_CSS,
-    extraBody: model.paid ? '' : `<script>${hubScript(openKey, base, model.remainingCents, model.unlocked)}</script>`,
+    extraBody: `<script>${shareScript(base)}</script>` + (model.paid ? '' : `<script>${hubScript(openKey, base, model.remainingCents, model.unlocked)}</script>`),
   });
 }
 
@@ -343,6 +375,10 @@ const HUB_CSS = `
   .hub-cta.is-paid{background:#5f8f6b;}
   .mail-partial{margin:0 0 14px;padding:12px 14px;border-radius:8px;background:#fff6e8;border:1px solid #f0d9b0;font-size:14px;line-height:1.55;color:#7a4b00;}
   .mail-partial .mail-zh{margin:4px 0 0;color:#8a6a3a;}
+  .hub-list + .mail-note{margin-top:16px;}
+  .mail-share{margin:26px 0 0;padding-top:18px;border-top:1px solid #e3e3e8;text-align:center;}
+  .hub-share{border:1px solid #b7c4d6;background:#fff;color:#467ab5;border-radius:8px;padding:10px 16px;font:inherit;font-size:13px;cursor:pointer;}
+  .hub-share:hover{background:#f0f5fa;}
   .hub-note{font-weight:400;font-size:12px;color:#8a867b;}
   .hub-list{display:flex;flex-direction:column;gap:12px;margin-top:18px;}
   /* Same raised grey button family as the Gallery page's download buttons, full width. */
@@ -388,6 +424,19 @@ const HUB_CSS = `
     .hub-copy{background:#26262b;color:#f2f2f7;border-color:#3a3a40;}
   }
 `;
+
+// "Share downloads with your client": copies THIS hub's URL with ?for=client (the client view above) -- built from
+// the address bar, so it is the real absolute link.
+function shareScript(base) {
+  return `
+(function(){
+  var b=document.getElementById('hubShare'); if(!b){ return; }
+  b.addEventListener('click', function(){
+    var url=location.origin+${JSON.stringify(base).replace(/</g, '\\u003c')}+'?for=client', done=function(){ b.textContent='Link copied 已复制链接'; };
+    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(url).then(done,function(){ prompt('Copy link:', url); }); } else { prompt('Copy link:', url); }
+  });
+})();`;
+}
 
 // Invoice page: e-Transfer unfolds in place, and once the visitor has clicked "Pay by credit card" the page asks
 // OUR server every 5s (and on tab focus) whether the Job is paid -- when it is, it goes to the hub (now unlocked).

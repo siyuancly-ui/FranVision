@@ -117,7 +117,7 @@ test('interactive-email page: cents in the pre-tax amount are kept; no name -> p
 test('interactive-email page: once PAID the button becomes a green "Invoice & receipt" link to Wave\'s public invoice page (Print / PDF / Receipts); copy says the files are ready', () => {
   const html = renderHubPage(buildHubModel({ ...ROW, paid: true, wave_pdf_url: 'https://accounting.waveapps.com/inv.pdf' }, PROJECT, GTOKEN), { base: '/deliver/x/y' });
   assert.match(html, /class="hub-cta is-paid" href="https:\/\/next\.waveapps\.com\/pay\/abc" target="_blank" rel="noopener">Invoice &amp; receipt 发票与收据/);
-  assert.doesNotMatch(html, /id="hubPayNow"|id="hubModal"|<script>/);                       // nothing left to pay -> no dialog, no polling script
+  assert.doesNotMatch(html, /id="hubPayNow"|id="hubModal"|\/status/);                          // nothing left to pay -> no dialog, no polling
   assert.match(html, /Payment received/);
   assert.doesNotMatch(html, /complete payment first/);
   assert.match(renderHubPage(buildHubModel({ ...ROW, paid: true, wave_view_url: null, wave_pdf_url: 'https://accounting.waveapps.com/inv.pdf' }, PROJECT, GTOKEN), { base: '/deliver/x/y' }), /href="https:\/\/accounting\.waveapps\.com\/inv\.pdf"[^>]*>Invoice &amp; receipt/);   // no Wave page link -> the PDF

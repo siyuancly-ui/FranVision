@@ -2,7 +2,7 @@ import { createSupabase } from './supabase.js';
 import { buildDeliveryModel, renderDeliveryPage, renderNotFoundPage } from './render.js';
 import { buildAdminModel, renderAdminPage } from './admin.js';
 import {
-  isHubToken, isLineKey, buildHubModel, resolveTarget, isUnlocked, remainingCents, pdfSourceUrl, renderHubPage, renderInvoicePage, renderNotFoundHub, renderNotReadyHub,
+  isHubToken, isLineKey, buildHubModel, resolveTarget, isUnlocked, remainingCents, pdfSourceUrl, renderHubPage, renderClientView, renderInvoicePage, renderNotFoundHub, renderNotReadyHub,
 } from './hub.js';
 import { verifyWaveSignature, classifyWaveEvent } from './wave-webhook.js';
 import {
@@ -139,6 +139,13 @@ async function handleHub(parts, env, url) {
   const base = `/${parts.slice(0, 3).map(encodeURIComponent).join('/')}`;
   const [project, galleryToken] = await Promise.all([sb.getProject(row.job_id), sb.getGalleryTokenForJob(row.job_id)]);
 
+  // ?for=client: the forwardable client view (hub.js#renderClientView); it also governs /go/<KEY> below.
+  const forClient = Boolean(url && url.searchParams.get('for') === 'client');
+
+  if (parts.length === 3 && forClient) {
+    return html(renderClientView(buildHubModel(row, project, galleryToken), { base }), 200, { 'cache-control': 'no-store' });
+  }
+
   if (parts.length === 3) {
     // ?pay=1 (from the invoice page's "Ready to pay") opens the pay dialog right away.
     return html(renderHubPage(buildHubModel(row, project, galleryToken), { base, openKey: url && url.searchParams.get('pay') ? 'pay' : '' }), 200, { 'cache-control': 'no-store' });
@@ -179,7 +186,10 @@ async function handleHub(parts, env, url) {
 
   if (parts.length === 5 && parts[3] === 'go' && isLineKey(parts[4])) {
     // Locked: back to the hub with the "please pay" dialog open (never a target).
-    if (!isUnlocked(row)) return html(renderHubPage(buildHubModel(row, project, galleryToken), { base, openKey: parts[4] }), 200, { 'cache-control': 'no-store' });
+    if (!isUnlocked(row)) {
+      const model = buildHubModel(row, project, galleryToken);
+      return html(forClient ? renderClientView(model, { base }) : renderHubPage(model, { base, openKey: parts[4] }), 200, { 'cache-control': 'no-store' });
+    }
     const target = resolveTarget(parts[4], row, project, galleryToken);
     if (!target) return html(renderNotReadyHub(base), 503, { 'cache-control': 'no-store' });
     return new Response(null, { status: 302, headers: { location: target, 'cache-control': 'no-store' } });
