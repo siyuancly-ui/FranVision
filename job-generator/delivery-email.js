@@ -87,6 +87,16 @@ function buildGalleryLink(address, token) {
   return DELIVERY_BASE_URL + '/delivery/' + (slugifyAddress(address) || 'photos') + '/' + token;
 }
 
+// The Delivery Hub page (delivery-page/src/hub.js), served at "/deliver/<address-slug>/<token>":
+// one button per line of the post-payment half of the email, locked until the Job is paid. When it
+// exists the email carries this ONE link below the "-----" line instead of the per-deliverable
+// links (see generateDeliveryEmails). Token = the job server's, saved together with the button list
+// by job-backend.js#saveDeliveryHub; null token -> null (the old per-line links are used).
+function buildHubLink(address, token) {
+  if (!token) return null;
+  return DELIVERY_BASE_URL + '/deliver/' + (slugifyAddress(address) || 'delivery') + '/' + token;
+}
+
 const PLACEHOLDERS = {
   zh: {
     ALL_IN_ONE_LINK: '[请手动填入 All-in-One 链接]',
@@ -192,7 +202,7 @@ function formatPreTaxAmount(cents) {
 // ---- Pure: builds the {{TOKEN}} -> value map for one language, given the
 // already-resolved links (linkByKey: {HDR: 'https://...'|null, ...}) and
 // the manual-fill-in fields, which are always the placeholder for now. ----
-function buildTokens({ lang, clientName, address, totalCents, preTaxCents, linkByKey, jobId, waveViewUrl, galleryToken }) {
+function buildTokens({ lang, clientName, address, totalCents, preTaxCents, linkByKey, jobId, waveViewUrl, galleryToken, hubToken }) {
   const ph = PLACEHOLDERS[lang];
   const tokens = {
     CLIENT_NAME: clientName || '',
@@ -218,6 +228,7 @@ function buildTokens({ lang, clientName, address, totalCents, preTaxCents, linkB
   // No Gallery link available -> that line keeps its Dropbox link (above).
   const galleryLink = buildGalleryLink(address, galleryToken);
   if (galleryLink) tokens.HDR_LINK = galleryLink;
+  tokens.HUB_LINK = buildHubLink(address, hubToken) || '';
   return tokens;
 }
 
@@ -232,7 +243,7 @@ function writeDeliveryEmailFiles(jobFolderAbsolutePath, { zhContent, enContent }
 // ---- The one function server.js calls. NEVER throws -- same contract as
 // dropbox-sync.js. `client` is a test-only seam (delivery-email.test.js
 // injects a fake Dropbox client so the suite never hits the real API). ----
-async function generateDeliveryEmails({ jobId, jobFolderPath, folderName, clientName, address, order, componentFolders, totalCents, preTaxCents, client, waveViewUrl, getGalleryToken }) {
+async function generateDeliveryEmails({ jobId, jobFolderPath, folderName, clientName, address, order, componentFolders, totalCents, preTaxCents, client, waveViewUrl, wavePdfUrl, waveInvoiceId, getGalleryToken, saveDeliveryHub }) {
   try {
     const lines = getDeliverableLines(order, componentFolders);
     const includedKeys = new Set(lines.filter((l) => l.include).map((l) => l.key));
@@ -257,13 +268,25 @@ async function generateDeliveryEmails({ jobId, jobFolderPath, folderName, client
       try { galleryToken = (await getGalleryToken(jobId)) || null; } catch (err) { galleryToken = null; }
     }
 
+    // Delivery Hub: store the button list (same lines as above, with the Dropbox link where one exists --
+    // HDR resolves to the Gallery page and THREE_D to the tour link at click time) + Wave link + total,
+    // and get the hub's URL token. Best-effort like the Gallery token: any failure keeps the old
+    // per-deliverable links in the email, never blocks job creation.
+    let hubToken = null;
+    if (jobId && typeof saveDeliveryHub === 'function') {
+      const hubLines = lines.filter((l) => l.include).map((l) => (linkByKey[l.key] ? { key: l.key, url: linkByKey[l.key] } : { key: l.key }));
+      try { hubToken = (await saveDeliveryHub({ jobId, lines: hubLines, waveViewUrl: waveViewUrl || null, wavePdfUrl: wavePdfUrl || null, totalCents, waveInvoiceId: waveInvoiceId || null, preTaxCents, clientName })) || null; } catch (err) { hubToken = null; }
+    }
+    // With a hub the lower half of the email is that one link: drop every per-line block, keep the HUB one.
+    const emailKeys = hubToken ? new Set(['HUB']) : includedKeys;
+
     const zhTemplate = fs.readFileSync(TEMPLATE_ZH_PATH, 'utf8');
     const enTemplate = fs.readFileSync(TEMPLATE_EN_PATH, 'utf8');
-    const zhContent = renderTemplate(zhTemplate, buildTokens({ lang: 'zh', clientName, address, totalCents, preTaxCents, linkByKey, jobId, waveViewUrl, galleryToken }), includedKeys);
-    const enContent = renderTemplate(enTemplate, buildTokens({ lang: 'en', clientName, address, totalCents, preTaxCents, linkByKey, jobId, waveViewUrl, galleryToken }), includedKeys);
+    const zhContent = renderTemplate(zhTemplate, buildTokens({ lang: 'zh', clientName, address, totalCents, preTaxCents, linkByKey, jobId, waveViewUrl, galleryToken, hubToken }), emailKeys);
+    const enContent = renderTemplate(enTemplate, buildTokens({ lang: 'en', clientName, address, totalCents, preTaxCents, linkByKey, jobId, waveViewUrl, galleryToken, hubToken }), emailKeys);
 
     const written = writeDeliveryEmailFiles(jobFolderPath, { zhContent, enContent });
-    return { attempted: true, success: linkErrors.length === 0, ...written, linkByKey, linkErrors, galleryLink: !!galleryToken };
+    return { attempted: true, success: linkErrors.length === 0, ...written, linkByKey, linkErrors, galleryLink: !!galleryToken, hubLink: !!hubToken };
   } catch (err) {
     return { attempted: true, success: false, error: 'Unexpected delivery-email generation failure: ' + err.message };
   }
@@ -275,6 +298,7 @@ module.exports = {
   getDeliverableLines,
   renderTemplate,
   buildTokens,
+  buildHubLink,
   buildAllInOneLink,
   buildGalleryLink,
   slugifyAddress,

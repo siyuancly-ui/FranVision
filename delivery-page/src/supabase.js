@@ -91,6 +91,93 @@ export function createSupabase(env) {
       return this.listGalleryTokens();
     },
 
+    // Delivery Hub (job-generator/supabase/delivery-hub.sql): the delivery_hub row a URL
+    // token was minted for, or null. `token` must already have passed hub.js#isHubToken.
+    async getHubByToken(token) {
+      const res = await fetch(`${BASE}/rest/v1/delivery_hub?token=eq.${encodeURIComponent(token)}&select=*`, { headers: authHeaders });
+      const rows = await readJson(res);
+      return Array.isArray(rows) ? rows[0] || null : rows;
+    },
+
+    // This Job's Gallery token (the HDR button's target), or null.
+    async getGalleryTokenForJob(jobId) {
+      const res = await fetch(`${BASE}/rest/v1/gallery_tokens?job_id=eq.${encodeURIComponent(jobId)}&select=token`, { headers: authHeaders });
+      const rows = await readJson(res);
+      return Array.isArray(rows) && rows[0] ? rows[0].token : null;
+    },
+
+    // Every Job's hub state -- the admin directory's one query. Empty (never throws) if the table
+    // isn't there yet (delivery-hub.sql not run).
+    async listHubs() {
+      try {
+        const res = await fetch(`${BASE}/rest/v1/delivery_hub?select=job_id,token,paid,unlocked,paid_source,wave_paid_cents,wave_remaining_cents`, { headers: authHeaders });
+        const rows = await readJson(res);
+        return Object.fromEntries((rows || []).map((r) => [r.job_id, {
+          token: r.token, paid: !!r.paid, unlocked: !!r.unlocked, paidSource: r.paid_source || null,
+          waveRemainingCents: Number.isFinite(r.wave_remaining_cents) ? r.wave_remaining_cents : null,
+          wavePaidCents: Number.isFinite(r.wave_paid_cents) ? r.wave_paid_cents : null,
+        }]));
+      } catch {
+        return {};
+      }
+    },
+
+    async getHubByJobId(jobId) {
+      const res = await fetch(`${BASE}/rest/v1/delivery_hub?job_id=eq.${encodeURIComponent(jobId)}&select=*`, { headers: authHeaders });
+      const rows = await readJson(res);
+      return Array.isArray(rows) ? rows[0] || null : rows;
+    },
+
+    // The hub row of the Job a Wave invoice (numeric id, as text) belongs to, or null.
+    async getHubByWaveInvoice(invoiceId) {
+      const res = await fetch(`${BASE}/rest/v1/delivery_hub?wave_invoice_id=eq.${encodeURIComponent(invoiceId)}&select=*`, { headers: authHeaders });
+      const rows = await readJson(res);
+      return Array.isArray(rows) ? rows[0] || null : rows;
+    },
+
+    async patchHub(jobId, fields) {
+      const res = await fetch(`${BASE}/rest/v1/delivery_hub?job_id=eq.${encodeURIComponent(jobId)}`, {
+        method: 'PATCH',
+        headers: { ...authHeaders, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+        body: JSON.stringify({ ...fields, updated_at: new Date().toISOString() }),
+      });
+      const rows = await readJson(res);
+      return Array.isArray(rows) && rows[0] ? rows[0] : null;
+    },
+
+    // Admin: flips paid / unlocked for one Job. Ticking Paid by hand records source 'manual' (and
+    // unticking clears it); the caller has already refused to untick a Wave-paid Job. Returns the
+    // updated row, or null when the Job has no hub row (no Create/Update Job since the hub existed).
+    async setHubFlags(jobId, flags) {
+      const fields = { ...flags };
+      if (flags.paid === true) Object.assign(fields, { paid_source: 'manual', paid_at: new Date().toISOString() });
+      if (flags.paid === false) Object.assign(fields, { paid_source: null, paid_at: null });
+      return this.patchHub(jobId, fields);
+    },
+
+    // Wave webhook deliveries: event_id is the primary key, so a retry is a no-op. Returns true when
+    // this delivery is NEW (inserted), false when it was already recorded.
+    async insertWaveEvent(evt) {
+      const res = await fetch(`${BASE}/rest/v1/wave_events`, {
+        method: 'POST',
+        headers: { ...authHeaders, 'Content-Type': 'application/json', Prefer: 'resolution=ignore-duplicates,return=representation' },
+        body: JSON.stringify({
+          event_id: evt.event_id, event_type: evt.event_type, invoice_id: evt.invoice_id || null,
+          business_id: evt.business_id || null, payload: evt.payload,
+        }),
+      });
+      const rows = await readJson(res);
+      return Array.isArray(rows) && rows.length > 0;
+    },
+
+    async updateWaveEvent(eventId, fields) {
+      await readJson(await fetch(`${BASE}/rest/v1/wave_events?event_id=eq.${encodeURIComponent(eventId)}`, {
+        method: 'PATCH',
+        headers: { ...authHeaders, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify(fields),
+      }));
+    },
+
     // Every Job's projects row (id, data, updated_at), newest-updated first
     // -- the admin directory's one query (see src/admin.js). `projects` is
     // shared with Feature Sheet Builder, whose own projects today use a

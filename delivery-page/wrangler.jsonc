@@ -27,6 +27,9 @@
   //   local `wrangler dev`: no binding -> set PHOTO_SYNC_URL in .dev.vars instead.
   "services": [{ "binding": "PHOTO_SYNC", "service": "franvision-photo-sync" }],
 
+  // Delivery Hub: Wave invoice webhooks (POST /webhooks/wave). secret: WAVE_WEBHOOK_SECRET (the signing secret
+  // Wave shows for the webhook subscription; `wrangler secret put WAVE_WEBHOOK_SECRET`). No Wave API token here.
+
   "vars": {
     // Dropbox sub-folder (case-insensitive) treated as the main photo set
     // for the hero/gallery/closing photo -- matches photo-sync-worker's
