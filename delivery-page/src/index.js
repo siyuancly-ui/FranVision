@@ -203,7 +203,10 @@ async function handleHub(parts, env, url) {
 // answers 200 once the signature is valid (unmatched / ignored / duplicate included) -- Wave disables a
 // subscription after 10 consecutive failed deliveries, so only a bad signature or our own error fails.
 async function handleWaveWebhook(request, env) {
-  if (!env.WAVE_WEBHOOK_SECRET) return json({ error: 'webhook not configured' }, 503);
+  // Before the signing secret exists (Wave only shows it AFTER the endpoint URL is saved, and it checks the URL
+  // answers with a success first) there is nothing to verify and nothing to lose: answer 200 and do nothing. Once
+  // the secret is set this endpoint is strict (401 for anything unsigned).
+  if (!env.WAVE_WEBHOOK_SECRET) return json({ ok: true, configured: false });
   const rawBody = await request.text();
   const ok = await verifyWaveSignature({ header: request.headers.get('x-wave-signature'), rawBody, secret: env.WAVE_WEBHOOK_SECRET });
   if (!ok) return json({ error: 'bad signature' }, 401);
@@ -387,6 +390,10 @@ export default {
         console.log('admin_set_job_error', { jobId: parts[2], error: String(err) });
         return json({ error: String(err) }, 500);
       }
+    }
+
+    if ((request.method === 'GET' || request.method === 'HEAD') && parts[0] === 'webhooks' && parts[1] === 'wave' && parts.length === 2) {
+      return json({ ok: true, service: 'wave-webhook' });   // reachability check only
     }
 
     if (request.method === 'POST' && parts[0] === 'webhooks' && parts[1] === 'wave' && parts.length === 2) {

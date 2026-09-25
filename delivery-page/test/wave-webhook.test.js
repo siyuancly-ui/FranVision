@@ -97,13 +97,21 @@ const hook = (env, evt, { header, raw } = {}) => {
 };
 const wave = (id, type, data) => ({ event_id: id, event_type: type, business_id: 'biz', data: { invoice_id: '2619579987556152644', customer_id: '1', currency_code: 'CAD', paid_date: '2026-09-25', amount_paid: '113.00', remaining_balance: '0.00', ...data } });
 
-test('webhook: bad / missing signature -> 401 and nothing is written; no secret configured -> 503', async () => {
+test('webhook: bad / missing signature -> 401 and nothing is written; no secret configured yet -> 200 and nothing happens', async () => {
   const { env, state } = setup();
   assert.equal((await hook(env, wave('e1', 'invoice.paid'), { header: 't=1,v1=00' })).status, 401);
   assert.equal((await hook(env, wave('e1', 'invoice.paid'), { header: '' })).status, 401);
   assert.equal(state.events.size, 0);
   assert.equal(state.hub.paid, false);
-  assert.equal((await hook({ ...env, WAVE_WEBHOOK_SECRET: '' }, wave('e1', 'invoice.paid'))).status, 503);
+  // no secret configured yet (Wave validates the URL BEFORE it shows the secret): 200 and nothing is recorded
+  const before = await hook({ ...env, WAVE_WEBHOOK_SECRET: '' }, wave('e1', 'invoice.paid'));
+  assert.equal(before.status, 200);
+  assert.deepEqual(await before.json(), { ok: true, configured: false });
+  assert.equal(state.events.size, 0);
+  assert.equal(state.hub.paid, false);
+  // reachability check
+  const ping = await worker.fetch(new Request('https://realgta.ca/webhooks/wave'), env);
+  assert.equal(ping.status, 200);
 });
 
 test('webhook: invoice.paid for a Job\'s invoice -> paid, source wave; the hub unlocks; the event is logged once', async () => {
