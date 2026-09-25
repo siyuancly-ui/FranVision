@@ -682,9 +682,9 @@
         if (LD.frame) {
           var frameEl = el('div', { class: 'fsb-desc-frame' });
           var fr = LD.frame.rect;
-          // The artwork is a MASK filled with the theme's own frame colour (same technique as the page-2
-          // flourish), so it is exactly the hex the other frames use -- not the PNG's baked-in gold.
-          var frameColor = tokenColor(theme, LD.frame.token || 'goldLine');
+          // The artwork is a MASK filled with the theme's own gold (same technique -- and the same `gold`
+          // token -- as the page-2 flourish), so it is exactly the hex the ornaments use, not the PNG's baked-in gold.
+          var frameColor = tokenColor(theme, LD.frame.token || 'gold');
           frameEl.style.cssText = 'position:absolute;left:' + (fr[0] * pw) + 'px;top:' + (fr[1] * ph) + 'px;width:' + (fr[2] * pw) +
             'px;height:' + (fr[3] * ph) + 'px;background-color:' + frameColor +
             ';-webkit-mask:url(' + LD.frame.asset + ') center / 100% 100% no-repeat' +

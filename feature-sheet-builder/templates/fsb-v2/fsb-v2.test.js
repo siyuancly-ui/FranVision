@@ -346,17 +346,18 @@ test('descFrame: the inset keeps the text clear of the artwork (measured on the 
   assert.ok(x < 0.12 && y < 0.25, 'but not so big that the text area collapses');
 });
 
-test('descFrame colour: the frame uses the SAME theme token as the theme\'s other frames (page-2 panel frames + page-1 agent card), so it is the identical hex', () => {
+test('descFrame colour: the frame uses the SAME theme token as the page-2 gold flourish, so it is the identical hex', () => {
   const token = MOD.descFrame.token;
+  assert.equal(token, 'gold');
   HUADI.forEach((id) => {
     assert.ok(THEMES[id].tokens[token], id + ' defines ' + token);
     assert.equal(REG.compose(withDescription(id)).page1.left.desc.frame.token, token);
   });
-  // the renderer draws the page-2 panel frames with that very token (not a hard-coded colour)
+  // the renderer fills the page-2 flourish with that very token (not a hard-coded colour)...
   const src = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'js', 'template-render-v2.js'), 'utf8');
-  const panel = /fsb-panel-border[\s\S]{0,400}?tokenColor\(theme, '([A-Za-z]+)'\)/.exec(src);
-  assert.ok(panel, 'found the panel-border colour in the renderer');
-  assert.equal(panel[1], token, 'panel frames and the description frame share one colour token');
+  const flourish = /styleFlourish\(f, tokenColor\(theme, '([A-Za-z]+)'\)\)/.exec(src);
+  assert.ok(flourish, 'found the flourish colour in the renderer');
+  assert.equal(flourish[1], token, 'flourish and description frame share one colour token');
   // ...and the description frame itself is filled from the theme (a mask), never from a baked-in colour
   assert.match(src, /var frameColor = tokenColor\(theme, LD\.frame\.token/);
   assert.match(src, /background-color:' \+ frameColor/);

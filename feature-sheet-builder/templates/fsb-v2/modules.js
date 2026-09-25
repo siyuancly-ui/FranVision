@@ -209,13 +209,14 @@
   // ================================================================
   //
   //  COLOUR: the artwork is used as a MASK (its shape only) and filled with the theme token below,
-  //  exactly like the page-2 ornament -- so the frame is the SAME hex as the theme's other frames:
-  //  `goldLine` is what the page-2 panel frames and the page-1 agent-card frame are drawn in
-  //  (navy/burgundy/emerald #a97c4f, marble #b39a56). Change `token` to re-colour it (e.g. 'gold' =
-  //  the page-2 flourish, 'goldSoft' = the page-1 hero keyline).
+  //  exactly like the page-2 ornament -- so the frame is the SAME hex as the gold flourish above
+  //  each page-2 panel: `gold` (navy/burgundy/emerald #D9B28D, marble #9c7b33). (First version used
+  //  `goldLine` -- the page-2 panel-frame line colour -- but Franky saw a colour difference against
+  //  the ornaments, so it follows the flourish. Other options: 'goldLine' = panel/agent-card frames,
+  //  'goldSoft' = the page-1 hero keyline.)
   var descFrame = {
     asset: '/template-assets/fsb-v2/assets/desc-frame.png',
-    token: 'goldLine',
+    token: 'gold',
     inset: { x: 0.05, y: 0.15 },
   };
 
