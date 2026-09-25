@@ -80,6 +80,10 @@ export function buildAdminModel(rows, galleryTokens = {}, hubs = {}) {
   return { jobs };
 }
 
+function cents(c) {
+  return Number.isFinite(c) ? `$${(c / 100).toFixed(2)}` : '—';
+}
+
 function fmtTime(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -115,6 +119,8 @@ const CSS = `
   .copy-btn:disabled{opacity:.45;cursor:default;}
   .sw{display:flex;align-items:center;gap:6px;font-size:12.5px;white-space:nowrap;cursor:pointer;}
   .sw.err{color:#c0392b;}
+  .sw.is-wave{opacity:.55;cursor:not-allowed;}
+  .partial{font-size:12px;color:#b3541e;white-space:nowrap;}
   .btns{display:flex;flex-direction:column;gap:6px;align-items:flex-start;}
   @media (prefers-color-scheme: dark){
     body{background:#000;color:#f2f2f7;}
@@ -150,9 +156,15 @@ export function renderAdminPage(model, { origin = '' } = {}) {
         <a class="open-link" href="${escapeHtml(hPath)}" target="_blank" rel="noopener">Open 打开</a>
         <button class="copy-btn" type="button" data-link="${escapeHtml(hFull)}">Copy link 复制链接</button>
       </div>` : '<span class="no">—</span>';
+    // Paid through Wave (fully paid, by the webhook): a greyed-out tick that can't be undone -- that
+    // alone tells Franky it was Wave, not his own e-Transfer tick. A PARTIAL Wave payment does not tick;
+    // it shows what was paid / is still owed.
+    const wavePaid = j.hub && j.hub.paid && j.hub.paidSource === 'wave';
+    const partial = j.hub && !j.hub.paid && j.hub.waveRemainingCents > 0
+      ? `<div class="partial">部分付款 Partial: 已付 ${cents(j.hub.wavePaidCents)}, 还差 ${cents(j.hub.waveRemainingCents)}</div>` : '';
     const payCell = j.hub ? `<div class="btns">
-        <label class="sw"><input type="checkbox" data-hub="${escapeHtml(j.jobId)}" data-flag="paid"${j.hub.paid ? ' checked' : ''}> Paid 已付款</label>
-        <label class="sw"><input type="checkbox" data-hub="${escapeHtml(j.jobId)}" data-flag="unlocked"${j.hub.unlocked ? ' checked' : ''}> Unlock 直接解锁</label>
+        <label class="sw${wavePaid ? ' is-wave' : ''}"${wavePaid ? ' title="Wave 信用卡付款 (自动, 不能取消)"' : ''}><input type="checkbox" data-hub="${escapeHtml(j.jobId)}" data-flag="paid"${j.hub.paid ? ' checked' : ''}${wavePaid ? ' disabled' : ''}> Paid 已付款</label>
+        <label class="sw"><input type="checkbox" data-hub="${escapeHtml(j.jobId)}" data-flag="unlocked"${j.hub.unlocked ? ' checked' : ''}> Unlock 直接解锁</label>${partial}
       </div>` : '<span class="no">—</span>';
     return `
     <tr data-search="${escapeHtml((j.address || '') + ' ' + j.jobId + ' ' + j.agents.join(' ')).toLowerCase()}">

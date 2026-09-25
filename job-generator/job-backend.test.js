@@ -62,12 +62,19 @@ const okFetch = (payload, calls) => async (url, opts) => {
 
   await test('saveDeliveryHub: calls jg_delivery_hub with lines / wave link / total and returns the token', async () => {
     const calls = [];
-    const tok = await backend.saveDeliveryHub({ jobId: 'FVS-20260925-001', lines: [{ key: 'HDR' }], waveViewUrl: 'https://w/p', totalCents: 11300 }, { env: ENV, fetchImpl: okFetch('t'.repeat(32), calls) });
+    const tok = await backend.saveDeliveryHub({ jobId: 'FVS-20260925-001', lines: [{ key: 'HDR' }], waveViewUrl: 'https://w/p', totalCents: 11300, waveInvoiceId: Buffer.from('Business:72a699be-404e-4cd7-b8eb-654e0b2dd015;Invoice:2619579987556152644').toString('base64') }, { env: ENV, fetchImpl: okFetch('t'.repeat(32), calls) });
     assert.ok(calls[0].url.endsWith('/rest/v1/rpc/jg_delivery_hub'));
-    assert.deepStrictEqual(JSON.parse(calls[0].opts.body), { p_token: 'secret-token', p_job_id: 'FVS-20260925-001', p_lines: [{ key: 'HDR' }], p_wave_view_url: 'https://w/p', p_total_cents: 11300 });
+    assert.deepStrictEqual(JSON.parse(calls[0].opts.body), { p_token: 'secret-token', p_job_id: 'FVS-20260925-001', p_lines: [{ key: 'HDR' }], p_wave_view_url: 'https://w/p', p_total_cents: 11300, p_wave_invoice_id: '2619579987556152644' });
     assert.strictEqual(tok, 't'.repeat(32));
     await backend.saveDeliveryHub({ jobId: 'FVS-20260925-001' }, { env: ENV, fetchImpl: okFetch('x', calls) });
-    assert.deepStrictEqual(JSON.parse(calls[1].opts.body), { p_token: 'secret-token', p_job_id: 'FVS-20260925-001', p_lines: [], p_wave_view_url: null, p_total_cents: null });
+    assert.deepStrictEqual(JSON.parse(calls[1].opts.body), { p_token: 'secret-token', p_job_id: 'FVS-20260925-001', p_lines: [], p_wave_view_url: null, p_total_cents: null, p_wave_invoice_id: null });
+  });
+
+  await test('waveInvoiceNumber: digits from the GraphQL id (or bare digits), null otherwise; stays a string (19 digits)', () => {
+    const gql = Buffer.from('Business:72a699be-404e-4cd7-b8eb-654e0b2dd015;Invoice:2619579987556152644').toString('base64');
+    assert.strictEqual(backend.waveInvoiceNumber(gql), '2619579987556152644');
+    assert.strictEqual(backend.waveInvoiceNumber('2496756670638588934'), '2496756670638588934');
+    for (const bad of [null, '', 'garbage', Buffer.from('Business:x;Product:1').toString('base64')]) assert.strictEqual(backend.waveInvoiceNumber(bad), null);
   });
 
   await test('isConfigured: needs all three of url / anon key / token', () => {

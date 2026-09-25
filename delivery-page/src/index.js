@@ -4,6 +4,7 @@ import { buildAdminModel, renderAdminPage } from './admin.js';
 import {
   isHubToken, isLineKey, buildHubModel, resolveTarget, isUnlocked, renderHubPage, renderNotFoundHub, renderNotReadyHub,
 } from './hub.js';
+import { verifyWaveSignature, classifyWaveEvent } from './wave-webhook.js';
 import {
   buildGalleryModel, renderGalleryPage, renderGalleryNotFoundPage, renderGalleryPreparingPage, isGalleryToken, zipFilename, attachmentDisposition,
 } from './gallery.js';
@@ -159,6 +160,53 @@ async function handleHub(parts, env) {
   return notFound();
 }
 
+// POST /webhooks/wave -- Wave's invoice events (wave-webhook.js has the format + signature rules).
+// A fully paid invoice marks its Job paid (source 'wave'); a partial payment is only recorded. Always
+// answers 200 once the signature is valid (unmatched / ignored / duplicate included) -- Wave disables a
+// subscription after 10 consecutive failed deliveries, so only a bad signature or our own error fails.
+async function handleWaveWebhook(request, env) {
+  if (!env.WAVE_WEBHOOK_SECRET) return json({ error: 'webhook not configured' }, 503);
+  const rawBody = await request.text();
+  const ok = await verifyWaveSignature({ header: request.headers.get('x-wave-signature'), rawBody, secret: env.WAVE_WEBHOOK_SECRET });
+  if (!ok) return json({ error: 'bad signature' }, 401);
+
+  let evt;
+  try {
+    evt = JSON.parse(rawBody);
+  } catch {
+    return json({ error: 'invalid JSON' }, 400);
+  }
+  if (!evt || typeof evt.event_id !== 'string' || typeof evt.event_type !== 'string') return json({ error: 'not a Wave event' }, 400);
+
+  const sb = createSupabase(env);
+  const c = classifyWaveEvent(evt);
+  const fresh = await sb.insertWaveEvent({ event_id: evt.event_id, event_type: evt.event_type, invoice_id: c.invoiceId, business_id: evt.business_id, payload: evt });
+  if (!fresh) return json({ ok: true, duplicate: true });
+
+  let result = 'ignored';
+  let jobId = null;
+  if (c.kind !== 'ignore') {
+    const row = await sb.getHubByWaveInvoice(c.invoiceId);
+    if (!row) {
+      result = 'no matching job';
+    } else {
+      jobId = row.job_id;
+      if (c.kind === 'paid') {
+        await sb.patchHub(jobId, {
+          paid: true, paid_source: 'wave', paid_at: c.paidDate ? new Date(c.paidDate).toISOString() : new Date().toISOString(),
+          wave_paid_cents: c.paidCents, wave_remaining_cents: 0,
+        });
+        result = 'paid';
+      } else {
+        await sb.patchHub(jobId, { wave_paid_cents: c.paidCents, wave_remaining_cents: c.remainingCents });
+        result = 'partial';
+      }
+    }
+  }
+  await sb.updateWaveEvent(evt.event_id, { job_id: jobId, result });
+  return json({ ok: true, result });
+}
+
 async function handleAdmin(url, env) {
   const token = url.searchParams.get('admin') || '';
   if (!env.ADMIN_TOKEN || token !== env.ADMIN_TOKEN) return html('unauthorized', 401);
@@ -211,7 +259,16 @@ async function handleAdminSetHub(jobId, request, env) {
   if (typeof body.paid === 'boolean') flags.paid = body.paid;
   if (typeof body.unlocked === 'boolean') flags.unlocked = body.unlocked;
   if (Object.keys(flags).length === 0) return json({ error: 'no recognized fields (paid, unlocked)' }, 400);
-  const row = await createSupabase(env).setHubFlags(jobId, flags);
+  const sb = createSupabase(env);
+  // A Job Wave says is paid can't be un-paid from here (that's the point of the greyed-out tick);
+  // ticking Paid on it again is a harmless no-op that keeps the 'wave' source.
+  const existing = await sb.getHubByJobId(jobId);
+  if (existing && existing.paid && existing.paid_source === 'wave' && 'paid' in flags) {
+    if (flags.paid === false) return json({ error: 'paid through Wave -- cannot be unticked' }, 409);
+    delete flags.paid;
+    if (Object.keys(flags).length === 0) return json({ jobId, paid: true, unlocked: !!existing.unlocked });
+  }
+  const row = await sb.setHubFlags(jobId, flags);
   if (!row) return json({ error: 'no delivery hub for this job yet (run Create/Update Job first)' }, 404);
   return json({ jobId, paid: !!row.paid, unlocked: !!row.unlocked });
 }
@@ -291,6 +348,15 @@ export default {
       } catch (err) {
         console.log('admin_set_job_error', { jobId: parts[2], error: String(err) });
         return json({ error: String(err) }, 500);
+      }
+    }
+
+    if (request.method === 'POST' && parts[0] === 'webhooks' && parts[1] === 'wave' && parts.length === 2) {
+      try {
+        return await handleWaveWebhook(request, env);
+      } catch (err) {
+        console.log('wave_webhook_error', { error: String(err) });
+        return json({ error: 'internal error' }, 500);   // non-2xx -> Wave retries
       }
     }
 

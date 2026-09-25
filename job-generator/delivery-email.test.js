@@ -472,7 +472,7 @@ test('buildHubLink: /deliver/<address-slug>/<token>; no token -> null; no addres
 
 test('generateDeliveryEmails: with a hub the lower half is the one hub link; the hub gets the same button list the email used to print', async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'jg-hub-'));
-  const base = { jobId: 'FVS-20260925-001', jobFolderPath: tmp, folderName: 'x', clientName: 'C', address: '1 Main St', order: { addons: { floor_plan: true, three_d_tour: true } }, componentFolders: ['Home Report'], totalCents: 11300, preTaxCents: 10000, waveViewUrl: 'https://next.waveapps.com/pay/abc' };
+  const base = { jobId: 'FVS-20260925-001', jobFolderPath: tmp, folderName: 'x', clientName: 'C', address: '1 Main St', order: { addons: { floor_plan: true, three_d_tour: true } }, componentFolders: ['Home Report'], totalCents: 11300, preTaxCents: 10000, waveViewUrl: 'https://next.waveapps.com/pay/abc', waveInvoiceId: 'INV-GQL-ID' };
   // fake Dropbox client so createSharedLink answers without the network
   const client = { sharingCreateSharedLinkWithSettings: async ({ path: p }) => ({ result: { url: 'https://www.dropbox.com/scl/fo' + p.replace(/\W+/g, '-') } }), sharingListSharedLinks: async () => ({ result: { links: [] } }) };
   const read = (f) => fs.readFileSync(path.join(tmp, f), 'utf8');
@@ -483,6 +483,7 @@ test('generateDeliveryEmails: with a hub the lower half is the one hub link; the
   assert.strictEqual(saved.jobId, 'FVS-20260925-001');
   assert.strictEqual(saved.totalCents, 11300);
   assert.strictEqual(saved.waveViewUrl, 'https://next.waveapps.com/pay/abc');
+  assert.strictEqual(saved.waveInvoiceId, 'INV-GQL-ID');
   assert.deepStrictEqual(saved.lines.map((l) => l.key), ['HDR', 'MLS', 'FLOORPLAN', 'THREE_D', 'LOCAL_REPORT', 'HOME_REPORT']);   // = getDeliverableLines()'s included keys, in order
   assert.ok(!('url' in saved.lines.find((l) => l.key === 'THREE_D')), 'THREE_D carries no Dropbox link');
   for (const f of [deliveryEmail.OUTPUT_FILENAME_EN, deliveryEmail.OUTPUT_FILENAME_ZH]) {

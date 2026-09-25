@@ -138,7 +138,7 @@ export function renderHubPage(model, { base, openKey = '' }) {
 
   const amount = model.totalCents != null ? `<p class="hub-fee">${money(model.totalCents)} <span>incl. HST</span></p>` : '';
   const cardBtn = model.payUrl
-    ? `<a class="hub-pay" href="${escapeHtml(model.payUrl)}" target="_blank" rel="noopener">Pay by credit card <span>信用卡</span></a>`
+    ? `<a class="hub-pay" id="hubCard" href="${escapeHtml(model.payUrl)}" target="_blank" rel="noopener">Pay by credit card <span>信用卡</span></a>`
     : '';
   const dialog = model.unlocked ? '' : `
 <div class="hub-modal" id="hubModal" hidden role="dialog" aria-modal="true" aria-labelledby="hubModalTitle">
@@ -236,7 +236,7 @@ function hubScript(openKey, base) {
 (function(){
   var modal=document.getElementById('hubModal'), choose=document.getElementById('hubChoose'), emt=document.getElementById('hubEmtPanel');
   function show(panel){ choose.hidden=panel!=='choose'; emt.hidden=panel!=='emt'; }
-  function open(){ show('choose'); modal.hidden=false; watch(); }
+  function open(){ show('choose'); modal.hidden=false; }
   function close(){ modal.hidden=true; }
   document.querySelectorAll('.hub-btn.is-locked').forEach(function(b){ b.addEventListener('click', open); });
   document.getElementById('hubClose').addEventListener('click', close);
@@ -246,14 +246,16 @@ function hubScript(openKey, base) {
     var b=this, t=document.getElementById('hubMail').textContent, done=function(){ b.textContent='Copied 已复制'; };
     if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(done,function(){}); }
   });
-  // Auto-unlock: once the visitor has opened the pay dialog (i.e. is about to pay), ask the server
-  // every 5s whether the Job is paid/unlocked, and check at once whenever they switch back to this
-  // tab -- when it is, go to the hub itself (now unlocked). No manual refresh, no "go back to the old tab".
+  // Auto-unlock: once the visitor has clicked "Pay by credit card" (Wave then tells our server the moment
+  // it is paid), ask OUR server every 5s whether the Job is paid/unlocked, and check at once whenever they
+  // switch back to this tab -- when it is, go to the hub itself (now unlocked). No manual refresh. Not
+  // started for e-Transfer: that is confirmed by Franky by hand, possibly hours later.
   var statusUrl=${JSON.stringify(base + '/status').replace(/</g, '\\u003c')}, timer=null;
   function check(){
     fetch(statusUrl,{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){ if(j&&j.unlocked) location.replace(${JSON.stringify(base).replace(/</g, '\\u003c')}); }).catch(function(){});
   }
   function watch(){ if(!timer){ timer=setInterval(check,5000); } check(); }
+  var card=document.getElementById('hubCard'); if(card){ card.addEventListener('click', watch); }
   document.addEventListener('visibilitychange', function(){ if(!document.hidden && timer) check(); });
   window.addEventListener('focus', function(){ if(timer) check(); });
   modal.addEventListener('click', function(e){ if(e.target===modal) close(); });

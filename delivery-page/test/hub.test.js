@@ -87,7 +87,7 @@ test('unlocked page: real links through /go/<KEY>, no dialog; not-ready item is 
 
 test('pay dialog without a Wave link offers only e-Transfer (no credit-card button, no amount); escapes address', () => {
   const html = renderHubPage(buildHubModel({ ...ROW, wave_view_url: null, total_cents: null }, { data: { address: '<b>1</b> St' } }, GTOKEN), { base: '/deliver/x/y' });
-  assert.doesNotMatch(html, /Pay by credit card/);
+  assert.doesNotMatch(html, /id="hubCard"/);   // no credit-card button
   assert.match(html, /Pay by e-Transfer/);
   assert.doesNotMatch(html, /hub-fee">\$/);
   assert.match(html, /frankystudio@mail\.com/);
