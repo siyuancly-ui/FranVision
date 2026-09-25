@@ -139,9 +139,38 @@ const LOCK_ICON = '<svg class="hub-ico" viewBox="0 0 24 24" width="18" height="1
 const ARROW_ICON = '<svg class="hub-ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M12 3.5v11m0 0-4.4-4.4M12 14.5l4.4-4.4M4 15.5V19a1.5 1.5 0 0 0 1.5 1.5h13A1.5 1.5 0 0 0 20 19v-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const EYE_ICON = '<svg class="hub-ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="12" r="2.8" fill="none" stroke="currentColor" stroke-width="2"/></svg>';
 
+// What to ask for: after a PARTIAL Wave payment the remainder, otherwise the invoice total.
+function amountHtml(model) {
+  return model.remainingCents != null
+    ? `<p class="hub-fee">${money(model.remainingCents)} <span>remaining 剩余未付</span></p>`
+    : (model.totalCents != null ? `<p class="hub-fee">${money(model.totalCents)} <span>incl. HST</span></p>` : '');
+}
+
+// The e-Transfer instructions, shared by the pay dialog and the invoice page.
+function emtDetailsHtml() {
+  return `<p class="hub-emt-to">Send to</p>
+      <p class="hub-emt-mail" id="hubMail">frankystudio@mail.com</p>
+      <p class="hub-emt-note">Not Gmail 不是 Gmail</p>
+      <button class="hub-copy" id="hubCopy" type="button">Copy email 复制邮箱</button>
+      <p class="hub-after">Then let Franky know or send a screenshot — we'll unlock this page. 付款后请告知 Franky 或发截图。</p>`;
+}
+
 // The invoice on its own page: the PDF shown inline (served through our Worker, see index.js) with a Download
 // button, and -- while unpaid -- a way back to the payment choices.
 export function renderInvoicePage(model, { base }) {
+  // While unpaid: the two payment entries right under the invoice -- credit card goes straight to Wave's pay page,
+  // e-Transfer unfolds the instructions here (no trip back to the hub).
+  const pay = model.paid ? '' : `
+  <div class="inv-pay">
+    ${amountHtml(model)}
+    <div class="inv-pay-btns">
+      ${model.payUrl ? `<a class="hub-pay" id="hubCard" href="${escapeHtml(model.payUrl)}" target="_blank" rel="noopener">Pay by credit card <span>信用卡</span></a>` : ''}
+      <button class="hub-pay is-alt" id="hubEmt" type="button">Pay by e-Transfer <span>EMT 转账</span></button>
+    </div>
+    <div class="inv-emt" id="hubEmtPanel" hidden>
+      ${emtDetailsHtml()}
+    </div>
+  </div>`;
   const title = model.address ? `Invoice — ${model.address}` : 'Invoice';
   const body = `
 <main class="inv">
@@ -152,9 +181,9 @@ export function renderInvoicePage(model, { base }) {
   </div>
   <iframe class="inv-frame" title="Invoice" src="${escapeHtml(base)}/invoice.pdf#view=FitH"></iframe>
   <p class="inv-fallback">Can't see the invoice? <a href="${escapeHtml(base)}/invoice.pdf?download=1">Download it 下载发票</a></p>
-  ${model.paid ? '' : `<div class="cta-row inv-pay"><a class="hub-cta" href="${escapeHtml(base)}?pay=1">Ready to pay 去付款</a></div>`}
+  ${pay}
 </main>`;
-  return page(title, body, { bare: true, extraHead: HUB_HEAD, extraCss: HUB_CSS + INVOICE_CSS });
+  return page(title, body, { bare: true, extraHead: HUB_HEAD, extraCss: HUB_CSS + INVOICE_CSS, extraBody: model.paid ? '' : `<script>${invoiceScript(base)}</script>` });
 }
 
 const INVOICE_CSS = `
@@ -166,7 +195,8 @@ const INVOICE_CSS = `
   .inv-frame{display:block;width:100%;height:82vh;min-height:520px;border:1px solid #d5d5db;border-radius:10px;background:#fff;}
   .inv-fallback{text-align:center;font-size:12.5px;color:#7a766b;margin:10px 0 0;}
   .inv-fallback a{color:#467ab5;}
-  .inv-pay{justify-content:center;margin-top:18px;}
+  .inv-pay{max-width:420px;margin:20px auto 0;text-align:center;}
+  .inv-emt{margin-top:6px;}
 `;
 
 export function renderNotFoundHub() {
@@ -204,9 +234,7 @@ export function renderHubPage(model, { base, openKey = '' }) {
   }).join('\n');
 
   // After a partial payment the dialog asks for what is STILL owed, not the full total again.
-  const amount = model.remainingCents != null
-    ? `<p class="hub-fee">${money(model.remainingCents)} <span>remaining 剩余未付</span></p>`
-    : (model.totalCents != null ? `<p class="hub-fee">${money(model.totalCents)} <span>incl. HST</span></p>` : '');
+  const amount = amountHtml(model);
   const cardBtn = model.payUrl
     ? `<a class="hub-pay" id="hubCard" href="${escapeHtml(model.payUrl)}" target="_blank" rel="noopener">Pay by credit card <span>信用卡</span></a>`
     : '';
@@ -214,7 +242,7 @@ export function renderHubPage(model, { base, openKey = '' }) {
   // Our own invoice page (shows the PDF, with a Download button) when we hold Wave's PDF link; otherwise Wave's page.
   const viewHref = model.hasInvoicePdf ? `${base}/invoice` : model.invoiceUrl;
   const viewBtn = viewHref
-    ? `<a class="hub-pay is-ghost" href="${escapeHtml(viewHref)}" target="_blank" rel="noopener">View invoice <span>查看发票</span></a>`
+    ? `<a class="hub-pay is-ghost" id="hubView" href="${escapeHtml(viewHref)}" target="_blank" rel="noopener">View invoice <span>查看发票</span></a>`
     : '';
   const dialog = model.paid ? '' : `
 <div class="hub-modal" id="hubModal" hidden role="dialog" aria-modal="true" aria-labelledby="hubModalTitle">
@@ -229,11 +257,7 @@ export function renderHubPage(model, { base, openKey = '' }) {
     <div id="hubEmtPanel" hidden>
       <h2>Pay by e-Transfer <span>EMT 转账</span></h2>
       ${amount}
-      <p class="hub-emt-to">Send to</p>
-      <p class="hub-emt-mail" id="hubMail">frankystudio@mail.com</p>
-      <p class="hub-emt-note">Not Gmail 不是 Gmail</p>
-      <button class="hub-copy" id="hubCopy" type="button">Copy email 复制邮箱</button>
-      <p class="hub-after">Then let Franky know or send a screenshot — we'll unlock this page. 付款后请告知 Franky 或发截图。</p>
+      ${emtDetailsHtml()}
       <button class="hub-back" id="hubBack" type="button">&larr; Back 返回</button>
     </div>
     <button class="hub-close" id="hubClose" type="button" aria-label="Close">&times;</button>
@@ -365,6 +389,29 @@ const HUB_CSS = `
   }
 `;
 
+// Invoice page: e-Transfer unfolds in place, and once the visitor has clicked "Pay by credit card" the page asks
+// OUR server every 5s (and on tab focus) whether the Job is paid -- when it is, it goes to the hub (now unlocked).
+function invoiceScript(base) {
+  return `
+(function(){
+  var panel=document.getElementById('hubEmtPanel');
+  document.getElementById('hubEmt').addEventListener('click', function(){ panel.hidden=!panel.hidden; });
+  var copy=document.getElementById('hubCopy');
+  copy.addEventListener('click', function(){
+    var t=document.getElementById('hubMail').textContent, done=function(){ copy.textContent='Copied 已复制'; };
+    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(done,function(){}); }
+  });
+  var hub=${JSON.stringify(base).replace(/</g, '\\u003c')}, statusUrl=hub+'/status', timer=null;
+  function check(){
+    fetch(statusUrl,{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){ if(j&&j.paid) location.replace(hub); }).catch(function(){});
+  }
+  function watch(){ if(!timer){ timer=setInterval(check,5000); } check(); }
+  var card=document.getElementById('hubCard'); if(card){ card.addEventListener('click', watch); }
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden && timer) check(); });
+  window.addEventListener('focus', function(){ if(timer) check(); });
+})();`;
+}
+
 function hubScript(openKey, base, remaining, unlockedNow) {
   return `
 (function(){
@@ -391,6 +438,7 @@ function hubScript(openKey, base, remaining, unlockedNow) {
   }
   function watch(){ if(!timer){ timer=setInterval(check,5000); } check(); }
   var card=document.getElementById('hubCard'); if(card){ card.addEventListener('click', watch); }
+  var vw=document.getElementById('hubView'); if(vw){ vw.addEventListener('click', watch); }
   document.addEventListener('visibilitychange', function(){ if(!document.hidden && timer) check(); });
   window.addEventListener('focus', function(){ if(timer) check(); });
   modal.addEventListener('click', function(e){ if(e.target===modal) close(); });

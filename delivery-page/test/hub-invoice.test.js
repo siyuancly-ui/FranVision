@@ -42,9 +42,15 @@ test('invoice page: shows the PDF in a frame with a Download button, a way back,
   assert.match(html, new RegExp(`<iframe class="inv-frame" title="Invoice" src="/deliver/x/${TOKEN}/invoice\\.pdf#view=FitH"`));
   assert.match(html, new RegExp(`href="/deliver/x/${TOKEN}/invoice\\.pdf\\?download=1">Download PDF 下载`));
   assert.match(html, new RegExp(`href="/deliver/x/${TOKEN}">&larr; Back`));
-  assert.match(html, new RegExp(`href="/deliver/x/${TOKEN}\\?pay=1">Ready to pay`));
+  assert.doesNotMatch(html, /Ready to pay/);                                    // no trip back to the hub: the two payment entries are right here
+  assert.match(html, /<a class="hub-pay" id="hubCard" href="https:\/\/link\.waveapps\.com\/x" target="_blank" rel="noopener">Pay by credit card/);   // straight to Wave's pay page
+  assert.match(html, /<button class="hub-pay is-alt" id="hubEmt" type="button">Pay by e-Transfer/);
+  assert.match(html, /<div class="inv-emt" id="hubEmtPanel" hidden>[\s\S]*frankystudio@mail\.com[\s\S]*Copy email/);   // e-Transfer instructions unfold in place
+  assert.match(html, /hub-fee">\$56\.50 <span>incl\. HST/);
+  assert.match(html, new RegExp(`var hub="/deliver/x/${TOKEN}", statusUrl=hub\\+'/status'`));   // watches for payment (after the card click), then goes to the hub
   assert.doesNotMatch(html, /accounting\.waveapps\.com/);                       // the Wave URL never reaches the browser
-  assert.doesNotMatch(await (await get(setup({ paid: true }).env, `/deliver/x/${TOKEN}/invoice`)).text(), /Ready to pay/);
+  const paidHtml = await (await get(setup({ paid: true }).env, `/deliver/x/${TOKEN}/invoice`)).text();
+  assert.doesNotMatch(paidHtml, /hubCard|hubEmt|Pay by|<script>/);              // paid: just the invoice + Download
 });
 
 test('invoice.pdf: streamed through the Worker -- inline for the frame, attachment with ?download=1; never cached; named after the address', async () => {
@@ -74,11 +80,11 @@ test('invoice.pdf / invoice: unknown token -> 404 without touching Wave; no usab
   assert.match(await bad.text(), /isn't ready yet/);
 });
 
-test('dialog "View invoice" opens our invoice page (not a raw download) when we hold the PDF link; falls back to Wave\'s page otherwise; ?pay=1 opens the dialog', async () => {
+test('dialog "View invoice" opens our invoice page (not a raw download) when we hold the PDF link, and starts the auto-unlock watch; falls back to Wave\'s page otherwise; ?pay=1 opens the dialog', async () => {
   const withPdf = renderHubPage(buildHubModel({ job_id: JOB, wave_pdf_url: PDF_URL, wave_view_url: 'https://link.waveapps.com/x', lines: [] }, PROJECT, null), { base: '/deliver/x/y' });
-  assert.match(withPdf, /class="hub-pay is-ghost" href="\/deliver\/x\/y\/invoice" target="_blank"/);
+  assert.match(withPdf, /class="hub-pay is-ghost" id="hubView" href="\/deliver\/x\/y\/invoice" target="_blank"/);
   const noPdf = renderHubPage(buildHubModel({ job_id: JOB, wave_view_url: 'https://link.waveapps.com/x', lines: [] }, PROJECT, null), { base: '/deliver/x/y' });
-  assert.match(noPdf, /class="hub-pay is-ghost" href="https:\/\/link\.waveapps\.com\/x"/);
+  assert.match(noPdf, /class="hub-pay is-ghost" id="hubView" href="https:\/\/link\.waveapps\.com\/x"/);
   const { env } = setup();
   assert.match(await (await get(env, `/deliver/x/${TOKEN}?pay=1`)).text(), /open\(\);/);
   assert.doesNotMatch(await (await get(env, `/deliver/x/${TOKEN}`)).text(), /open\(\);\n/);

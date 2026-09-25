@@ -166,10 +166,10 @@ test('dialog splits invoice from payment: View invoice (PDF) first, then Pay by 
   const full = renderHubPage(buildHubModel({ ...ROW, wave_pdf_url: 'https://accounting.waveapps.com/inv.pdf' }, PROJECT, GTOKEN), { base: '/deliver/x/y' });
   const i = { view: full.indexOf('View invoice <span>'), card: full.indexOf('id="hubCard"'), emt: full.indexOf('id="hubEmt"') };
   assert.ok(i.view > 0 && i.view < i.card && i.card < i.emt, 'order: view invoice, credit card, e-Transfer');
-  assert.match(full, /class="hub-pay is-ghost" href="\/deliver\/x\/y\/invoice" target="_blank" rel="noopener">View invoice/);   // our invoice page (PDF shown, not force-downloaded)
+  assert.match(full, /class="hub-pay is-ghost" id="hubView" href="\/deliver\/x\/y\/invoice" target="_blank" rel="noopener">View invoice/);   // our invoice page (PDF shown, not force-downloaded)
   assert.match(full, /id="hubCard" href="https:\/\/next\.waveapps\.com\/pay\/abc"/);          // card -> Wave's page
   const noPdf = renderHubPage(buildHubModel(ROW, PROJECT, GTOKEN), { base: '/deliver/x/y' });
-  assert.match(noPdf, /class="hub-pay is-ghost" href="https:\/\/next\.waveapps\.com\/pay\/abc"/);   // no PDF link yet -> the Wave page shows the invoice
+  assert.match(noPdf, /class="hub-pay is-ghost" id="hubView" href="https:\/\/next\.waveapps\.com\/pay\/abc"/);   // no PDF link yet -> the Wave page shows the invoice
   const none = renderHubPage(buildHubModel({ ...ROW, wave_view_url: null, wave_pdf_url: null }, PROJECT, GTOKEN), { base: '/deliver/x/y' });
   assert.doesNotMatch(none, /View invoice <span>|id="hubCard"/);
   assert.match(none, /id="hubEmt"/);                                                            // e-Transfer is always available
