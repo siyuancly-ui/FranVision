@@ -42,7 +42,13 @@ test('invoice page: shows the PDF in a frame with a Download button, a way back,
   assert.match(html, new RegExp(`<iframe class="inv-frame" title="Invoice" src="/deliver/x/${TOKEN}/invoice\\.pdf#view=FitH"`));
   assert.match(html, new RegExp(`href="/deliver/x/${TOKEN}/invoice\\.pdf\\?download=1">Download PDF 下载`));
   assert.match(html, new RegExp(`href="/deliver/x/${TOKEN}">&larr; Back`));
-  assert.doesNotMatch(html, /Ready to pay/);                                    // no trip back to the hub: the two payment entries are right here
+  assert.doesNotMatch(html, /Ready to pay/);
+  // the payment entry is at the TOP only: a Pay button in the bar + its panel, both before the invoice frame; nothing repeated below it
+  assert.match(html, /<button class="hub-cta inv-paybtn" id="invPayBtn" type="button">Pay 付款<\/button>/);
+  assert.ok(html.indexOf('id="invPayBtn"') < html.indexOf('<iframe'), 'Pay button above the invoice');
+  assert.ok(html.indexOf('id="invPayPanel"') < html.indexOf('<iframe'), 'pay panel above the invoice');
+  assert.match(html, /id="invPayPanel" hidden>/);                               // collapsed until Pay is pressed
+  assert.doesNotMatch(html.slice(html.indexOf('</iframe>'), html.indexOf('</main>')), /hubCard|hubEmt|Pay by|frankystudio|hub-fee/);   // no second copy at the bottom (the script after </main> is not content)
   assert.match(html, /<a class="hub-pay" id="hubCard" href="https:\/\/link\.waveapps\.com\/x" target="_blank" rel="noopener">Pay by credit card/);   // straight to Wave's pay page
   assert.match(html, /<button class="hub-pay is-alt" id="hubEmt" type="button">Pay by e-Transfer/);
   assert.match(html, /<div class="inv-emt" id="hubEmtPanel" hidden>[\s\S]*frankystudio@mail\.com[\s\S]*Copy email/);   // e-Transfer instructions unfold in place
