@@ -235,15 +235,19 @@ export function renderClientView(model, { base }) {
     if (!model.unlocked) return `<span class="hub-btn is-disabled">${ico}${label}${go('lock')}</span>`;
     if (!l.ready) return `<span class="hub-btn is-disabled" title="Still being prepared">${ico}${label}<span class="hub-tag">Preparing&hellip;</span></span>`;
     return `<a class="hub-btn" href="${base}/go/${l.key}${CLIENT_QS}" target="_blank" rel="noopener">${ico}${label}${go('download')}</a>`;
-  }).join('\n');
+  });
+  // The virtual tour link is one more item in the same (gated) list, after the downloads.
+  const tourLabel = `<span class="hub-label">All in One Virtual Tour URL<span class="hub-zh">在线浏览</span></span>`;
+  buttons.push(model.unlocked
+    ? `<a class="hub-btn" href="${escapeHtml(model.allInOnePath)}" target="_blank" rel="noopener">${disc('eye')}${tourLabel}${go('arrow')}</a>`
+    : `<span class="hub-btn is-disabled">${disc('eye')}${tourLabel}${go('lock')}</span>`);
 
   // Same cards as the full page, but none of the brand pieces (no logo, tagline, hero image, sign-off, signature).
   const body = `
 <main class="wrap is-plain">
-  <a class="hub-btn hub-preview" href="${escapeHtml(model.allInOnePath)}" target="_blank" rel="noopener">${disc('eye')}<span class="hub-label">All in One<span class="hub-zh">在线浏览</span></span>${go('arrow')}</a>
   ${model.address ? `<h1 class="mail-addr">${escapeHtml(model.address)}</h1>` : ''}
   <p class="mail-note">For the best experience, please open in a browser on PC or Mac.<span class="mail-zh">请在 PC 或 Mac 上使用浏览器打开效果最佳。</span></p>
-  ${model.lines.length ? `<div class="hub-list">\n${buttons}\n</div>` : '<p class="hub-empty">Nothing to download yet.</p>'}
+  ${model.lines.length ? `<div class="hub-list">\n${buttons.join('\n')}\n</div>` : '<p class="hub-empty">Nothing to download yet.</p>'}
   ${model.unlocked || !model.lines.length ? '' : '<p class="mail-note">Downloads are not available yet — please contact your agent.<span class="mail-zh">下载暂未开放，请联系您的经纪。</span></p>'}
 </main>`;
   return page(model.address || 'Downloads', body, { bare: true, extraHead: HUB_HEAD, extraCss: HUB_CSS });
@@ -263,7 +267,14 @@ export function renderHubPage(model, { base, openKey = '' }) {
       return `<a class="hub-btn" href="${base}/go/${l.key}" target="_blank" rel="noopener">${ico}${label}${go('download')}</a>`;
     }
     return `<button class="hub-btn is-locked" type="button" data-key="${l.key}">${ico}${label}${go('lock')}</button>`;
-  }).join('\n');
+  });
+  // The free preview at the top stays; the same page is repeated last in the list, locked with the rest.
+  if (model.lines.length) {
+    const tourLabel = `<span class="hub-label">All in One Virtual Tour URL<span class="hub-zh">在线浏览</span></span>`;
+    buttons.push(model.unlocked
+      ? `<a class="hub-btn" href="${escapeHtml(model.allInOnePath)}" target="_blank" rel="noopener">${disc('eye')}${tourLabel}${go('arrow')}</a>`
+      : `<button class="hub-btn is-locked" type="button" data-key="ALLINONE">${disc('eye')}${tourLabel}${go('lock')}</button>`);
+  }
 
   // After a partial payment the dialog asks for what is STILL owed, not the full total again.
   const amount = amountHtml(model);
@@ -344,7 +355,7 @@ export function renderHubPage(model, { base, openKey = '' }) {
     <hr class="mail-rule">
     ${model.address ? `<h1 class="mail-addr">${escapeHtml(model.address)}</h1>` : ''}
     <p class="mail-note">For the best experience, please open in a browser on PC or Mac. Thank you so much for your support!<span class="mail-zh">请在 PC 或 Mac 上使用浏览器打开效果最佳，感谢您的支持与厚爱！</span></p>
-    ${model.lines.length ? `<div class="hub-list">\n${buttons}\n</div>` : '<p class="hub-empty">Nothing to download yet.</p>'}
+    ${model.lines.length ? `<div class="hub-list">\n${buttons.join('\n')}\n</div>` : '<p class="hub-empty">Nothing to download yet.</p>'}
     <footer class="sign">
       <p class="sign-text">Thank you!<br>Franky<br>FranVision Media</p>
       <img class="sign-img" src="${BRAND_ASSETS.signature}" alt="Capture More Than a Home" width="700" height="237">
