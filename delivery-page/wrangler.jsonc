@@ -27,6 +27,11 @@
   //   local `wrangler dev`: no binding -> set PHOTO_SYNC_URL in .dev.vars instead.
   "services": [{ "binding": "PHOTO_SYNC", "service": "franvision-photo-sync" }],
 
+  // Brand images for the Delivery Hub (public/brand/*.webp: logo, staircase hero, signature) are static files
+  // served straight from Cloudflare's edge before the Worker script runs (public/_headers sets their cache time).
+  // `wrangler deploy` uploads ./public together with the Worker.
+  "assets": { "directory": "./public" },
+
   // Delivery Hub: Wave invoice webhooks (POST /webhooks/wave). secret: WAVE_WEBHOOK_SECRET (the signing secret
   // Wave shows for the webhook subscription; `wrangler secret put WAVE_WEBHOOK_SECRET`). No Wave API token here.
 

@@ -45,7 +45,7 @@ test('client view (unlocked): download links go through /go/<KEY>?for=client (so
 
 test('the full page gets a "Share downloads with your client" button as its LAST line, after the sign-off; it copies <origin>/<hub path>?for=client', () => {
   const html = renderHubPage(buildHubModel(ROW, PROJECT, GTOKEN), { base: BASE });
-  assert.match(html, /<p class="mail-sign">Thank you!<br>Franky<br>FranVision Media<\/p>\s*<div class="mail-share"><button class="hub-share" id="hubShare"[^>]*>Share downloads with your client \(no prices\) 分享给客户（不含价格）<\/button><\/div>\s*<\/div>\s*<\/main>/);
+  assert.match(html, /<p class="sign-text">Thank you!<br>Franky<br>FranVision Media<\/p>\s*<img class="sign-img"[^>]*>\s*<\/footer>\s*<div class="mail-share"><button class="hub-share" id="hubShare"[^>]*>Share downloads with your client \(no prices\) 分享给客户（不含价格）<\/button><\/div>\s*<\/main>/);   // last line of the page, after the sign-off + signature
   assert.match(html, /location\.origin\+"\/deliver\/x\/c+"\+'\?for=client'/);
   assert.match(renderHubPage(buildHubModel({ ...ROW, paid: true }, PROJECT, GTOKEN), { base: BASE }), /id="hubShare"/);   // also once paid
 });

@@ -5,6 +5,9 @@
 // The index links to the hub and /admin, and can send SIGNED fake Wave webhooks (fully paid / partial) through the
 // real /webhooks/wave route so you can watch /admin and the hub react exactly as in production.
 import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createHmac } from 'node:crypto';
 import worker from '../src/index.js';
 
@@ -58,8 +61,18 @@ async function sendWave(type, amount, remaining) {
   return worker.fetch(new Request('https://realgta.ca/webhooks/wave', { method: 'POST', headers: { 'x-wave-signature': sig }, body }), env);
 }
 
+const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
+
 http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
+  // Static brand files (in production the Worker's assets binding serves ./public before the script runs).
+  if (url.pathname.startsWith('/brand/')) {
+    const file = path.join(PUBLIC_DIR, path.normalize(url.pathname).replace(/^(\.\.[/\\])+/, ''));
+    if (file.startsWith(PUBLIC_DIR) && fs.existsSync(file)) {
+      res.writeHead(200, { 'content-type': 'image/webp', 'cache-control': 'no-cache' });
+      return res.end(fs.readFileSync(file));
+    }
+  }
   if (url.pathname.startsWith('/sim/')) {
     const what = url.pathname.slice(5);
     if (what === 'paid') await sendWave('invoice.paid', REAL ? '56.50' : '225.99', '0.00');

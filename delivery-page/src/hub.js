@@ -19,7 +19,8 @@
 // Pure like gallery.js/render.js: index.js hands in the rows, everything here is
 // string building, unit-tested without a network.
 
-import { escapeHtml, page, slugifyAddress, creditHtml, deliveryPath } from './render.js';
+import { escapeHtml, page, slugifyAddress, deliveryPath } from './render.js';
+import { BRAND_ASSETS, HUB_HEAD, HUB_CSS, INVOICE_CSS, ICONS, LINE_ICON } from './hub-theme.js';
 import { galleryPath } from './gallery.js';
 
 // Same shape check as the gallery token: cheap, rejects junk before any lookup.
@@ -135,9 +136,8 @@ function preTaxMoney(cents) {
   return cents % 100 === 0 ? `$${cents / 100}` : money(cents);
 }
 
-const LOCK_ICON = '<svg class="hub-ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><rect x="5" y="10.5" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
-const ARROW_ICON = '<svg class="hub-ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M12 3.5v11m0 0-4.4-4.4M12 14.5l4.4-4.4M4 15.5V19a1.5 1.5 0 0 0 1.5 1.5h13A1.5 1.5 0 0 0 20 19v-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-const EYE_ICON = '<svg class="hub-ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="12" r="2.8" fill="none" stroke="currentColor" stroke-width="2"/></svg>';
+const disc = (name) => `<span class="hub-ico">${ICONS[name]}</span>`;
+const go = (name) => `<span class="hub-go">${ICONS[name]}</span>`;
 
 // What to ask for: after a PARTIAL Wave payment the remainder, otherwise the invoice total.
 function amountHtml(model) {
@@ -174,6 +174,7 @@ export function renderInvoicePage(model, { base }) {
   const title = model.address ? `Invoice — ${model.address}` : 'Invoice';
   const body = `
 <main class="inv">
+  <img class="inv-logo" src="${BRAND_ASSETS.logo}" alt="FranVision Media 法兰视觉" width="960" height="616">
   <div class="inv-bar">
     <a class="inv-back" href="${escapeHtml(base)}">&larr; Back 返回</a>
     <span class="inv-title">Invoice 发票</span>
@@ -186,36 +187,32 @@ export function renderInvoicePage(model, { base }) {
   return page(title, body, { bare: true, extraHead: HUB_HEAD, extraCss: HUB_CSS + INVOICE_CSS, extraBody: model.paid ? '' : `<script>${invoiceScript(base)}</script>` });
 }
 
-const INVOICE_CSS = `
-  .inv{max-width:860px;margin:0 auto;padding:18px 14px 30px;font-family:Montserrat,-apple-system,"system-ui","Segoe UI",Roboto,sans-serif;color:#3a3a40;}
-  .inv-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:12px;}
-  .inv-back{color:#467ab5;text-decoration:none;font-size:14px;}
-  .inv-title{flex:1;font-family:Fraunces,Georgia,serif;font-size:20px;color:#2b2b30;}
-  .inv-dl{min-width:0;padding:10px 18px;font-size:15px;}
-  .inv-frame{display:block;width:100%;height:82vh;min-height:520px;border:1px solid #d5d5db;border-radius:10px;background:#fff;}
-  .inv-fallback{text-align:center;font-size:12.5px;color:#7a766b;margin:10px 0 0;}
-  .inv-fallback a{color:#467ab5;}
-  .inv-pay{max-width:420px;margin:20px auto 0;text-align:center;}
-  .inv-emt{margin-top:6px;}
+
+
+// Small themed message pages (no brand marks: they are also what a bad/forwarded client link lands on).
+// heading/text are fixed strings written in this file, so they are not escaped.
+function messagePage(title, heading, text, backHref) {
+  return page(title, `
+<main class="nf">
+  <h1>${heading}</h1>
+  <p>${text}</p>
+  ${backHref ? `<p><a href="${escapeHtml(backHref)}">&larr; Back</a></p>` : ''}
+</main>`, { bare: true, extraHead: HUB_HEAD, extraCss: HUB_CSS + NF_CSS });
+}
+
+const NF_CSS = `
+  .nf{max-width:520px;margin:18vh auto 0;padding:0 24px;text-align:center;font-family:var(--sans);color:var(--ink);}
+  .nf h1{font-family:var(--serif);font-weight:500;font-size:28px;margin:0 0 12px;}
+  .nf p{margin:0 0 10px;color:#55524a;line-height:1.6;}
+  .nf a{color:var(--gold-deep);}
 `;
 
 export function renderNotFoundHub() {
-  return page('Delivery', `
-<div class="notfound">
-  <p class="eyebrow">FranVision Media</p>
-  <h1>This delivery link isn't valid</h1>
-  <p>Please use the link from your delivery email, or reach out to Franky directly.</p>
-</div>`, { bare: true });
+  return messagePage('Delivery', "This delivery link isn't valid", 'Please use the link from your delivery email, or reach out to Franky directly.');
 }
 
 export function renderNotReadyHub(backHref) {
-  return page('Delivery', `
-<div class="notfound">
-  <p class="eyebrow">Delivery</p>
-  <h1>This item isn't ready yet</h1>
-  <p>It's still being prepared. Please try again shortly, or reach out to Franky.</p>
-  ${backHref ? `<p><a href="${escapeHtml(backHref)}">&larr; Back</a></p>` : ''}
-</div>`, { bare: true });
+  return messagePage('Delivery', "This item isn't ready yet", "It's still being prepared. Please try again shortly, or reach out to Franky.", backHref);
 }
 
 // The forwardable "client view" (?for=client on the same hub URL): ONLY the part below the divider -- the
@@ -231,20 +228,20 @@ export function renderClientView(model, { base }) {
   const buttons = model.lines.map((l) => {
     const note = l.noteEn ? ` <span class="hub-note">(${escapeHtml(l.noteEn)} ${escapeHtml(l.noteZh)})</span>` : '';
     const label = `<span class="hub-label">${escapeHtml(l.en)}${note}<span class="hub-zh">${escapeHtml(l.zh)}</span></span>`;
-    if (!model.unlocked) return `<span class="hub-btn is-disabled">${LOCK_ICON}${label}</span>`;
-    if (!l.ready) return `<span class="hub-btn is-disabled" title="Still being prepared">${ARROW_ICON}${label}<span class="hub-tag">Preparing&hellip;</span></span>`;
-    return `<a class="hub-btn" href="${base}/go/${l.key}${CLIENT_QS}" target="_blank" rel="noopener">${ARROW_ICON}${label}</a>`;
+    const ico = disc(LINE_ICON[l.key] || 'doc');
+    if (!model.unlocked) return `<span class="hub-btn is-disabled">${ico}${label}${go('lock')}</span>`;
+    if (!l.ready) return `<span class="hub-btn is-disabled" title="Still being prepared">${ico}${label}<span class="hub-tag">Preparing&hellip;</span></span>`;
+    return `<a class="hub-btn" href="${base}/go/${l.key}${CLIENT_QS}" target="_blank" rel="noopener">${ico}${label}${go('download')}</a>`;
   }).join('\n');
 
+  // Same cards as the full page, but none of the brand pieces (no logo, tagline, hero image, sign-off, signature).
   const body = `
-<main class="mail">
-  <div class="mail-card">
-    <a class="hub-btn hub-preview" href="${escapeHtml(model.allInOnePath)}" target="_blank" rel="noopener">${EYE_ICON}<span class="hub-label">All in One<span class="hub-zh">在线浏览</span></span></a>
-    ${model.address ? `<h1 class="mail-addr">${escapeHtml(model.address)}</h1>` : ''}
-    <p class="mail-note">For the best experience, please open in a browser on PC or Mac.<span class="mail-zh">请在 PC 或 Mac 上使用浏览器打开效果最佳。</span></p>
-    ${model.lines.length ? `<div class="hub-list">\n${buttons}\n</div>` : '<p class="hub-empty">Nothing to download yet.</p>'}
-    ${model.unlocked || !model.lines.length ? '' : '<p class="mail-note">Downloads are not available yet — please contact your agent.<span class="mail-zh">下载暂未开放，请联系您的经纪。</span></p>'}
-  </div>
+<main class="wrap is-plain">
+  <a class="hub-btn hub-preview" href="${escapeHtml(model.allInOnePath)}" target="_blank" rel="noopener">${disc('eye')}<span class="hub-label">All in One<span class="hub-zh">在线浏览</span></span>${go('arrow')}</a>
+  ${model.address ? `<h1 class="mail-addr">${escapeHtml(model.address)}</h1>` : ''}
+  <p class="mail-note">For the best experience, please open in a browser on PC or Mac.<span class="mail-zh">请在 PC 或 Mac 上使用浏览器打开效果最佳。</span></p>
+  ${model.lines.length ? `<div class="hub-list">\n${buttons}\n</div>` : '<p class="hub-empty">Nothing to download yet.</p>'}
+  ${model.unlocked || !model.lines.length ? '' : '<p class="mail-note">Downloads are not available yet — please contact your agent.<span class="mail-zh">下载暂未开放，请联系您的经纪。</span></p>'}
 </main>`;
   return page(model.address || 'Downloads', body, { bare: true, extraHead: HUB_HEAD, extraCss: HUB_CSS });
 }
@@ -255,13 +252,14 @@ export function renderHubPage(model, { base, openKey = '' }) {
   const buttons = model.lines.map((l) => {
     const note = l.noteEn ? ` <span class="hub-note">(${escapeHtml(l.noteEn)} ${escapeHtml(l.noteZh)})</span>` : '';
     const label = `<span class="hub-label">${escapeHtml(l.en)}${note}<span class="hub-zh">${escapeHtml(l.zh)}</span></span>`;
+    const ico = disc(LINE_ICON[l.key] || 'doc');
     if (!l.ready && model.unlocked) {
-      return `<span class="hub-btn is-disabled" title="Still being prepared">${ARROW_ICON}${label}<span class="hub-tag">Preparing&hellip;</span></span>`;
+      return `<span class="hub-btn is-disabled" title="Still being prepared">${ico}${label}<span class="hub-tag">Preparing&hellip;</span></span>`;
     }
     if (model.unlocked) {
-      return `<a class="hub-btn" href="${base}/go/${l.key}" target="_blank" rel="noopener">${ARROW_ICON}${label}</a>`;
+      return `<a class="hub-btn" href="${base}/go/${l.key}" target="_blank" rel="noopener">${ico}${label}${go('download')}</a>`;
     }
-    return `<button class="hub-btn is-locked" type="button" data-key="${l.key}">${LOCK_ICON}${label}</button>`;
+    return `<button class="hub-btn is-locked" type="button" data-key="${l.key}">${ico}${label}${go('lock')}</button>`;
   }).join('\n');
 
   // After a partial payment the dialog asks for what is STILL owed, not the full total again.
@@ -312,24 +310,31 @@ export function renderHubPage(model, { base, openKey = '' }) {
   // still gets the pay button.)
   const paidLink = model.payUrl || model.invoiceUrl;
   const payBtn = model.paid
-    ? (paidLink ? `<a class="hub-cta is-paid" href="${escapeHtml(paidLink)}" target="_blank" rel="noopener">Invoice &amp; receipt 发票与收据 &#10003;</a>` : '')
-    : '<button class="hub-cta" id="hubPayNow" type="button">View invoice &amp; pay 查看发票并付款</button>';
+    ? (paidLink ? `<a class="hub-cta is-paid" href="${escapeHtml(paidLink)}" target="_blank" rel="noopener">${ICONS.doc}Invoice &amp; receipt 发票与收据 ${ICONS.check}</a>` : '')
+    : `<button class="hub-cta" id="hubPayNow" type="button">${ICONS.doc}View invoice &amp; pay 查看发票并付款</button>`;
 
   // The wording is the Delivery Email's own (job-generator/delivery-email-template.{en,zh}.txt), so the page
   // reads like the email it replaces -- keep the two in step if the email's wording changes.
+  const status = model.paid
+    ? `<div class="notice"><span class="notice-ico">${ICONS.checkBold}</span><div><p><strong>Payment received — thank you!</strong> Your files are ready below, and you can save your invoice and receipt with the button.</p><p class="notice-zh">已收到付款，谢谢！下面的文件都可以下载了，发票和收据可以通过按钮自行保存。</p></div></div>`
+    : (model.unlocked
+      ? `<div class="notice is-due"><span class="notice-ico">${ICONS.checkBold}</span><div><p>Your files are ready below. Payment is still due — thank you!</p><p class="notice-zh">下面的文件已可下载，请尽快完成付款，谢谢！</p></div></div>`
+      : '<p class="plain">You can preview the photos above. To download the files, please complete payment first.<span class="mail-zh">您可以先预览照片；需要下载文件的话，请先支付费用。</span></p>');
+
   const body = `
-<main class="mail">
-  <div class="mail-card">
-    <p class="eyebrow">FranVision Media</p>
-    <p class="mail-hello">Hello${who ? ` ${who}` : ''},</p>
-    <p class="mail-p">Your photos for <strong>${addr}</strong> are ready — thank you for your patience.</p>
-    <p class="mail-zh">${model.address ? `${escapeHtml(model.address)} 的` : ''}照片已经制作完成，感谢您的耐心等待。</p>
-    <a class="hub-btn hub-preview" href="${escapeHtml(model.allInOnePath)}" target="_blank" rel="noopener">${EYE_ICON}<span class="hub-label">Preview All in One<span class="hub-zh">在线预览</span></span></a>
-    ${model.paid
-      ? '<p class="mail-p is-open">Payment received — thank you! Your files are ready below, and you can save your invoice and receipt with the button.<span class="mail-zh">已收到付款，谢谢！下面的文件都可以下载了，发票和收据可以通过按钮自行保存。</span></p>'
-      : (model.unlocked
-        ? '<p class="mail-p is-open">Your files are ready below. Payment is still due — thank you!<span class="mail-zh">下面的文件已可下载，请尽快完成付款，谢谢！</span></p>'
-        : '<p class="mail-p">You can preview the photos above. To download the files, please complete payment first.<span class="mail-zh">您可以先预览照片；需要下载文件的话，请先支付费用。</span></p>')}
+<div class="stage">
+  <div class="hero-bg" aria-hidden="true"></div>
+  <main class="wrap">
+    <header class="brand">
+      <img class="brand-logo" src="${BRAND_ASSETS.logo}" alt="FranVision Media 法兰视觉" width="960" height="616">
+      <p class="brand-tag">PREMIUM REAL ESTATE MEDIA</p>
+      <p class="brand-tag-zh">专业房产影像服务</p>
+    </header>
+    <h1 class="greet">Hello${who ? ` ${who}` : ''},</h1>
+    <p class="lead">Your photos for <strong class="lead-addr">${addr}</strong> are ready — thank you for your patience.</p>
+    <p class="zh">${model.address ? `${escapeHtml(model.address)} 的` : ''}照片已经制作完成，感谢您的耐心等待。</p>
+    <a class="hub-btn hub-preview" href="${escapeHtml(model.allInOnePath)}" target="_blank" rel="noopener">${disc('eye')}<span class="hub-label">Preview All in One<span class="hub-zh">在线预览</span></span>${go('arrow')}</a>
+    ${status}
     ${fee}
     ${partial}
     <div class="cta-row">${payBtn}</div>
@@ -337,11 +342,13 @@ export function renderHubPage(model, { base, openKey = '' }) {
     ${model.address ? `<h1 class="mail-addr">${escapeHtml(model.address)}</h1>` : ''}
     <p class="mail-note">For the best experience, please open in a browser on PC or Mac. Thank you so much for your support!<span class="mail-zh">请在 PC 或 Mac 上使用浏览器打开效果最佳，感谢您的支持与厚爱！</span></p>
     ${model.lines.length ? `<div class="hub-list">\n${buttons}\n</div>` : '<p class="hub-empty">Nothing to download yet.</p>'}
-    <p class="mail-sign">Thank you!<br>Franky<br>FranVision Media</p>
+    <footer class="sign">
+      <p class="sign-text">Thank you!<br>Franky<br>FranVision Media</p>
+      <img class="sign-img" src="${BRAND_ASSETS.signature}" alt="Capture More Than a Home" width="700" height="237">
+    </footer>
     <div class="mail-share"><button class="hub-share" id="hubShare" type="button">Share downloads with your client (no prices) 分享给客户（不含价格）</button></div>
-  </div>
-</main>
-${creditHtml()}
+  </main>
+</div>
 ${dialog}`;
 
   return page(model.address ? `${model.address} — Delivery` : 'Delivery', body, {
@@ -351,79 +358,6 @@ ${dialog}`;
     extraBody: `<script>${shareScript(base)}</script>` + (model.paid ? '' : `<script>${hubScript(openKey, base, model.remainingCents, model.unlocked)}</script>`),
   });
 }
-
-const HUB_HEAD = '<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500&family=Montserrat:wght@300;400;500;600&display=swap" rel="stylesheet">';
-
-const HUB_CSS = `
-  body{background:#eceef2;}
-  .mail{padding:28px 14px 8px;font-family:Montserrat,-apple-system,"system-ui","Segoe UI",Roboto,sans-serif;color:#3a3a40;}
-  .mail-card{max-width:600px;margin:0 auto;background:#fff;border-radius:14px;padding:40px 34px 34px;box-shadow:0 2px 14px rgba(30,30,40,0.10);}
-  .mail-hello{font-size:17px;margin:0 0 14px;}
-  .mail-p{font-size:15px;line-height:1.6;margin:0 0 4px;}
-  .mail-p strong{font-weight:600;}
-  .mail-p.is-open{color:#1f8b3a;margin:18px 0 4px;}
-  .mail-zh{display:block;font-size:13px;line-height:1.55;color:#7a766b;margin:0 0 18px;}
-  .mail-fee{margin:22px 0 14px;font-size:15px;}
-  .mail-rule{border:0;border-top:1px solid #e3e3e8;margin:30px 0 26px;}
-  .mail-addr{font-family:Fraunces,Georgia,"Times New Roman",serif;font-weight:400;font-size:clamp(22px,4.6vw,30px);line-height:1.2;margin:0 0 12px;color:#2b2b30;}
-  .mail-note{font-size:13.5px;line-height:1.55;color:#55555c;margin:0 0 6px;}
-  .mail-sign{margin:30px 0 0;font-size:14px;line-height:1.7;color:#55555c;}
-  /* The two blue buttons (studio's usual delivery-page look). */
-  .cta-row{display:flex;flex-wrap:wrap;gap:14px;margin:6px 0 0;}
-  .hub-cta{display:inline-flex;align-items:center;justify-content:center;min-width:150px;box-sizing:border-box;padding:14px 26px;border:0;border-radius:8px;background:#467ab5;color:#fff;font:inherit;font-size:18px;text-decoration:none;cursor:pointer;}
-  .hub-cta:hover{background:#3b6aa0;}
-  .hub-cta.is-paid{background:#5f8f6b;}
-  .mail-partial{margin:0 0 14px;padding:12px 14px;border-radius:8px;background:#fff6e8;border:1px solid #f0d9b0;font-size:14px;line-height:1.55;color:#7a4b00;}
-  .mail-partial .mail-zh{margin:4px 0 0;color:#8a6a3a;}
-  .hub-list + .mail-note{margin-top:16px;}
-  .mail-share{margin:26px 0 0;padding-top:18px;border-top:1px solid #e3e3e8;text-align:center;}
-  .hub-share{border:1px solid #b7c4d6;background:#fff;color:#467ab5;border-radius:8px;padding:10px 16px;font:inherit;font-size:13px;cursor:pointer;}
-  .hub-share:hover{background:#f0f5fa;}
-  .hub-note{font-weight:400;font-size:12px;color:#8a867b;}
-  .hub-list{display:flex;flex-direction:column;gap:12px;margin-top:18px;}
-  /* Same raised grey button family as the Gallery page's download buttons, full width. */
-  .hub-btn{display:flex;align-items:center;gap:14px;width:100%;box-sizing:border-box;padding:15px 20px;border:1px solid #a9a9b0;border-radius:14px;background:linear-gradient(180deg,#fbfbfc 0%,#e3e3e7 55%,#d3d3d9 100%);color:#3a3a40;font:inherit;font-size:15px;font-weight:500;text-decoration:none;text-align:left;cursor:pointer;box-shadow:0 3px 7px rgba(30,30,40,0.2),0 1px 2px rgba(30,30,40,0.16),inset 0 1px 0 #fff;transition:transform .12s,box-shadow .12s;}
-  .hub-btn:hover{background:linear-gradient(180deg,#ffffff 0%,#ececf0 55%,#dcdce2 100%);box-shadow:0 5px 11px rgba(30,30,40,0.26),0 1px 3px rgba(30,30,40,0.2),inset 0 1px 0 #fff;transform:translateY(-1px);}
-  .hub-btn:active{transform:translateY(1px);box-shadow:inset 0 2px 4px rgba(30,30,40,0.3);}
-  .hub-ico{flex-shrink:0;}
-  .hub-label{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;}
-  .hub-zh{font-size:12px;font-weight:400;color:#6b665b;}
-  .hub-tag{font-size:12px;color:#8a867b;}
-  .hub-btn.is-locked{color:#55555c;}
-  .hub-btn.is-disabled{opacity:.55;cursor:default;pointer-events:none;box-shadow:0 1px 2px rgba(30,30,40,0.12);}
-  .hub-preview{background:linear-gradient(180deg,#ffffff 0%,#f0f5fa 100%);border-color:#b7c4d6;margin:14px 0 16px;}
-  .hub-empty{color:#8a867b;text-align:center;margin-top:28px;}
-  .hub-modal{position:fixed;inset:0;z-index:60;background:rgba(20,20,26,0.55);display:flex;align-items:center;justify-content:center;padding:20px;font-family:Montserrat,-apple-system,"system-ui","Segoe UI",Roboto,sans-serif;}
-  .hub-modal[hidden]{display:none;}
-  .hub-modal-card{position:relative;background:#fff;color:#2b2b30;border-radius:16px;max-width:400px;width:100%;padding:30px 24px 20px;box-shadow:0 20px 50px rgba(0,0,0,0.35);text-align:center;}
-  .hub-modal-card h2{margin:0 0 6px;font-family:Fraunces,Georgia,serif;font-weight:500;font-size:22px;}
-  .hub-modal-card h2 span{display:block;font-family:Montserrat,-apple-system,sans-serif;font-size:13px;font-weight:400;color:#8a867b;margin-top:2px;}
-  .hub-fee{margin:14px 0 18px;font-size:26px;font-weight:600;letter-spacing:.01em;}
-  .hub-fee span{font-size:12px;font-weight:400;color:#8a867b;}
-  .hub-pay{display:block;width:100%;box-sizing:border-box;margin:0 0 10px;padding:14px 16px;border:0;border-radius:12px;background:#4a7ab5;color:#fff;font:inherit;font-weight:600;font-size:15px;text-decoration:none;cursor:pointer;}
-  .hub-pay span{font-weight:400;font-size:12px;opacity:.85;margin-left:6px;}
-  .hub-pay:hover{background:#3f6ba1;}
-  .hub-pay.is-ghost{background:#fff;color:#467ab5;border:1px solid #b7c4d6;}
-  .hub-pay.is-ghost:hover{background:#f0f5fa;}
-  .hub-pay.is-alt{background:#5f8f6b;}
-  .hub-pay.is-alt:hover{background:#527d5d;}
-  .hub-emt-to{margin:8px 0 2px;font-size:12px;color:#8a867b;}
-  .hub-emt-mail{margin:0;font-size:18px;font-weight:600;word-break:break-all;}
-  .hub-emt-note{margin:2px 0 14px;font-size:12px;color:#b3541e;}
-  .hub-copy,.hub-back{border:1px solid #c9c9d0;background:#fff;color:#3a3a40;border-radius:10px;padding:9px 16px;font:inherit;font-size:13px;cursor:pointer;}
-  .hub-back{border:0;color:#6b665b;margin-top:6px;}
-  .hub-after{font-size:12px;line-height:1.5;color:#8a867b;margin:14px 0 4px;}
-  .hub-close{position:absolute;top:8px;right:12px;border:0;background:none;color:#8a867b;font-size:26px;line-height:1;cursor:pointer;}
-  @media (prefers-color-scheme: dark){
-    body{background:#0d0d10;}
-    .mail{color:#d7d7dc;}
-    .mail-card{background:#1c1c20;box-shadow:none;}
-    .mail-addr{color:#f2f2f7;}
-    .mail-rule{border-color:#33333a;}
-    .hub-modal-card{background:#1c1c20;color:#f2f2f7;}
-    .hub-copy{background:#26262b;color:#f2f2f7;border-color:#3a3a40;}
-  }
-`;
 
 // "Share downloads with your client": copies THIS hub's URL with ?for=client (the client view above) -- built from
 // the address bar, so it is the real absolute link.
