@@ -21,6 +21,11 @@ import { hubPath } from './hub.js';
 // same forward-compatible reasoning as the FVS- filter in supabase.js.
 // Mirrors storage.js#listProjects' exact derivation: up to 2 names, primary
 // then secondary, blanks dropped.
+function clientNameOf(clientNames, jobId) {
+  const n = clientNames && clientNames[jobId];
+  return typeof n === 'string' && n.trim() ? n.trim() : '';
+}
+
 function agentNames(data) {
   return [data.agentInfo && data.agentInfo.name, data.agentInfo2 && data.agentInfo2.name]
     .map((n) => (typeof n === 'string' ? n.trim() : ''))
@@ -43,7 +48,10 @@ function agentFirstName(job) {
 // Sort order matches FSB admin.js#sortRows() exactly: primary agent's first
 // name A-Z (a job with no agent sinks to the bottom), then newest-updated
 // first within the same name.
-export function buildAdminModel(rows, galleryTokens = {}, hubs = {}) {
+// `clientNames` = { jobId: "Client Name typed in Job Generator" } (supabase.js#listClientNames). Job Generator's
+// Client Name is the agent, so it fills the Agent column; the Feature Sheet Builder's agentInfo names are only the
+// fallback (a Job Generator job normally has no FSB agentInfo).
+export function buildAdminModel(rows, galleryTokens = {}, hubs = {}, clientNames = {}) {
   const jobs = (rows || []).map((row) => {
     const data = (row && row.data) || {};
     const photos = Array.isArray(data.photos) ? data.photos : [];
@@ -51,7 +59,7 @@ export function buildAdminModel(rows, galleryTokens = {}, hubs = {}) {
     return {
       jobId: row.id,
       address: (typeof data.address === 'string' && data.address.trim()) || null,
-      agents: agentNames(data),
+      agents: clientNameOf(clientNames, row.id) ? [clientNameOf(clientNames, row.id)] : agentNames(data),
       photoCount: photos.filter((p) => p && p.status === 'ok' && !isDerivedCopy(p)).length,
       hasVideo: videos.length > 0,
       hasTour: typeof data.tourUrl === 'string' && !!data.tourUrl.trim(),
@@ -98,14 +106,18 @@ const CSS = `
   header h1{font-size:17px;margin:0;font-weight:600;}
   header .count{color:#8e8e93;font-size:13px;}
   #q{margin-left:auto;padding:8px 12px;border:1px solid #d1d1d6;border-radius:8px;font-size:14px;min-width:220px;}
-  main{padding:16px 24px 40px;max-width:1100px;margin:0 auto;}
+  main{padding:16px 24px 40px;max-width:1240px;margin:0 auto;}
   table{width:100%;border-collapse:collapse;font-size:13.5px;}
-  th{text-align:left;color:#8e8e93;font-weight:500;padding:8px 10px;border-bottom:1px solid #e5e5ea;white-space:nowrap;}
-  td{padding:10px;border-bottom:1px solid #f0f0f2;vertical-align:top;}
+  th{text-align:left;color:#8e8e93;font-weight:500;padding:10px 14px;border-bottom:1px solid #e5e5ea;white-space:nowrap;position:sticky;top:0;background:#fbfbfd;}
+  td{padding:12px 14px;border-bottom:1px solid #f0f0f2;vertical-align:middle;}
+  td.addr-cell{min-width:300px;}
+  td.agent{min-width:120px;font-weight:500;}
+  td.time{white-space:nowrap;color:#48484a;font-size:13px;}
+  td .open-link{white-space:nowrap;font-size:13.5px;}
   tr:hover td{background:#f5f5f7;}
   a.addr{color:#0a5cd8;text-decoration:none;font-weight:500;}
   a.addr:hover{text-decoration:underline;}
-  .jobid{color:#8e8e93;font-family:ui-monospace,monospace;font-size:12px;}
+  .jobid{color:#8e8e93;font-family:ui-monospace,monospace;font-size:12px;white-space:nowrap;margin-top:2px;}
   .yes{color:#1f8b3a;}
   .no{color:#c7c7cc;}
   .empty{color:#8e8e93;padding:40px 0;text-align:center;}
@@ -144,11 +156,9 @@ export function renderAdminPage(model, { origin = '' } = {}) {
   const base = String(origin || '').replace(/\/+$/, '');
   const rows = jobs.map((j) => {
     const path = deliveryPath(j.jobId, j.address);
-    const fullLink = base + path;
-    // Two columns per Job: All in One (agent-facing preview) and Gallery (the
-    // client's post-payment download page, its own URL with a random token).
+    // Two columns per Job: All in One (agent-facing preview) and Gallery (the client's post-payment download
+    // page, its own URL with a random token) -- Open only, no copy button (user 2026-09-26).
     const gPath = j.galleryToken ? galleryPath(j.address, j.galleryToken) : '';
-    const gFull = gPath ? base + gPath : '';
     // Delivery Hub column: the client-facing download page + Franky's two switches.
     const hPath = j.hub ? hubPath(j.address, j.hub.token) : '';
     const hFull = hPath ? base + hPath : '';
@@ -168,20 +178,11 @@ export function renderAdminPage(model, { origin = '' } = {}) {
       </div>` : '<span class="no">—</span>';
     return `
     <tr data-search="${escapeHtml((j.address || '') + ' ' + j.jobId + ' ' + j.agents.join(' ')).toLowerCase()}">
-      <td><a class="addr" href="${path}" target="_blank" rel="noopener">${escapeHtml(j.address || '(no address yet)')}</a><div class="jobid">${escapeHtml(j.jobId)}</div></td>
-      <td>${escapeHtml(j.agents.join(' & ') || '—')}</td>
-      <td>${j.photoCount || '—'}</td>
-      <td class="${j.hasVideo ? 'yes' : 'no'}">${j.hasVideo ? '✓' : '—'}</td>
-      <td class="${j.hasTour ? 'yes' : 'no'}">${j.hasTour ? '✓' : '—'}</td>
-      <td>${fmtTime(j.updatedAt)}</td>
-      <td><div class="btns">
-        <a class="open-link" href="${path}" target="_blank" rel="noopener">Open 打开</a>
-        <button class="copy-btn" type="button" data-link="${escapeHtml(fullLink)}">Copy link 复制链接</button>
-      </div></td>
-      <td><div class="btns">
-        <a class="open-link${gPath ? '' : ' is-off'}"${gPath ? ` href="${escapeHtml(gPath)}" target="_blank" rel="noopener"` : ' aria-disabled="true"'}>Open 打开</a>
-        <button class="copy-btn" type="button" data-link="${escapeHtml(gFull)}"${gFull ? '' : ' disabled'}>Copy link 复制链接</button>
-      </div></td>
+      <td class="addr-cell"><a class="addr" href="${path}" target="_blank" rel="noopener">${escapeHtml(j.address || '(no address yet)')}</a><div class="jobid">${escapeHtml(j.jobId)}</div></td>
+      <td class="agent">${escapeHtml(j.agents.join(' & ') || '—')}</td>
+      <td class="time">${fmtTime(j.updatedAt)}</td>
+      <td><a class="open-link" href="${path}" target="_blank" rel="noopener">Open 打开</a></td>
+      <td><a class="open-link${gPath ? '' : ' is-off'}"${gPath ? ` href="${escapeHtml(gPath)}" target="_blank" rel="noopener"` : ' aria-disabled="true"'}>Open 打开</a></td>
       <td>${hubCell}</td>
       <td>${payCell}</td>
     </tr>`;
@@ -198,7 +199,7 @@ export function renderAdminPage(model, { origin = '' } = {}) {
 </header>
 <main>
   ${jobs.length ? `<table>
-    <thead><tr><th>Address 地址</th><th>Agent 经纪</th><th>Photos 照片</th><th>Video 视频</th><th>Tour 全景</th><th>Updated 更新时间</th><th>All in One</th><th>Gallery</th><th>Delivery 交付页</th><th>Payment 付款</th></tr></thead>
+    <thead><tr><th>Address 地址</th><th>Agent 经纪</th><th>Updated 更新时间</th><th>All in One</th><th>Gallery</th><th>Delivery 交付页</th><th>Payment 付款</th></tr></thead>
     <tbody id="rows">${rows}</tbody>
   </table>` : '<div class="empty">No jobs yet 还没有任何 job</div>'}
 </main>

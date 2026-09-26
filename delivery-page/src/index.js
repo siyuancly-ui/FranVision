@@ -257,8 +257,8 @@ async function handleAdmin(url, env) {
   // Every Job gets its Gallery link automatically (like its All in One page,
   // which exists as soon as the Job does) -- no button to press.
   const galleryTokens = await sb.ensureGalleryTokens(rows.map((r) => r.id));
-  const hubs = await sb.listHubs();
-  const model = buildAdminModel(rows, galleryTokens, hubs);
+  const [hubs, clientNames] = await Promise.all([sb.listHubs(), sb.listClientNames()]);
+  const model = buildAdminModel(rows, galleryTokens, hubs, clientNames);
   return html(renderAdminPage(model, { origin: url.origin }));
 }
 

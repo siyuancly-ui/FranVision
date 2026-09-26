@@ -106,6 +106,18 @@ export function createSupabase(env) {
       return Array.isArray(rows) && rows[0] ? rows[0].token : null;
     },
 
+    // Job Generator's "Client Name" for every real Job, { jobId: name } (the shared job server's jg_jobs table;
+    // job_id is null for drafts). Empty (never throws) when it can't be read, so the directory still loads.
+    async listClientNames() {
+      try {
+        const res = await fetch(`${BASE}/rest/v1/jg_jobs?job_id=not.is.null&select=job_id,client_name`, { headers: authHeaders });
+        const rows = await readJson(res);
+        return Object.fromEntries((rows || []).filter((r) => r.job_id && r.client_name).map((r) => [r.job_id, r.client_name]));
+      } catch {
+        return {};
+      }
+    },
+
     // Every Job's hub state -- the admin directory's one query. Empty (never throws) if the table
     // isn't there yet (delivery-hub.sql not run).
     async listHubs() {
