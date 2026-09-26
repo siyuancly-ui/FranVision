@@ -22,10 +22,10 @@ test('client view (locked): address + All in One + inert download buttons + "con
   const html = renderClientView(buildHubModel(ROW, PROJECT, GTOKEN), { base: BASE });
   const body = html.slice(html.indexOf('<body>'));
   assert.doesNotMatch(body.replace(/<style>[\s\S]*?<\/style>/g, ''), FORBIDDEN);
-  assert.match(body, />All in One<span class="hub-zh">在线浏览<\/span>/);                 // "Preview" dropped
-  assert.match(body, /href="\/12-main-st-toronto\/FVS-20260925-001"/);                    // All in One stays
+  assert.match(body, />All in One Virtual Tour URL<span class="hub-zh">在线浏览<\/span>/);  // now the last item of the gated list
+  assert.doesNotMatch(body, /href="\/12-main-st-toronto\/FVS-20260925-001"/);             // locked: no link
   assert.match(body, /<h1 class="mail-addr">12 Main St, Toronto<\/h1>/);
-  assert.equal((body.match(/class="hub-btn is-disabled"/g) || []).length, 4);              // inert, no links at all
+  assert.equal((body.match(/class="hub-btn is-disabled"/g) || []).length, 5);              // inert, no links at all
   assert.doesNotMatch(body, /\/go\/|dropbox|matterport|<button|<script/);
   assert.match(body, /please contact your agent/);
   assert.match(body, /请联系您的经纪/);
