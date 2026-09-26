@@ -94,47 +94,79 @@ function cents(c) {
 
 const CSS = `
   :root{color-scheme:light dark;}
-  body{font-family:-apple-system,"system-ui","Segoe UI",Roboto,sans-serif;margin:0;background:#fbfbfd;color:#1c1c1e;}
-  header{padding:20px 24px;border-bottom:1px solid #e5e5ea;display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
-  header h1{font-size:17px;margin:0;font-weight:600;}
-  header .count{color:#8e8e93;font-size:13px;}
-  #q{margin-left:auto;padding:8px 12px;border:1px solid #d1d1d6;border-radius:8px;font-size:14px;min-width:220px;}
-  main{padding:16px 24px 40px;max-width:1240px;margin:0 auto;}
-  table{width:100%;border-collapse:collapse;font-size:13.5px;}
-  th{text-align:left;color:#8e8e93;font-weight:500;padding:10px 14px;border-bottom:1px solid #e5e5ea;white-space:nowrap;position:sticky;top:0;background:#fbfbfd;}
-  td{padding:12px 14px;border-bottom:1px solid #f0f0f2;vertical-align:middle;}
-  td.addr-cell{min-width:300px;}
-  td.agent{min-width:120px;font-weight:500;}
-  td .open-link{white-space:nowrap;font-size:13.5px;}
+  *{box-sizing:border-box;}
+  body{font-family:-apple-system,"system-ui","Segoe UI",Roboto,sans-serif;font-size:17px;margin:0;background:#fbfbfd;color:#1c1c1e;-webkit-text-size-adjust:100%;}
+  header{padding:22px 28px;border-bottom:1px solid #e5e5ea;display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
+  header h1{font-size:22px;margin:0;font-weight:600;}
+  header .count{color:#8e8e93;font-size:16px;}
+  #q{margin-left:auto;padding:12px 16px;border:1px solid #d1d1d6;border-radius:10px;font-size:17px;min-width:280px;}
+  main{padding:18px 28px 48px;max-width:1240px;margin:0 auto;}
+  table{width:100%;border-collapse:collapse;font-size:17px;}
+  th{text-align:left;color:#8e8e93;font-weight:500;font-size:15px;padding:12px 16px;border-bottom:1px solid #e5e5ea;white-space:nowrap;position:sticky;top:0;background:#fbfbfd;}
+  td{padding:16px;border-bottom:1px solid #f0f0f2;vertical-align:middle;}
+  td.addr-cell{min-width:320px;}
+  td.agent{min-width:140px;font-weight:500;}
   tr:hover td{background:#f5f5f7;}
-  a.addr{color:#0a5cd8;text-decoration:none;font-weight:500;}
+  tr[hidden]{display:none !important;}
+  a.addr{color:#0a5cd8;text-decoration:none;font-weight:500;font-size:18px;line-height:1.35;}
   a.addr:hover{text-decoration:underline;}
-  .jobid{color:#8e8e93;font-family:ui-monospace,monospace;font-size:12px;white-space:nowrap;margin-top:2px;}
+  .jobid{color:#8e8e93;font-family:ui-monospace,monospace;font-size:13.5px;white-space:nowrap;margin-top:3px;}
   .yes{color:#1f8b3a;}
   .no{color:#c7c7cc;}
-  .empty{color:#8e8e93;padding:40px 0;text-align:center;}
-  .copy-btn{padding:5px 10px;border:1px solid #d1d1d6;border-radius:6px;background:#fff;color:#1c1c1e;font-size:12.5px;cursor:pointer;white-space:nowrap;}
+  .empty{color:#8e8e93;padding:48px 0;text-align:center;font-size:18px;}
+  /* Big tap targets: Open is a pill, Copy link a proper button, the Paid / Unlock boxes are large and their whole label taps. */
+  .open-link{display:inline-block;padding:10px 20px;border-radius:10px;background:#eaf1ff;color:#0a5cd8;text-decoration:none;font-size:17px;font-weight:500;white-space:nowrap;}
+  .open-link:hover{background:#dbe8ff;}
+  .open-link.is-off{background:#f2f2f4;color:#c7c7cc;cursor:default;pointer-events:none;}  /* only if the token table isn't reachable */
+  .copy-btn{padding:10px 18px;border:1px solid #d1d1d6;border-radius:10px;background:#fff;color:#1c1c1e;font-size:16px;cursor:pointer;white-space:nowrap;}
   .copy-btn:hover{border-color:#8e8e93;}
   .copy-btn.done{border-color:#1f8b3a;color:#1f8b3a;}
   .copy-btn.err{border-color:#c0392b;color:#c0392b;}
-  .open-link{color:#0a5cd8;text-decoration:none;font-size:12.5px;}
-  .open-link:hover{text-decoration:underline;}
-  .open-link.is-off{color:#c7c7cc;cursor:default;pointer-events:none;}  /* only if the token table isn't reachable */
   .copy-btn:disabled{opacity:.45;cursor:default;}
-  .sw{display:flex;align-items:center;gap:6px;font-size:12.5px;white-space:nowrap;cursor:pointer;}
+  .sw{display:flex;align-items:center;gap:12px;font-size:18px;white-space:nowrap;cursor:pointer;padding:6px 0;}
+  .sw input{width:26px;height:26px;margin:0;accent-color:#0a5cd8;cursor:pointer;}
   .sw.err{color:#c0392b;}
   .sw.is-wave{opacity:.55;cursor:not-allowed;}
-  .partial{font-size:12px;color:#b3541e;white-space:nowrap;}
-  .btns{display:flex;flex-direction:column;gap:6px;align-items:flex-start;}
+  .sw.is-wave input{cursor:not-allowed;}
+  .partial{font-size:15px;color:#b3541e;white-space:nowrap;}
+  .btns{display:flex;flex-direction:column;gap:10px;align-items:flex-start;}
+  /* Phones: no table. Each Job is a card -- address + agent on top, then one labelled row per link, then the switches. */
+  @media (max-width:760px){
+    body{font-size:17px;}
+    header{padding:16px 16px 14px;gap:10px 12px;}
+    header h1{font-size:20px;}
+    #q{margin-left:0;width:100%;min-width:0;font-size:17px;}
+    main{padding:8px 12px 40px;}
+    table,tbody,tr,td{display:block;}
+    thead{display:none;}
+    tr{background:#fff;border:1px solid #e5e5ea;border-radius:16px;padding:16px 18px 6px;margin:14px 0;box-shadow:0 1px 4px rgba(0,0,0,.05);}
+    tr:hover td{background:transparent;}
+    td{border:0;padding:4px 0;}
+    td.addr-cell{min-width:0;padding-top:0;}
+    a.addr{font-size:20px;}
+    td.agent{min-width:0;font-size:18px;color:#3a3a3c;padding-bottom:10px;}
+    td[data-label]{display:flex;align-items:center;justify-content:space-between;gap:14px;border-top:1px solid #f0f0f2;padding:14px 0;}
+    td[data-label]::before{content:attr(data-label);color:#8e8e93;font-size:15px;}
+    td[data-label="付款状态"]{align-items:flex-start;}
+    td.is-empty{display:none;}   /* a Job with no delivery page yet: nothing to show, so no empty rows on the card */
+    .btns{flex-direction:row;flex-wrap:wrap;align-items:center;gap:12px;justify-content:flex-end;}
+    td[data-label="付款状态"] .btns{flex-direction:column;align-items:flex-start;gap:6px;}
+    .open-link{padding:12px 22px;}
+    .copy-btn{padding:12px 20px;}
+    .sw{font-size:19px;padding:8px 0;}
+    .partial{white-space:normal;}
+  }
   @media (prefers-color-scheme: dark){
     body{background:#000;color:#f2f2f7;}
     header{border-color:#2c2c2e;}
     #q{background:#1c1c1e;border-color:#3a3a3c;color:#f2f2f7;}
-    th{border-color:#2c2c2e;}
+    th{border-color:#2c2c2e;background:#000;}
     td{border-color:#1c1c1e;}
     tr:hover td{background:#1c1c1e;}
+    .open-link{background:#0f2447;color:#7fb0ff;}
+    .open-link.is-off{background:#1c1c1e;color:#48484a;}
     .copy-btn{background:#1c1c1e;border-color:#3a3a3c;color:#f2f2f7;}
-    .open-link.is-off{color:#48484a;}
+    @media (max-width:760px){ tr{background:#111113;border-color:#2c2c2e;} td[data-label]{border-color:#2c2c2e;} }
   }
 `;
 
@@ -172,15 +204,15 @@ export function renderAdminPage(model, { origin = '' } = {}) {
     <tr data-search="${escapeHtml((j.address || '') + ' ' + j.jobId + ' ' + j.agents.join(' ')).toLowerCase()}">
       <td class="addr-cell"><a class="addr" href="${path}" target="_blank" rel="noopener">${escapeHtml(j.address || '(no address yet)')}</a><div class="jobid">${escapeHtml(j.jobId)}</div></td>
       <td class="agent">${escapeHtml(j.agents.join(' & ') || '—')}</td>
-      <td><a class="open-link" href="${path}" target="_blank" rel="noopener">Open</a></td>
-      <td><a class="open-link${gPath ? '' : ' is-off'}"${gPath ? ` href="${escapeHtml(gPath)}" target="_blank" rel="noopener"` : ' aria-disabled="true"'}>Open</a></td>
-      <td>${hubCell}</td>
-      <td>${payCell}</td>
+      <td data-label="All in One"><a class="open-link" href="${path}" target="_blank" rel="noopener">Open</a></td>
+      <td data-label="Gallery"><a class="open-link${gPath ? '' : ' is-off'}"${gPath ? ` href="${escapeHtml(gPath)}" target="_blank" rel="noopener"` : ' aria-disabled="true"'}>Open</a></td>
+      <td data-label="Delivery Page"${j.hub ? '' : ' class="is-empty"'}>${hubCell}</td>
+      <td data-label="付款状态"${j.hub ? '' : ' class="is-empty"'}>${payCell}</td>
     </tr>`;
   }).join('');
 
   return `<!doctype html>
-<html><head><meta charset="utf-8"><title>All Delivery Pages — FranVision</title>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>All Delivery Pages — FranVision</title>
 <style>${CSS}</style></head>
 <body>
 <header>

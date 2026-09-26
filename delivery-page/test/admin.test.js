@@ -164,3 +164,12 @@ test('renderAdminPage: minimal wording -- links say just Open, the payment colum
   assert.ok(!/打开|复制|已付款|直接解锁/.test(body));
   assert.ok(!/Updated|更新时间|\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(out.replace(/<style>[\s\S]*?<\/style>/, '')));   // no timestamp column
 });
+
+test('renderAdminPage: phone-friendly -- viewport meta, labelled cells for the phone cards, and Jobs without a delivery page mark those two cells empty', () => {
+  const HTOK = 'c'.repeat(32);
+  const out = renderAdminPage(buildAdminModel([row('FVS-1', { data: { address: '1 A St' } }), row('FVS-2', { data: { address: '2 B St' } })], {}, { 'FVS-1': { token: HTOK, paid: false, unlocked: false } }));
+  assert.ok(out.includes('<meta name="viewport" content="width=device-width, initial-scale=1">'));
+  for (const label of ['All in One', 'Gallery', 'Delivery Page', '付款状态']) assert.ok(out.includes(`data-label="${label}"`), label);
+  assert.equal((out.match(/class="is-empty"/g) || []).length, 2);                  // FVS-2 has no hub row: its Delivery Page + 付款状态 cells
+  assert.ok(/@media \(max-width:760px\)/.test(out));
+});
