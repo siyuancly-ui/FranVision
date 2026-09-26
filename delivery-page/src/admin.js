@@ -92,13 +92,6 @@ function cents(c) {
   return Number.isFinite(c) ? `$${(c / 100).toFixed(2)}` : '—';
 }
 
-function fmtTime(iso) {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toISOString().slice(0, 16).replace('T', ' ');
-}
-
 const CSS = `
   :root{color-scheme:light dark;}
   body{font-family:-apple-system,"system-ui","Segoe UI",Roboto,sans-serif;margin:0;background:#fbfbfd;color:#1c1c1e;}
@@ -112,7 +105,6 @@ const CSS = `
   td{padding:12px 14px;border-bottom:1px solid #f0f0f2;vertical-align:middle;}
   td.addr-cell{min-width:300px;}
   td.agent{min-width:120px;font-weight:500;}
-  td.time{white-space:nowrap;color:#48484a;font-size:13px;}
   td .open-link{white-space:nowrap;font-size:13.5px;}
   tr:hover td{background:#f5f5f7;}
   a.addr{color:#0a5cd8;text-decoration:none;font-weight:500;}
@@ -163,26 +155,25 @@ export function renderAdminPage(model, { origin = '' } = {}) {
     const hPath = j.hub ? hubPath(j.address, j.hub.token) : '';
     const hFull = hPath ? base + hPath : '';
     const hubCell = j.hub ? `<div class="btns">
-        <a class="open-link" href="${escapeHtml(hPath)}" target="_blank" rel="noopener">Open 打开</a>
-        <button class="copy-btn" type="button" data-link="${escapeHtml(hFull)}">Copy link 复制链接</button>
+        <a class="open-link" href="${escapeHtml(hPath)}" target="_blank" rel="noopener">Open</a>
+        <button class="copy-btn" type="button" data-link="${escapeHtml(hFull)}">Copy link</button>
       </div>` : '<span class="no">—</span>';
     // Paid through Wave (fully paid, by the webhook): a greyed-out tick that can't be undone -- that
     // alone tells Franky it was Wave, not his own e-Transfer tick. A PARTIAL Wave payment does not tick;
     // it shows what was paid / is still owed.
     const wavePaid = j.hub && j.hub.paid && j.hub.paidSource === 'wave';
     const partial = j.hub && !j.hub.paid && j.hub.waveRemainingCents > 0
-      ? `<div class="partial">部分付款 Partial: 已付 ${cents(j.hub.wavePaidCents)}, 还差 ${cents(j.hub.waveRemainingCents)}</div>` : '';
+      ? `<div class="partial">Partial: ${cents(j.hub.wavePaidCents)} paid, ${cents(j.hub.waveRemainingCents)} left</div>` : '';
     const payCell = j.hub ? `<div class="btns">
-        <label class="sw${wavePaid ? ' is-wave' : ''}"${wavePaid ? ' title="Wave 信用卡付款 (自动, 不能取消)"' : ''}><input type="checkbox" data-hub="${escapeHtml(j.jobId)}" data-flag="paid"${j.hub.paid ? ' checked' : ''}${wavePaid ? ' disabled' : ''}> Paid 已付款</label>
-        <label class="sw"><input type="checkbox" data-hub="${escapeHtml(j.jobId)}" data-flag="unlocked"${j.hub.unlocked ? ' checked' : ''}> Unlock 直接解锁</label>${partial}
+        <label class="sw${wavePaid ? ' is-wave' : ''}"${wavePaid ? ' title="Paid via Wave"' : ''}><input type="checkbox" data-hub="${escapeHtml(j.jobId)}" data-flag="paid"${j.hub.paid ? ' checked' : ''}${wavePaid ? ' disabled' : ''}> Paid</label>
+        <label class="sw"><input type="checkbox" data-hub="${escapeHtml(j.jobId)}" data-flag="unlocked"${j.hub.unlocked ? ' checked' : ''}> Unlock</label>${partial}
       </div>` : '<span class="no">—</span>';
     return `
     <tr data-search="${escapeHtml((j.address || '') + ' ' + j.jobId + ' ' + j.agents.join(' ')).toLowerCase()}">
       <td class="addr-cell"><a class="addr" href="${path}" target="_blank" rel="noopener">${escapeHtml(j.address || '(no address yet)')}</a><div class="jobid">${escapeHtml(j.jobId)}</div></td>
       <td class="agent">${escapeHtml(j.agents.join(' & ') || '—')}</td>
-      <td class="time">${fmtTime(j.updatedAt)}</td>
-      <td><a class="open-link" href="${path}" target="_blank" rel="noopener">Open 打开</a></td>
-      <td><a class="open-link${gPath ? '' : ' is-off'}"${gPath ? ` href="${escapeHtml(gPath)}" target="_blank" rel="noopener"` : ' aria-disabled="true"'}>Open 打开</a></td>
+      <td><a class="open-link" href="${path}" target="_blank" rel="noopener">Open</a></td>
+      <td><a class="open-link${gPath ? '' : ' is-off'}"${gPath ? ` href="${escapeHtml(gPath)}" target="_blank" rel="noopener"` : ' aria-disabled="true"'}>Open</a></td>
       <td>${hubCell}</td>
       <td>${payCell}</td>
     </tr>`;
@@ -199,7 +190,7 @@ export function renderAdminPage(model, { origin = '' } = {}) {
 </header>
 <main>
   ${jobs.length ? `<table>
-    <thead><tr><th>Address 地址</th><th>Agent 经纪</th><th>Updated 更新时间</th><th>All in One</th><th>Gallery</th><th>Delivery 交付页</th><th>Payment 付款</th></tr></thead>
+    <thead><tr><th>地址</th><th>经纪</th><th>All in One</th><th>Gallery</th><th>Delivery Page</th><th>付款状态</th></tr></thead>
     <tbody id="rows">${rows}</tbody>
   </table>` : '<div class="empty">No jobs yet 还没有任何 job</div>'}
 </main>
@@ -218,7 +209,7 @@ export function renderAdminPage(model, { origin = '' } = {}) {
     setTimeout(function () { btn.textContent = btn.dataset.label; btn.classList.remove(cls); }, 1500);
   }
   function copy(btn, link) {
-    var done = function () { flash(btn, 'Copied 已复制', 'done'); };
+    var done = function () { flash(btn, 'Copied', 'done'); };
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(link).then(done, function () { prompt('Copy link:', link); });
     } else {

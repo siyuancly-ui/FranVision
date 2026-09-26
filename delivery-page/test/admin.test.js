@@ -83,7 +83,7 @@ test('renderAdminPage: the only copy-link button is the Delivery (hub) one, carr
   const model = buildAdminModel([row('FVS-1', { data: {} })], {}, { 'FVS-1': { token: HTOK, paid: false, unlocked: false } });
   const out = renderAdminPage(model, { origin: 'https://real.gta3d.ca' });
   assert.ok(out.includes(`data-link="https://real.gta3d.ca/deliver/delivery/${HTOK}"`));
-  assert.ok(out.includes('Copy link 复制链接'));
+  assert.ok(out.includes('>Copy link</button>'));
   assert.equal((out.match(/data-link=/g) || []).length, 1);                        // not for All in One, not for Gallery
   assert.ok(!out.includes('data-link="https://real.gta3d.ca/delivery/FVS-1"'));
 });
@@ -96,7 +96,7 @@ test('buildAdminModel: attaches each Job\'s gallery token (null when it has none
   assert.equal(model.jobs.find((j) => j.jobId === 'FVS-2').galleryToken, null);
 });
 
-test('renderAdminPage: All in One and Gallery are two columns with an Open link only (no copy buttons); Photos/Video/Tour columns are gone', () => {
+test('renderAdminPage: six short columns (地址 经纪 All in One Gallery Delivery Page 付款状态); All in One and Gallery are a plain Open link, no copy buttons', () => {
   const model = buildAdminModel([row('FVS-1', { data: { address: '12 Main St, Toronto', photos: [{ status: 'ok' }], videos: [{}], tourUrl: 'https://t.example/x' } })], { 'FVS-1': TOK });
   const out = renderAdminPage(model, { origin: 'https://realgta.ca' });
   assert.ok(out.includes('<th>All in One</th><th>Gallery</th>'));
@@ -104,8 +104,8 @@ test('renderAdminPage: All in One and Gallery are two columns with an Open link 
   assert.ok(out.includes(`class="open-link" href="/delivery/12-main-st-toronto/${TOK}"`));
   assert.ok(!out.includes('data-link='));                                          // no copy button anywhere (no hub row here)
   assert.ok(!out.includes('open-link is-off'));                                     // both Open links active
-  assert.ok(!/Photos 照片|Video 视频|Tour 全景/.test(out));
-  assert.deepEqual(out.match(/<th>[^<]*<\/th>/g).map((t) => t.replace(/<\/?th>/g, '')), ['Address 地址', 'Agent 经纪', 'Updated 更新时间', 'All in One', 'Gallery', 'Delivery 交付页', 'Payment 付款']);
+  assert.ok(!/Photos|Video|Tour|Updated|更新时间/.test(out.slice(out.indexOf('<thead>'), out.indexOf('</thead>'))));   // no Photos / Video / Tour / Updated columns
+  assert.deepEqual(out.match(/<th>[^<]*<\/th>/g).map((t) => t.replace(/<\/?th>/g, '')), ['地址', '经纪', 'All in One', 'Gallery', 'Delivery Page', '付款状态']);
 });
 
 test('renderAdminPage: a Job whose gallery token is unreachable shows a greyed-out Open with nothing to click; nothing ever creates a link', () => {
@@ -152,4 +152,15 @@ test('buildAdminModel: photoCount does not count derived "MLS for download" dupl
     { status: 'ok', dropboxPath: '/J/MLS for download/Callout/c.jpg' },   // the duplicate
   ] } })]);
   assert.equal(model.jobs[0].photoCount, 2);
+});
+
+test('renderAdminPage: minimal wording -- links say just Open, the payment column just Paid / Unlock, no Chinese in the cells', () => {
+  const HTOK = 'c'.repeat(32);
+  const model = buildAdminModel([row('FVS-1', { data: { address: '1 A St' } })], { 'FVS-1': TOK }, { 'FVS-1': { token: HTOK, paid: false, unlocked: false } });
+  const out = renderAdminPage(model, { origin: 'https://realgta.ca' });
+  const body = out.slice(out.indexOf('<tbody'), out.indexOf('</tbody>'));
+  assert.equal((body.match(/>Open<\/a>/g) || []).length, 3);                       // All in One, Gallery, Delivery Page
+  assert.ok(body.includes('> Paid</label>') && body.includes('> Unlock</label>'));
+  assert.ok(!/打开|复制|已付款|直接解锁/.test(body));
+  assert.ok(!/Updated|更新时间|\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(out.replace(/<style>[\s\S]*?<\/style>/, '')));   // no timestamp column
 });
