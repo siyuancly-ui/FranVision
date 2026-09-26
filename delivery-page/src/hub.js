@@ -158,10 +158,12 @@ function emtDetailsHtml() {
 // The invoice on its own page: the PDF shown inline (served through our Worker, see index.js) with a Download
 // button, and -- while unpaid -- a way back to the payment choices.
 export function renderInvoicePage(model, { base }) {
-  // While unpaid: the two payment entries right under the invoice -- credit card goes straight to Wave's pay page,
-  // e-Transfer unfolds the instructions here (no trip back to the hub).
-  const pay = model.paid ? '' : `
-  <div class="inv-pay">
+  // While unpaid, the payment entry sits at the TOP (a Pay button next to Download that opens a small panel right
+  // under the bar) and nowhere else on the page: credit card goes straight to Wave's pay page, e-Transfer unfolds
+  // the instructions in place (no trip back to the hub, nothing repeated at the bottom).
+  const payBtn = model.paid ? '' : `<button class="hub-cta inv-paybtn" id="invPayBtn" type="button">Pay 付款</button>`;
+  const panel = model.paid ? '' : `
+  <div class="inv-pay" id="invPayPanel" hidden>
     ${amountHtml(model)}
     <div class="inv-pay-btns">
       ${model.payUrl ? `<a class="hub-pay" id="hubCard" href="${escapeHtml(model.payUrl)}" target="_blank" rel="noopener">Pay by credit card <span>信用卡</span></a>` : ''}
@@ -178,11 +180,12 @@ export function renderInvoicePage(model, { base }) {
   <div class="inv-bar">
     <a class="inv-back" href="${escapeHtml(base)}">&larr; Back 返回</a>
     <span class="inv-title">Invoice 发票</span>
-    <a class="hub-cta inv-dl" href="${escapeHtml(base)}/invoice.pdf?download=1">Download PDF 下载</a>
+    ${payBtn}
+    <a class="hub-cta inv-dl${model.paid ? '' : ' is-ghost'}" href="${escapeHtml(base)}/invoice.pdf?download=1">Download PDF 下载</a>
   </div>
+  ${panel}
   <iframe class="inv-frame" title="Invoice" src="${escapeHtml(base)}/invoice.pdf#view=FitH"></iframe>
   <p class="inv-fallback">Can't see the invoice? <a href="${escapeHtml(base)}/invoice.pdf?download=1">Download it 下载发票</a></p>
-  ${pay}
 </main>`;
   return page(title, body, { bare: true, extraHead: HUB_HEAD, extraCss: HUB_CSS + INVOICE_CSS, extraBody: model.paid ? '' : `<script>${invoiceScript(base)}</script>` });
 }
@@ -346,7 +349,7 @@ export function renderHubPage(model, { base, openKey = '' }) {
       <p class="sign-text">Thank you!<br>Franky<br>FranVision Media</p>
       <img class="sign-img" src="${BRAND_ASSETS.signature}" alt="Capture More Than a Home" width="700" height="237">
     </footer>
-    <div class="mail-share"><button class="hub-share" id="hubShare" type="button">Share downloads with your client (no prices) 分享给客户（不含价格）</button></div>
+    <div class="mail-share"><button class="hub-share" id="hubShare" type="button">${ICONS.share}Share downloads with your client (no prices) 分享给客户（不含价格）</button></div>
   </main>
 </div>
 ${dialog}`;
@@ -377,6 +380,8 @@ function shareScript(base) {
 function invoiceScript(base) {
   return `
 (function(){
+  var pay=document.getElementById('invPayPanel');
+  document.getElementById('invPayBtn').addEventListener('click', function(){ pay.hidden=!pay.hidden; });
   var panel=document.getElementById('hubEmtPanel');
   document.getElementById('hubEmt').addEventListener('click', function(){ panel.hidden=!panel.hidden; });
   var copy=document.getElementById('hubCopy');

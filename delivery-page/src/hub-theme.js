@@ -31,6 +31,7 @@ export const ICONS = {
   arrow: svg('<path d="M4.5 12h15m0 0-5.5-5.5M19.5 12 14 17.5"/>', 24),
   lock: svg('<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/>', 24),
   check: svg('<path d="m5 12.5 4.5 4.5L19 7.5"/>', 22),
+  share: svg('<circle cx="6" cy="12" r="2.4"/><circle cx="17.5" cy="6" r="2.4"/><circle cx="17.5" cy="18" r="2.4"/><path d="m8.1 10.8 7.3-3.6M8.1 13.2l7.3 3.6"/>', 20),
   checkBold: '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 12.5 4 4 8-9"/></svg>',
 };
 
@@ -96,8 +97,8 @@ export const HUB_CSS = `
   .sign{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin:34px 0 0;padding-top:22px;border-top:1px solid rgba(146,107,56,.24);}
   .sign-text{font-size:16px;line-height:1.55;}
   .sign-img{width:min(240px,46vw);height:auto;display:block;}
-  .mail-share{margin:26px 0 0;text-align:center;}
-  .hub-share{border:1px solid rgba(146,107,56,.45);background:#fff;color:var(--gold-deep);border-radius:10px;padding:11px 18px;font:inherit;font-size:13.5px;cursor:pointer;}
+  .mail-share{margin:30px 0 0;text-align:center;}
+  .hub-share{display:inline-flex;align-items:center;gap:10px;border:1.5px solid var(--gold);background:#fff;color:var(--gold-deep);border-radius:12px;padding:15px 26px;font:inherit;font-size:15.5px;font-weight:500;cursor:pointer;box-shadow:0 2px 10px rgba(146,107,56,.16);}
   .hub-share:hover{background:var(--sand);}
   .hub-modal{position:fixed;inset:0;z-index:60;background:rgba(40,43,46,.5);display:flex;align-items:center;justify-content:center;padding:20px;font-family:var(--sans);}
   .hub-modal[hidden]{display:none;}
@@ -136,10 +137,14 @@ export const INVOICE_CSS = `
   .inv-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:14px;}
   .inv-back{color:var(--gold-deep);text-decoration:none;font-size:14.5px;}
   .inv-title{flex:1;font-family:var(--serif);font-size:24px;font-weight:500;}
-  .inv-dl{min-width:0;padding:11px 20px;font-size:16px;}
+  .inv-dl,.inv-paybtn{min-width:0;padding:11px 22px;font-size:16px;}
+  .hub-cta.is-ghost{background:#fff;color:var(--gold-deep);border:1px solid rgba(146,107,56,.5);box-shadow:none;}
+  .hub-cta.is-ghost:hover{background:var(--sand);filter:none;}
   .inv-frame{display:block;width:100%;height:82vh;min-height:520px;border:1px solid var(--card-line);border-radius:12px;background:#fff;box-shadow:0 2px 12px rgba(80,60,30,.08);}
   .inv-fallback{text-align:center;font-size:13px;color:var(--muted);margin:12px 0 0;}
   .inv-fallback a{color:var(--gold-deep);}
-  .inv-pay{max-width:420px;margin:24px auto 0;text-align:center;}
+  .inv-pay{max-width:420px;margin:2px auto 18px;padding:22px 22px 14px;text-align:center;background:#fff;border:1px solid var(--card-line);border-radius:16px;box-shadow:0 6px 22px rgba(80,60,30,.10);}
+  .inv-pay[hidden]{display:none;}
+  .inv-pay .hub-fee{margin-top:0;}
   .inv-emt{margin-top:6px;}
 `;
