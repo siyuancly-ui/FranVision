@@ -47,7 +47,19 @@ globalThis.fetch = async (url, init = {}) => {
     return json(u.includes(TOKEN) || u.includes(`job_id=eq.${JOB}`) ? [row()] : []);
   }
   if (u.includes('/rest/v1/gallery_tokens')) return json([{ token: GTOKEN, job_id: JOB }]);
-  if (u.includes('/rest/v1/projects')) return json([project()]);
+  if (u.includes('/rest/v1/jg_jobs')) {
+    return json([{ job_id: JOB, client_name: 'Jessie Tang' }, { job_id: 'FVS-20260924-002', client_name: 'Amy Wong' }, { job_id: 'FVS-20260924-001', client_name: 'Ben Carter' }]);
+  }
+  if (u.includes('/rest/v1/projects')) {
+    if (u.includes('id=eq.')) return json([project()]);
+    // the /admin directory: a few more example Jobs so the table looks real
+    const more = [
+      { id: 'FVS-20260924-002', data: { address: '2109-88 Scott St, Toronto', photos: [{ status: 'ok' }] }, updated_at: '2026-09-26T02:26:00Z' },
+      { id: 'FVS-20260924-001', data: { address: '73 Current Dr, Richmond Hill', videos: [{}] }, updated_at: '2026-09-26T00:58:00Z' },
+      { id: 'FVS-20260923-004', data: { address: '14 Valliere Dr, Markham' }, updated_at: '2026-09-25T20:44:00Z' },
+    ];
+    return json([project(), ...more]);
+  }
   return new Response('nf', { status: 404 });
 };
 

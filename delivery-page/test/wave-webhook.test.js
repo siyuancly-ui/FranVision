@@ -138,7 +138,7 @@ test('webhook: PARTIAL payment does not unlock -- it only records what was paid 
   assert.equal(state.hub.wave_paid_cents, 5000);
   assert.equal(state.hub.wave_remaining_cents, 6300);
   const admin = await (await worker.fetch(new Request('https://realgta.ca/admin?admin=adm'), env)).text();
-  assert.match(admin, /部分付款 Partial: 已付 \$50\.00, 还差 \$63\.00/);
+  assert.match(admin, /Partial: \$50\.00 paid, \$63\.00 left/);
   assert.doesNotMatch(admin, /data-flag="paid" checked/);
   // ...and the rest of the money arriving later finishes it
   await hook(env, wave('e3', 'invoice.paid', { amount_paid: '63.00', remaining_balance: '0.00' }));

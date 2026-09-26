@@ -78,11 +78,14 @@ test('renderAdminPage: lists every job with its delivery-page link and agent', (
   assert.ok(out.includes('1 job'));
 });
 
-test('renderAdminPage: copy-link button carries the full absolute URL when an origin is given', () => {
-  const model = buildAdminModel([row('FVS-1', { data: {} })]);
+test('renderAdminPage: the only copy-link button is the Delivery (hub) one, carrying the full absolute URL', () => {
+  const HTOK = 'c'.repeat(32);
+  const model = buildAdminModel([row('FVS-1', { data: {} })], {}, { 'FVS-1': { token: HTOK, paid: false, unlocked: false } });
   const out = renderAdminPage(model, { origin: 'https://real.gta3d.ca' });
-  assert.ok(out.includes('data-link="https://real.gta3d.ca/delivery/FVS-1"'));
-  assert.ok(out.includes('Copy link 复制链接'));
+  assert.ok(out.includes(`data-link="https://real.gta3d.ca/deliver/delivery/${HTOK}"`));
+  assert.ok(out.includes('>Copy link</button>'));
+  assert.equal((out.match(/data-link=/g) || []).length, 1);                        // not for All in One, not for Gallery
+  assert.ok(!out.includes('data-link="https://real.gta3d.ca/delivery/FVS-1"'));
 });
 
 const TOK = '8779efe254f329f0766d73328550ae62';
@@ -93,27 +96,39 @@ test('buildAdminModel: attaches each Job\'s gallery token (null when it has none
   assert.equal(model.jobs.find((j) => j.jobId === 'FVS-2').galleryToken, null);
 });
 
-test('renderAdminPage: All in One and Gallery are two separate columns, each with Open + Copy (address slug + token)', () => {
-  const model = buildAdminModel([row('FVS-1', { data: { address: '12 Main St, Toronto' } })], { 'FVS-1': TOK });
+test('renderAdminPage: six short columns (地址 经纪 All in One Gallery Delivery Page 付款状态); All in One and Gallery are a plain Open link, no copy buttons', () => {
+  const model = buildAdminModel([row('FVS-1', { data: { address: '12 Main St, Toronto', photos: [{ status: 'ok' }], videos: [{}], tourUrl: 'https://t.example/x' } })], { 'FVS-1': TOK });
   const out = renderAdminPage(model, { origin: 'https://realgta.ca' });
-  assert.ok(out.includes('data-link="https://realgta.ca/12-main-st-toronto/FVS-1"'));
-  assert.ok(out.includes(`data-link="https://realgta.ca/delivery/12-main-st-toronto/${TOK}"`));
   assert.ok(out.includes('<th>All in One</th><th>Gallery</th>'));
-  const cells = out.split('<td><div class="btns">').slice(1);
-  assert.equal(cells.length, 2);                                  // one cell per column
-  assert.ok(cells[0].includes('data-link="https://realgta.ca/12-main-st-toronto/FVS-1"'));
-  assert.ok(!cells[0].includes('/delivery/12-main-st-toronto/'));   // All in One cell has no gallery link
-  assert.ok(cells[1].includes(`data-link="https://realgta.ca/delivery/12-main-st-toronto/${TOK}"`));
+  assert.ok(out.includes('class="open-link" href="/12-main-st-toronto/FVS-1"'));
   assert.ok(out.includes(`class="open-link" href="/delivery/12-main-st-toronto/${TOK}"`));
-  assert.ok(!out.includes('open-link is-off'));  // both columns fully active
+  assert.ok(!out.includes('data-link='));                                          // no copy button anywhere (no hub row here)
+  assert.ok(!out.includes('open-link is-off'));                                     // both Open links active
+  assert.ok(!/Photos|Video|Tour|Updated|更新时间/.test(out.slice(out.indexOf('<thead>'), out.indexOf('</thead>'))));   // no Photos / Video / Tour / Updated columns
+  assert.deepEqual(out.match(/<th>[^<]*<\/th>/g).map((t) => t.replace(/<\/?th>/g, '')), ['地址', '经纪', 'All in One', 'Gallery', 'Delivery Page', '付款状态']);
 });
 
-test('renderAdminPage: no button ever creates a link; a Job whose token is unreachable shows greyed-out Open + disabled Copy', () => {
+test('renderAdminPage: a Job whose gallery token is unreachable shows a greyed-out Open with nothing to click; nothing ever creates a link', () => {
   const out = renderAdminPage(buildAdminModel([row('FVS-1', { data: { address: '1 A St' } })]), { origin: 'https://realgta.ca' });
   assert.ok(!/Create link|create-btn/.test(out));
   assert.ok(/class="open-link is-off" aria-disabled="true"/.test(out));
-  assert.ok(!/is-off"[^>]*href/.test(out));                        // nothing to click
-  assert.ok(/data-link="" disabled/.test(out));
+  assert.ok(!/is-off"[^>]*href/.test(out));
+  assert.ok(!out.includes('data-link='));
+});
+
+test('buildAdminModel: Job Generator\'s Client Name fills the Agent column (FSB agentInfo is only the fallback), and sorting/search use it', () => {
+  const rows = [
+    row('FVS-1', { data: { address: 'A', agentInfo: { name: 'Zed FromFsb' } } }),
+    row('FVS-2', { data: { address: 'B' } }),
+    row('FVS-3', { data: { address: 'C', agentInfo: { name: 'Fallback Person' } } }),
+  ];
+  const model = buildAdminModel(rows, {}, {}, { 'FVS-1': '  Amy Client ', 'FVS-2': 'Ben Client', 'FVS-9': 'Not a listed job', 'FVS-3': '   ' });
+  const by = Object.fromEntries(model.jobs.map((j) => [j.jobId, j.agents]));
+  assert.deepEqual(by, { 'FVS-1': ['Amy Client'], 'FVS-2': ['Ben Client'], 'FVS-3': ['Fallback Person'] });   // client name wins; blank -> fallback
+  assert.deepEqual(model.jobs.map((j) => j.jobId), ['FVS-1', 'FVS-2', 'FVS-3']);                            // amy, ben, fallback
+  const out = renderAdminPage(model);
+  assert.ok(out.includes('<td class="agent">Amy Client</td>'));
+  assert.ok(out.includes('data-search="a fvs-1 amy client"'));
 });
 
 test('renderAdminPage: escapes address and agent content', () => {
@@ -137,4 +152,24 @@ test('buildAdminModel: photoCount does not count derived "MLS for download" dupl
     { status: 'ok', dropboxPath: '/J/MLS for download/Callout/c.jpg' },   // the duplicate
   ] } })]);
   assert.equal(model.jobs[0].photoCount, 2);
+});
+
+test('renderAdminPage: minimal wording -- links say just Open, the payment column just Paid / Unlock, no Chinese in the cells', () => {
+  const HTOK = 'c'.repeat(32);
+  const model = buildAdminModel([row('FVS-1', { data: { address: '1 A St' } })], { 'FVS-1': TOK }, { 'FVS-1': { token: HTOK, paid: false, unlocked: false } });
+  const out = renderAdminPage(model, { origin: 'https://realgta.ca' });
+  const body = out.slice(out.indexOf('<tbody'), out.indexOf('</tbody>'));
+  assert.equal((body.match(/>Open<\/a>/g) || []).length, 3);                       // All in One, Gallery, Delivery Page
+  assert.ok(body.includes('> Paid</label>') && body.includes('> Unlock</label>'));
+  assert.ok(!/打开|复制|已付款|直接解锁/.test(body));
+  assert.ok(!/Updated|更新时间|\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(out.replace(/<style>[\s\S]*?<\/style>/, '')));   // no timestamp column
+});
+
+test('renderAdminPage: phone-friendly -- viewport meta, labelled cells for the phone cards, and Jobs without a delivery page mark those two cells empty', () => {
+  const HTOK = 'c'.repeat(32);
+  const out = renderAdminPage(buildAdminModel([row('FVS-1', { data: { address: '1 A St' } }), row('FVS-2', { data: { address: '2 B St' } })], {}, { 'FVS-1': { token: HTOK, paid: false, unlocked: false } }));
+  assert.ok(out.includes('<meta name="viewport" content="width=device-width, initial-scale=1">'));
+  for (const label of ['All in One', 'Gallery', 'Delivery Page', '付款状态']) assert.ok(out.includes(`data-label="${label}"`), label);
+  assert.equal((out.match(/class="is-empty"/g) || []).length, 2);                  // FVS-2 has no hub row: its Delivery Page + 付款状态 cells
+  assert.ok(/@media \(max-width:760px\)/.test(out));
 });
